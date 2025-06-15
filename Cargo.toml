@@ -1,0 +1,36 @@
+[package]
+name = "plurabit_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Standard Wasm/Serde dependencies
+wasm-bindgen = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+hex = "0.4"
+serde_bytes = "0.11"
+serde_json = "1.0"
+lazy_static = "1.4"
+bincode = "1.3"  # Remove the serde feature - it's included by default
+
+
+# Cryptography: Ristretto/Curve25519 for MimbleWimble
+curve25519-dalek = { version = "4", features = ["serde", "rand_core"] }
+bulletproofs = { version = "5.0", features = ["std"] }
+merlin = "3.0"
+rand = "0.8"
+
+# VDF (Verifiable Delay Function) dependencies - unchanged
+num-bigint = { version = "0.4", features = ["rand"] }
+num-integer = "0.1"
+num-traits = "0.2"
+getrandom = { version = "0.2", features = ["js"] }
+sha2 = "0.10"
+
+# Browser/Wasm specific utilities
+web-sys = { version = "0.3", features = ["console"] }
+js-sys = "0.3.77"

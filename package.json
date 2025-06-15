@@ -1,0 +1,35 @@
+{
+  "name": "pluribit_core",
+  "version": "1.0.0",
+  "description": "",
+  "main": "p2p-bundle.js",
+  "type": "module",
+  "scripts": {
+    "build-p2p": "webpack --config webpack.config.cjs",
+    "build-wasm": "wasm-pack build --target web",
+    "build": "npm run build-wasm && npm run build-p2p",
+    "serve": "python3 -m http.server 8000",
+    "bootstrap": "node bootstrap-node.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.1",
+    "process": "^0.11.10",
+    "stream-browserify": "^3.0.0",
+    "vm-browserify": "^1.1.2",
+    "webpack": "^5.99.9",
+    "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "assert": "^2.1.0",
+    "Buffer": "npm:buffer@^6.0.3",
+    "path-browserify": "^1.0.1",
+    "simple-sha1": "^3.1.0",
+    "url": "^0.11.4",
+    "util": "^0.12.5",
+    "webtorrent": "^2.6.8"
+  }
+}

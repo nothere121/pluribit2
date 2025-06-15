@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pluribit - Browser-Native Cryptocurrency</title>
+    <style>
+        :root {
+            --primary-color: #4ecdc4;
+            --secondary-color: #333;
+            --danger-color: #ff6b6b;
+            --light-gray: #f0f0f0;
+            --medium-gray: #ddd;
+            --dark-gray: #444;
+            --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            font-family: var(--font-family);
+            margin: 0;
+            background-color: var(--light-gray);
+            color: var(--secondary-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .main-container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 1rem;
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--medium-gray);
+        }
+        h1, h2, h3, h4 {
+            margin: 0 0 1rem 0;
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid var(--medium-gray);
+            margin-bottom: 1.5rem;
+        }
+        .tab-button {
+            padding: 1rem 1.5rem;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--secondary-color);
+            border-bottom: 4px solid transparent;
+            margin-bottom: -2px;
+        }
+        .tab-button.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+        }
+        .tab-button:disabled {
+            color: #999;
+            cursor: not-allowed;
+        }
+        .tab-content {
+            display: none;
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+        .card {
+            background-color: #fafafa;
+            padding: 1.5rem;
+            border-radius: 8px;
+            border: 1px solid #eee;
+        }
+        button {
+            padding: 0.75rem 1.5rem;
+            margin: 0.25rem;
+            cursor: pointer;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        button:hover:not(:disabled) {
+            background-color: #45b7b8;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        input[type="text"], input[type="number"] {
+            padding: 0.75rem;
+            margin: 0.25rem 0 1rem 0;
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid var(--medium-gray);
+            border-radius: 4px;
+        }
+        input:read-only {
+            background-color: #e9e9e9;
+            cursor: not-allowed;
+        }
+        .status-log-container {
+            width: 100%;
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .status-log {
+            background: var(--secondary-color);
+            color: #f0f0f0;
+            padding: 1rem;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            border-radius: 4px;
+            height: 200px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column-reverse;
+        }
+        .log-entry { margin-top: 4px; }
+        .log-error { color: var(--danger-color); }
+        .log-success { color: var(--primary-color); }
+        .log-info { color: #95e1d3; }
+        .log-warn { color: #f7b731; }
+
+        .blockchain-view { max-height: 500px; overflow-y: auto; }
+        .block, .tx-pool-item {
+            background: #f9f9f9;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            border: 1px solid #eee;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="header">
+            <h1>Pluriƀit</h1>
+            <p>Browser-Native Cryptocurrency with Hybrid PoW-VDF Consensus</p>
+            <button id="connectButton">Connect to Network</button>
+        </div>
+
+        <nav class="tabs">
+            <button class="tab-button" id="tab-wallet" data-tab="wallet-content" disabled>Wallet</button>
+            <button class="tab-button" id="tab-mining" data-tab="mining-content" disabled>Mining</button>
+            <button class="tab-button" id="tab-staking" data-tab="staking-content" disabled>Staking</button>
+            <button class="tab-button" id="tab-explorer" data-tab="explorer-content" disabled>Explorer</button>
+        </nav>
+
+        <div id="wallet-content" class="tab-content">
+            <div id="wallet-setup-view">
+                <h2>Wallet</h2>
+                <div class="grid-container">
+                    <div class="card">
+                        <h4>Create New Wallet</h4>
+                        <input type="text" id="createWalletId" placeholder="Enter a Wallet Name (e.g., 'alice')" value="alice">
+                        <input type="number" id="initialBalance" placeholder="Initial Test Balance" value="1000">
+                        <button id="createWalletBtn">Create & Download Keyfile</button>
+                    </div>
+                    <div class="card">
+                        <h4>Load Wallet</h4>
+                        <p>Load a previously saved `pluribit-wallet-....json` keyfile.</p>
+                        <button id="loadWalletBtn">Load Wallet From File</button>
+                        <input type="file" id="walletFileInput" class="hidden" accept=".json">
+                    </div>
+                </div>
+            </div>
+            <div id="wallet-dashboard-view" class="hidden">
+                <h2>Wallet Dashboard</h2>
+                <p><strong>Wallet Name:</strong> <span id="dash-walletId"></span></p>
+                <p><strong>Balance:</strong> <span id="dash-balance">0</span> coins</p>
+                <button id="logoutWalletBtn">Lock Wallet</button>
+                <hr style="margin: 1.5rem 0; border: 1px solid #f0f0f0;">
+                <div class="grid-container">
+                    <div class="card">
+                        <h4>Send Transaction</h4>
+                        <input type="text" id="txTo" placeholder="Recipient Wallet Name">
+                        <input type="number" id="txAmount" placeholder="Amount">
+                        <input type="number" id="txFee" placeholder="Fee" value="1">
+                        <button id="sendTxBtn">Send Transaction</button>
+                    </div>
+                    <div class="card">
+                        <h4>Wallet Info</h4>
+                        <p>Your wallet is loaded and ready. You can now use the Mining and Staking tabs.</p>
+                        <p>Remember to save your downloaded keyfile in a safe place!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="mining-content" class="tab-content">
+            <h2>Mining</h2>
+            <div class="card">
+                <h4>Mining Controls</h4>
+                <p>Your miner ID is linked to your currently loaded wallet.</p>
+                <label for="minerId">Miner ID</label>
+                <input type="text" id="minerId" readonly>
+                <button id="startMiningBtn">Start Mining</button>
+                <button id="stopMiningBtn" disabled>Stop Mining</button>
+            </div>
+        </div>
+
+        <div id="staking-content" class="tab-content">
+            <h2>Staking</h2>
+            <div class="card">
+                 <h4>Staking Controls</h4>
+                 <p>Your validator ID is linked to your currently loaded wallet.</p>
+                 <label for="validatorId">Validator ID</label>
+                 <input type="text" id="validatorId" readonly>
+                 <hr style="margin: 1.5rem 0;">
+                 <input type="number" id="stakeAmount" placeholder="Amount to Stake" value="1000" min="100">
+                 <input type="number" id="lockDuration" placeholder="Lock Duration (in blocks)" value="10" min="1">
+                 <button id="createStakeLockBtn">1. Create Stake Lock</button>
+                 <button id="computeVDFBtn" disabled>2. Compute VDF Proof</button>
+                 <button id="activateStakeBtn" disabled>3. Activate Stake</button>
+                 <button id="startValidatingBtn" disabled>Start Validating</button>
+            </div>
+        </div>
+
+    <div id="explorer-content" class="tab-content">
+        <h2>Network Explorer</h2>
+        <div class="grid-container">
+            <div class="card">
+                <h4>Chain Management</h4>
+                <p><strong>Storage Used:</strong> <span id="storage-size">--</span> MB</p>
+                <button id="createSnapshotBtn">Create UTXO Snapshot</button>
+                <button id="pruneChainBtn">Prune Old Blocks</button>
+                <p id="chainStatus"></p>
+            </div>
+            <div class="card">
+                <h4>Consensus State</h4>
+                <p><strong>Current Phase:</strong> <span id="exp-phase">Not Started</span></p>
+                <p><strong>Phase Timer:</strong> <span id="exp-timer">--</span></p>
+                <p><strong>VDF Clock Tick:</strong> <span id="exp-vdfTick">0</span></p>
+                <p><strong>Current Block Height:</strong> <span id="exp-height">0</span></p>
+            </div>
+            <div class="card">
+                <h4>Transaction Pool</h4>
+                <p><strong>Pending Transactions:</strong> <span id="exp-tx-count">0</span></p>
+                <p><strong>Total Fees:</strong> <span id="exp-tx-fees">0</span></p>
+            </div>
+            <div class="card">
+                <h4>Slashing Monitor</h4>
+                <p>Check for and report double voting violations</p>
+                <button id="checkDoubleVotesBtn">Check for Double Votes</button>
+                <p id="slashingStatus"></p>
+            </div>
+        </div>
+        <h4 style="margin-top: 1.5rem;">Recent Blocks (Last 5)</h4>
+        <div id="blockchainBlocks" class="blockchain-view"></div>
+    </div>
+
+        <div class="status-log-container">
+            <h4>Network Log</h4>
+            <div id="statusLog" class="status-log"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- STATE MANAGEMENT ---
+        const state = {
+            networkConnected: false,
+            consensusRunning: false,
+            miningActive: false,
+            consensusInterval: null,
+            vdfInterval: null,
+            currentWalletId: null,
+            vdfResult: null,
+        };
+
+        // --- UI ELEMENT SELECTORS ---
+        const elements = {
+            connectButton: document.getElementById('connectButton'),
+            // Tabs
+            tabButtons: document.querySelectorAll('.tab-button'),
+            tabContents: document.querySelectorAll('.tab-content'),
+            // Wallet Tab
+            walletSetupView: document.getElementById('wallet-setup-view'),
+            walletDashboardView: document.getElementById('wallet-dashboard-view'),
+            createWalletId: document.getElementById('createWalletId'),
+            initialBalance: document.getElementById('initialBalance'),
+            createWalletBtn: document.getElementById('createWalletBtn'),
+            loadWalletBtn: document.getElementById('loadWalletBtn'),
+            walletFileInput: document.getElementById('walletFileInput'),
+            dashWalletId: document.getElementById('dash-walletId'),
+            dashBalance: document.getElementById('dash-balance'),
+            logoutWalletBtn: document.getElementById('logoutWalletBtn'),
+            txTo: document.getElementById('txTo'),
+            txAmount: document.getElementById('txAmount'),
+            txFee: document.getElementById('txFee'),
+            sendTxBtn: document.getElementById('sendTxBtn'),
+            // Mining Tab
+            minerId: document.getElementById('minerId'),
+            startMiningBtn: document.getElementById('startMiningBtn'),
+            stopMiningBtn: document.getElementById('stopMiningBtn'),
+            // Staking Tab
+            validatorId: document.getElementById('validatorId'),
+            stakeAmount: document.getElementById('stakeAmount'),
+            lockDuration: document.getElementById('lockDuration'),
+            createStakeLockBtn: document.getElementById('createStakeLockBtn'),
+            computeVDFBtn: document.getElementById('computeVDFBtn'),
+            activateStakeBtn: document.getElementById('activateStakeBtn'),
+            startValidatingBtn: document.getElementById('startValidatingBtn'),
+            // Explorer Tab
+            createSnapshotBtn: document.getElementById('createSnapshotBtn'),
+            pruneChainBtn: document.getElementById('pruneChainBtn'),      
+            chainStatus: document.getElementById('chainStatus'),           
+            storageSize: document.getElementById('storage-size'),       
+            expPhase: document.getElementById('exp-phase'),
+            expTimer: document.getElementById('exp-timer'),
+            expVdfTick: document.getElementById('exp-vdfTick'),
+            expHeight: document.getElementById('exp-height'),
+            expTxCount: document.getElementById('exp-tx-count'),
+            expTxFees: document.getElementById('exp-tx-fees'),
+            blockchainBlocks: document.getElementById('blockchainBlocks'),
+            checkDoubleVotesBtn: document.getElementById('checkDoubleVotesBtn'),
+            slashingStatus: document.getElementById('slashingStatus'),
+            // Global
+            statusLog: document.getElementById('statusLog'),
+        };
+
+        // --- WORKER SETUP ---
+        const worker = new Worker('worker.js', { type: 'module' });
+
+        worker.onmessage = (event) => {
+            const { type, success, payload, error } = event.data;
+            
+            // Add a check for the 'log' type messages
+            if (type === 'log' && payload) {
+                log(payload.message || 'Unknown message', payload.level || 'info');
+                return;
+            }
+
+            switch(type) {
+                case 'log': 
+                    if (payload && payload.message) {
+                        log(payload.message, payload.level || 'info');
+                    }
+                    break;
+            
+                case 'workerReady':
+                    log('Worker initialized and ready.', 'success');
+                    elements.connectButton.disabled = false;
+                    break;
+                case 'networkInitialized':
+                    handleNetworkInitialized(payload);
+                    break;
+                case 'p2pStarted':
+                    log(`P2P network started. Peer ID: ${payload.peerId.substring(0, 12)}...`, 'success');
+                    break;
+                case 'consensusUpdate':
+                    handleConsensusUpdate(payload);
+                    break;
+                case 'vdfClockTicked':
+                    elements.expVdfTick.textContent = payload.clockState.current_tick;
+                    break;
+                case 'blockAddedToChain':
+                    handleBlockAdded(payload);
+                    if (state.currentWalletId) updateWalletBalance(state.currentWalletId);
+                    break;
+                case 'walletInitialized':
+                    log(`Wallet '${payload.walletId}' initialized. Keyfile download will begin.`, 'info');
+                    break;
+                case 'downloadWalletFile':
+                    handleDownloadWalletFile(payload);
+                    activateWalletDashboard(payload.fileName.replace('pluribit-wallet-', '').replace('.json', ''));
+                    break;
+                case 'walletBalance':
+                    if (payload.wallet_id === state.currentWalletId) {
+                        elements.dashBalance.textContent = payload.balance;
+                    }
+                    break;
+                case 'transactionCreated':
+                    log('Transaction created and broadcast to the network.', 'success');
+                    updateTxPool();
+                    break;
+                case 'txPoolUpdate':
+                    elements.expTxCount.textContent = payload.pending_count;
+                    elements.expTxFees.textContent = payload.fee_total;
+                    break;
+                case 'stakeLockCreated':
+                    log('Stake lock created. You can now compute the VDF proof.', 'success');
+                    elements.computeVDFBtn.disabled = false;
+                    break;
+                case 'vdfComputationStarted':
+                    log('VDF computation for staking has started... This will take some time.', 'info');
+                    break;
+                case 'vdfComputationComplete':
+                    log('VDF proof computed successfully! You can now activate your stake.', 'success');
+                    state.vdfResult = payload;
+                    elements.activateStakeBtn.disabled = false;
+                    break;
+                case 'snapshotCreated':
+                    log(`UTXO snapshot created at height ${payload.height} with ${payload.utxo_count} UTXOs`, 'success');
+                    updateStorageInfo();
+                    break;
+
+                case 'chainPruned':
+                    log(`Chain pruned. Saved ${payload.saved_mb.toFixed(2)} MB`, 'success');
+                    updateStorageInfo();
+                    break;
+                case 'stakeActivated':
+                    log('Stake has been activated! You are now eligible to validate.', 'success');
+                    elements.startValidatingBtn.disabled = false;
+                    break;
+                case 'doubleVotesChecked':
+                    if (payload.slashedCount > 0) {
+                        elements.slashingStatus.textContent = `Found and slashed ${payload.slashedCount} violators!`;
+                        elements.slashingStatus.style.color = 'var(--danger-color)';
+                        updateWalletBalance(state.currentWalletId); // Update to show reward
+                    } else {
+                        elements.slashingStatus.textContent = 'No double votes detected';
+                        elements.slashingStatus.style.color = 'var(--primary-color)';
+                    }
+                    break;
+                case 'powMiningResult':
+                    log(`Mined a candidate block! Height: ${payload.block.height}, Nonce: ${payload.block.nonce}`, 'success');
+                    break;
+                case 'log': // Generic log from worker
+                    log(payload.message, payload.level);
+                    break;
+                
+            }
+        };
+
+        // --- UI LOGIC & EVENT HANDLERS ---
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            elements.statusLog.prepend(entry);
+        }
+
+        // Tab Switching
+        elements.tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                elements.tabButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                elements.tabContents.forEach(content => content.classList.remove('active'));
+                document.getElementById(button.dataset.tab).classList.add('active');
+            });
+        });
+
+        // Main Connect Button
+        elements.connectButton.onclick = () => {
+            log('Connecting to the Pluribit network...', 'info');
+            worker.postMessage({ action: 'initializeNetwork' });
+            elements.connectButton.disabled = true;
+            elements.connectButton.textContent = "Connecting...";
+        };
+
+        function handleNetworkInitialized(payload) {
+            log('Network connected successfully!', 'success');
+            elements.connectButton.textContent = "Connected";
+            state.networkConnected = true;
+            
+            // Enable Wallet Tab
+            document.getElementById('tab-wallet').disabled = false;
+            document.getElementById('tab-wallet').click(); // Activate wallet tab
+
+            // Start Consensus
+            state.consensusInterval = setInterval(() => worker.postMessage({ action: 'consensusTick' }), 1000);
+            state.vdfInterval = setInterval(() => worker.postMessage({ action: 'tickVDFClock' }), 1000);
+            
+            // Update Explorer with Genesis state
+            updateBlockchainView(payload.chainState);
+        }
+
+        // Wallet Handlers
+        elements.createWalletBtn.onclick = () => {
+            const walletId = elements.createWalletId.value;
+            const balance = elements.initialBalance.value;
+            if (!walletId) {
+                log('Please enter a wallet name.', 'error');
+                return;
+            }
+            log(`Creating wallet '${walletId}'...`, 'info');
+            worker.postMessage({ action: 'initWallet', walletId, balance: parseInt(balance) });
+        };
+        
+        elements.loadWalletBtn.onclick = () => elements.walletFileInput.click();
+
+        elements.walletFileInput.onchange = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const walletData = JSON.parse(e.target.result);
+                    const walletId = file.name.replace('pluribit-wallet-', '').replace('.json', '');
+                    if (!walletId) throw new Error("Could not determine wallet ID from filename.");
+                    
+                    log(`Restoring wallet '${walletId}' from file...`, 'info');
+                    worker.postMessage({ action: 'loadWallet', walletId, walletData });
+                    activateWalletDashboard(walletId);
+                } catch (err) {
+                    log(`Error reading wallet file: ${err.message}`, 'error');
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        };
+
+        elements.logoutWalletBtn.onclick = () => {
+            state.currentWalletId = null;
+            elements.walletSetupView.classList.remove('hidden');
+            elements.walletDashboardView.classList.add('hidden');
+            
+            // Disable other tabs
+            ['tab-mining', 'tab-staking', 'tab-explorer'].forEach(id => document.getElementById(id).disabled = true);
+            document.getElementById('tab-wallet').click();
+            log('Wallet locked.', 'info');
+        };
+
+        function activateWalletDashboard(walletId) {
+            state.currentWalletId = walletId;
+            elements.dashWalletId.textContent = walletId;
+            elements.minerId.value = walletId;
+            elements.validatorId.value = walletId;
+
+            elements.walletSetupView.classList.add('hidden');
+            elements.walletDashboardView.classList.remove('hidden');
+
+            // Enable other tabs
+            ['tab-mining', 'tab-staking', 'tab-explorer'].forEach(id => document.getElementById(id).disabled = false);
+
+            updateWalletBalance(walletId);
+            updateTxPool();
+        }
+
+        function updateWalletBalance(walletId) {
+            worker.postMessage({ action: 'getWalletBalance', walletId });
+        }
+
+        function handleDownloadWalletFile(payload) {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload.data, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", payload.fileName);
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+            log(`Keyfile '${payload.fileName}' download initiated.`, 'success');
+        }
+
+        elements.sendTxBtn.onclick = () => {
+            const to = elements.txTo.value;
+            const amount = elements.txAmount.value;
+            const fee = elements.txFee.value;
+
+            if (!to || !amount || !fee) {
+                log('Please fill all transaction fields.', 'error');
+                return;
+            }
+            if (to === state.currentWalletId) {
+                log('Cannot send transactions to yourself.', 'error');
+                return;
+            }
+            log(`Creating transaction to '${to}' for ${amount} coins...`, 'info');
+            worker.postMessage({ action: 'createTransaction', from: state.currentWalletId, to, amount: parseInt(amount), fee: parseInt(fee) });
+        };
+        
+        //chain handlers
+        elements.createSnapshotBtn.onclick = () => {
+            log('Creating UTXO snapshot...', 'info');
+            worker.postMessage({ action: 'createAndSeedSnapshot' });
+        };
+
+        elements.pruneChainBtn.onclick = () => {
+            if (confirm('Prune old blocks? This will keep only the last 144 blocks (48 hours).')) {
+                log('Pruning blockchain...', 'info');
+                worker.postMessage({ action: 'pruneChain', keepRecentBlocks: 144 });
+            }
+        };
+        
+        
+        // Mining Handlers
+        elements.startMiningBtn.onclick = () => {
+            log('Starting miner...', 'info');
+            worker.postMessage({ action: 'setMinerActive', active: true, minerId: state.currentWalletId });
+            elements.startMiningBtn.disabled = true;
+            elements.stopMiningBtn.disabled = false;
+        };
+        elements.stopMiningBtn.onclick = () => {
+            log('Stopping miner...', 'info');
+            worker.postMessage({ action: 'setMinerActive', active: false });
+            elements.startMiningBtn.disabled = false;
+            elements.stopMiningBtn.disabled = true;
+        };
+
+        // Staking Handlers
+        elements.createStakeLockBtn.onclick = () => {
+            const stakeAmount = parseInt(elements.stakeAmount.value);
+            const lockDuration = parseInt(elements.lockDuration.value);
+            log(`Creating stake lock: ${stakeAmount} tokens for ${lockDuration} blocks`, 'info');
+            worker.postMessage({ action: 'createStakeLock', validatorId: state.currentWalletId, stakeAmount, lockDuration });
+        };
+        elements.computeVDFBtn.onclick = () => {
+            worker.postMessage({ action: 'computeStakeVDF', validatorId: state.currentWalletId });
+        };
+        elements.activateStakeBtn.onclick = () => {
+            worker.postMessage({ action: 'activateStake', validatorId: state.currentWalletId, vdfResult: state.vdfResult });
+        };
+        elements.startValidatingBtn.onclick = () => {
+            log('Validator mode activated. Will vote automatically.', 'success');
+            worker.postMessage({ action: 'setValidatorActive', active: true, validatorId: state.currentWalletId });
+            elements.startValidatingBtn.disabled = true;
+        };
+        elements.checkDoubleVotesBtn.onclick = () => {
+            if (!state.currentWalletId) {
+                log('Please load a wallet first to report double votes', 'error');
+                return;
+            }
+            
+            log('Checking for double votes...', 'info');
+            worker.postMessage({ action: 'checkDoubleVotes', reporterId: state.currentWalletId });
+        };
+        // --- VIEW UPDATERS ---
+        function handleConsensusUpdate(payload) {
+            const { current_phase, phase_timer } = payload.state;
+            elements.expPhase.textContent = current_phase;
+            elements.expTimer.textContent = phase_timer;
+        }
+
+        function handleBlockAdded(payload) {
+            log(`New block #${payload.chainState.current_height} finalized and added to chain.`, 'success');
+            updateBlockchainView(payload.chainState);
+            updateTxPool();
+        }
+
+        function updateBlockchainView(chainState) {
+            elements.expHeight.textContent = chainState.current_height;
+            elements.blockchainBlocks.innerHTML = '';
+            if (!chainState || !chainState.blocks) return;
+            
+            chainState.blocks.slice(-5).reverse().forEach(block => {
+                const blockEl = document.createElement('div');
+                blockEl.className = 'block';
+                blockEl.innerHTML = `<strong>#${block.height}</strong> | Hash: ${block.hash.substring(0, 16)}... | Miner: ${block.miner_id.substring(0, 12)} | Nonce: ${block.nonce}`;
+                elements.blockchainBlocks.appendChild(blockEl);
+            });
+        }
+        
+        // function to update storage info
+        async function updateStorageInfo() {
+            worker.postMessage({ action: 'getStorageInfo' });
+        }
+        
+        function updateTxPool() {
+            worker.postMessage({ action: 'getTxPool' });
+        }
+
+        // Initialize button states
+        elements.connectButton.disabled = true;
+
+    </script>
+</body>
+</html>
