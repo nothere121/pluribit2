@@ -1,14 +1,14 @@
 {
-  "name": "plurabit_core",
+  "name": "pluribit_core",
   "type": "module",
   "version": "0.1.0",
   "files": [
-    "plurabit_core_bg.wasm",
-    "plurabit_core.js",
-    "plurabit_core.d.ts"
+    "pluribit_core_bg.wasm",
+    "pluribit_core.js",
+    "pluribit_core.d.ts"
   ],
-  "main": "plurabit_core.js",
-  "types": "plurabit_core.d.ts",
+  "main": "pluribit_core.js",
+  "types": "pluribit_core.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]

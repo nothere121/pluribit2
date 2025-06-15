@@ -32,8 +32,13 @@ import init, {
     get_wallet_data,
     restore_wallet,
     get_current_difficulty,
-    compute_block_vdf_proof
-} from './pkg/plurabit_core.js';
+    compute_block_vdf_proof,
+        create_utxo_snapshot,
+    restore_from_utxo_snapshot,
+    prune_blockchain,
+    get_chain_storage_size,
+    check_and_report_double_votes
+} from './pkg/pluribit_core.js';
 
 import PluribitP2P from './dist/wt-p2p.dist.js';
 
@@ -62,7 +67,7 @@ const workerState = {
         console.log('[WORKER] Starting initialization...');
 
         // **THE FIX IS HERE**: We now pass the exact URL of the wasm file to init().
-        await init(new URL('./pkg/plurabit_core_bg.wasm', import.meta.url));
+        await init(new URL('./pkg/pluribit_core_bg.wasm', import.meta.url));
 
         console.log('[WORKER] WASM initialized successfully');
         workerState.initialized = true;
@@ -138,7 +143,9 @@ self.onmessage = async (event) => {
             case 'syncFromSnapshot':
                 await handleSyncFromSnapshot(params);
                 break;
-
+            case 'getStorageInfo':
+                await handleGetStorageInfo();
+                break;
             case 'pruneChain':
                 await handlePruneChain(params);
                 break;
@@ -163,21 +170,9 @@ self.onmessage = async (event) => {
             case 'loadWallet':
                 await handleLoadWallet(params);
                 break;
-            case 'checkDoubleVotes':
-                try {
-                    const slashedCount = await pluribit.check_and_report_double_votes(data.reporterId);
-                    self.postMessage({
-                        type: 'doubleVotesChecked',
-                        success: true,
-                        payload: { slashedCount }
-                    });
-                } catch (error) {
-                    self.postMessage({
-                        type: 'log',
-                        payload: { message: `Double vote check failed: ${error}`, level: 'error' }
-                    });
-                }
-                break;
+           case 'checkDoubleVotes':
+               await handleCheckDoubleVotes(params);
+               break;
     
             default:
                 console.warn('[WORKER] Unknown action:', action);
@@ -190,6 +185,28 @@ self.onmessage = async (event) => {
         });
     }
 };
+
+
+async function handleCheckDoubleVotes({ reporterId }) {
+    try {
+        // Call the imported WASM function
+        const slashedCount = await check_and_report_double_votes(reporterId);
+        
+        // Send the result back to the main thread
+        self.postMessage({
+            type: 'doubleVotesChecked',
+            success: true,
+            payload: { slashedCount }
+        });
+
+    } catch (error) {
+        // Send a log message on failure, as in your original code
+        self.postMessage({
+            type: 'log',
+            payload: { message: `Double vote check failed: ${error}`, level: 'error' }
+        });
+    }
+}
 
 
 async function handleCreateAndSeedSnapshot() {
@@ -274,10 +291,29 @@ async function handleSyncFromSnapshot({ height }) {
     }
 }
 
+
+async function handleGetStorageInfo() {
+    try {
+        const info = await get_chain_storage_size();
+        self.postMessage({
+            type: 'storageInfo',
+            success: true,
+            payload: info
+        });
+    } catch (e) {
+        console.error('[WORKER] Failed to get storage info:', e);
+        self.postMessage({
+            type: 'error',
+            error: `Failed to get storage info: ${e.toString()}`
+        });
+    }
+}
+
 async function handlePruneChain({ keepRecentBlocks }) {
     try {
-        const keepBlocks = keepRecentBlocks || 144; // Default to 48 hours
-        
+        //const keepBlocks = keepRecentBlocks || 144; // Default to 48 hours
+        const keepBlocks = keepRecentBlocks ? BigInt(keepRecentBlocks) : 144n; // Default to 144 as a BigInt
+
         // Get storage info before pruning
         const beforeInfo = await get_chain_storage_size();
         

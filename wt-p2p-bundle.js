@@ -4,6 +4,7 @@ console.log('[P2P] Loading Pluribit WebTorrent P2P module...');
 import WebTorrent from 'webtorrent';
 import { Buffer } from 'buffer';
 import crypto from 'crypto-browserify';
+import pako from 'pako';
 
 // Ensure Buffer is available globally for WebTorrent
 if (typeof window !== 'undefined') {
@@ -165,23 +166,19 @@ class PluribitP2P {
         });
     }
 
-    loadBlockIndex() {
+     async loadBlockIndex() {
         if (!this.masterIndexTorrent || !this.masterIndexTorrent.files || !this.masterIndexTorrent.files[0]) {
             console.log('[P2P] No index file available yet');
             return;
         }
+        const file = this.masterIndexTorrent.files[0];
 
-        this.masterIndexTorrent.files[0].getBuffer((err, buffer) => {
-            if (err) {
-                console.error('[P2P] Failed to read index:', err);
-                return;
-            }
-
+        // This helper function avoids code duplication
+        const processIndexBuffer = (buffer) => {
             try {
                 const index = JSON.parse(buffer.toString());
                 console.log('[P2P] Loaded block index v' + index.version + ' with', Object.keys(index.blocks).length, 'blocks');
                 
-                // Update our known blocks
                 Object.entries(index.blocks).forEach(([height, magnetURI]) => {
                     const heightNum = parseInt(height);
                     if (!this.knownBlocks.has(heightNum)) {
@@ -189,19 +186,35 @@ class PluribitP2P {
                     }
                 });
 
-                // Notify about known blocks
                 const handler = this.handlers.get('BLOCK_HEIGHTS_KNOWN');
                 if (handler) {
                     const heights = Array.from(this.knownBlocks.keys()).sort((a, b) => a - b);
                     handler(heights);
                 }
-
-                // Start syncing missing blocks
                 this.syncMissingBlocks();
             } catch (e) {
                 console.error('[P2P] Failed to parse index:', e);
             }
-        });
+        };
+
+        // Check which type of file object we have
+        if (typeof file.getBuffer === 'function') {
+            // SCENARIO 1: We are a downloader (leecher)
+            console.log('[P2P] Reading index via getBuffer()...');
+            file.getBuffer((err, buffer) => {
+                if (err) return console.error('[P2P] Failed to read index via getBuffer:', err);
+                processIndexBuffer(buffer);
+            });
+        } else {
+            // SCENARIO 2: We are the original seeder
+            try {
+                console.log('[P2P] Reading index via arrayBuffer()...');
+                const buffer = await file.arrayBuffer(); // Use standard File API
+                processIndexBuffer(Buffer.from(buffer)); // Convert ArrayBuffer to Node.js-style Buffer
+            } catch (err) {
+                console.error('[P2P] Failed to read index via arrayBuffer:', err);
+            }
+        }
     }
 
     syncMissingBlocks() {
@@ -717,66 +730,59 @@ class PluribitP2P {
         });
     }
 
-    async updateMasterIndexWithSnapshot(height, magnetURI, metadata) {
+      async updateMasterIndex(height, magnetURI) {
         if (!this.masterIndexTorrent || !this.masterIndexTorrent.files[0]) {
-            console.log('[P2P] Master index not ready for snapshot update');
+            console.log('[P2P] Master index not ready for update');
             return;
         }
-        
-        this.masterIndexTorrent.files[0].getBuffer((err, buffer) => {
-            if (err) {
-                console.error('[P2P] Failed to read index for snapshot update:', err);
-                return;
-            }
-            
+        const file = this.masterIndexTorrent.files[0];
+
+        // Helper function to process the update logic, avoiding duplication
+        const processUpdate = (buffer) => {
             try {
                 const index = JSON.parse(buffer.toString());
-                
-                // Initialize snapshots object if needed
-                if (!index.utxo_snapshots) {
-                    index.utxo_snapshots = {};
-                }
-                
-                // Add snapshot info
-                index.utxo_snapshots[height] = {
-                    magnet: magnetURI,
-                    merkle_root: metadata.merkle_root,
-                    utxo_count: metadata.utxo_count,
-                    compressed_size: metadata.compressed_size,
-                    timestamp: metadata.timestamp
-                };
-                
-                // Update latest snapshot height
-                index.latest_snapshot = Math.max(
-                    index.latest_snapshot || 0,
-                    height
-                );
-                
+                index.blocks[height] = magnetURI;
                 index.lastUpdate = Date.now();
-                
-                // Create updated file
+
                 const updatedBuffer = Buffer.from(JSON.stringify(index, null, 2));
                 const blob = new Blob([updatedBuffer], { type: 'application/json' });
-                const file = new File([blob], 'index.json', {
+                const updatedFile = new File([blob], 'index.json', {
                     type: 'application/json',
                     lastModified: Date.now()
                 });
-                
-                // Destroy old torrent and re-seed
+
+                // Destroy the old torrent and re-seed with the updated index
                 this.masterIndexTorrent.destroy(() => {
-                    this.masterIndexTorrent = this.client.seed(file, {
+                    this.masterIndexTorrent = this.client.seed(updatedFile, {
                         name: 'pluribit-block-index-v1',
                         announce: this.getTrackers(),
                         private: false
                     }, (torrent) => {
-                        console.log('[P2P] Master index updated with UTXO snapshot', height);
+                        console.log('[P2P] Master index updated with block', height);
                         this.setupMasterIndexHandlers(torrent);
                     });
                 });
             } catch (e) {
-                console.error('[P2P] Failed to update index with snapshot:', e);
+                console.error('[P2P] Failed to process index update:', e);
             }
-        });
+        };
+        
+        // Check which type of file object we have
+        if (typeof file.getBuffer === 'function') {
+            // SCENARIO 1: We are a downloader (leecher)
+            file.getBuffer((err, buffer) => {
+                if (err) return console.error('[P2P] Failed to read index for update:', err);
+                processUpdate(buffer);
+            });
+        } else {
+            // SCENARIO 2: We are the original seeder
+            try {
+                const buffer = await file.arrayBuffer(); // Use standard File API
+                processUpdate(Buffer.from(buffer)); // Convert ArrayBuffer to Node.js-style Buffer
+            } catch (err) {
+                console.error('[P2P] Failed to read index for update via arrayBuffer:', err);
+            }
+        }
     }
 
     async getUTXOSnapshotInfo(height) {

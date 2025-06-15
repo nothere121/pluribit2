@@ -304,7 +304,7 @@ impl ConsensusManager {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ConsensusResult {
     pub current_phase: ConsensusPhase,
     pub phase_timer: u64,

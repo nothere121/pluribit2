@@ -294,6 +294,18 @@ pub fn is_prime(n: &BigUint, k: usize) -> bool {
     true
 }
 
+
+impl Default for VDFProof {
+    fn default() -> Self {
+        VDFProof {
+            y: vec![],
+            pi: vec![],
+            l: vec![],
+            r: vec![],
+        }
+    }
+}
+
 // Helper function to compute VDF proof
 pub fn compute_vdf_proof(input: &[u8], iterations: u64, modulus: &BigUint) -> Result<VDFProof, String> {
     if iterations > MAX_VDF_ITERATIONS {

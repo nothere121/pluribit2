@@ -25,6 +25,7 @@ pub struct ValidatorVote {
     pub validator_id: String,
     pub block_hash: String,
     pub stake_amount: u64,
+    #[serde(default)]
     pub vdf_proof: VDFProof,
     pub signature: Vec<u8>,
 }
@@ -35,6 +36,7 @@ pub struct Block {
     pub prev_hash: String,
     #[serde(default)]
     pub transactions: Vec<Transaction>,
+    #[serde(default)] 
     pub vdf_proof: VDFProof,
     pub timestamp: u64,
     pub nonce: u64,
@@ -109,24 +111,6 @@ impl Block {
         h.update(&self.vdf_proof.pi);
         h.update(&self.vdf_proof.l);
         h.update(&self.vdf_proof.r);
-
-        if let Some(ref fin) = self.finalization_data {
-            let mut f = Sha256::new();
-            f.update(&fin.total_stake_voted.to_le_bytes());
-            f.update(&fin.total_stake_active.to_le_bytes());
-            for vote in &fin.votes {
-                f.update(vote.validator_id.as_bytes());
-                f.update(vote.block_hash.as_bytes());
-                f.update(&vote.stake_amount.to_le_bytes());
-                f.update(&vote.signature);
-                f.update(&vote.vdf_proof.y);
-                f.update(&vote.vdf_proof.pi);
-                f.update(&vote.vdf_proof.l);
-                f.update(&vote.vdf_proof.r);
-            }
-           //do not include the finalization data in the hash, as it changes between when its mined and when the block is finalized.
-           // h.update(&f.finalize());
-        }
 
         hex::encode(h.finalize())
     }
