@@ -11,10 +11,14 @@ use curve25519_dalek::traits::Identity;
 use bulletproofs::RangeProof;
 use serde::Serialize;
 use serde::Deserialize;
+use js_sys::Date;
+
+
+use crate::wallet::Wallet; 
 
 use crate::consensus_manager::{ConsensusManager, ConsensusPhase};
 use crate::vdf::{VDF, VDFProof, compute_vdf_proof};
-use crate::transaction::{Transaction, TransactionInput, TransactionOutput, TransactionKernel};
+use crate::transaction::{Transaction, TransactionOutput, TransactionKernel};
 use crate::block::Block; 
 
 
@@ -29,6 +33,8 @@ pub mod blockchain;
 pub mod vdf_clock;
 pub mod consensus_manager;
 pub mod slashing;
+pub mod stealth;
+pub mod wallet;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StakeLockTransaction {
@@ -50,11 +56,13 @@ pub struct VDFLockedStake {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Validator {
     pub id: String,
-    pub public_key: Vec<u8>, 
+    pub public_key: Vec<u8>,
+    pub private_key: Vec<u8>,
     pub locked_stakes: Vec<VDFLockedStake>,
     pub total_locked: u64,
     pub active: bool,
 }
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UTXO {
     pub commitment: Vec<u8>,
@@ -69,26 +77,7 @@ pub struct TransactionPool {
     pub fee_total: u64,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct WalletOutput {
-    pub value: u64,
-    pub blinding_factor: Vec<u8>,
-    pub commitment: Vec<u8>,
-    pub spent: bool,
-}
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct WalletIdentity {
-    pub private_key: Vec<u8>,  // 32 bytes - Scalar
-    pub public_key: Vec<u8>,   // 32 bytes - Compressed RistrettoPoint
-}
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct WalletData {
-    pub version: u32,
-    pub identity: WalletIdentity,
-    pub outputs: Vec<WalletOutput>,
-    pub created_at: u64,
-}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VoteData {
@@ -120,6 +109,33 @@ pub struct CompactBlockData {
     pub new_outputs: Vec<TransactionOutput>,
 }
 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CandidateSetCommitment {
+    pub validator_id: String,
+    pub height: u64,
+    pub candidate_hashes: Vec<String>, // Sorted list of block hashes seen
+    pub signature: Vec<u8>,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FinalSelection {
+    pub validator_id: String,
+    pub height: u64,
+    pub selected_block_hash: String,
+    pub signature: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatorVotePacket {
+    pub block_hash: String,
+    pub final_selection: FinalSelection,
+    pub vdf_proof: VDFProof,
+    pub candidate_commitment: CandidateSetCommitment,
+    pub stake_amount: u64,
+}
+
 lazy_static! {
     static ref BLOCKCHAIN: Mutex<blockchain::Blockchain> = Mutex::new(blockchain::Blockchain::new());
     static ref VDF_CLOCK: Mutex<vdf_clock::VDFClock> = Mutex::new(vdf_clock::VDFClock::new(10));
@@ -132,8 +148,20 @@ lazy_static! {
         pending: Vec::new(),
         fee_total: 0,
     });
-    static ref WALLET_OUTPUTS: Mutex<HashMap<String, Vec<WalletOutput>>> = Mutex::new(HashMap::new());
-    static ref WALLET_IDENTITIES: Mutex<HashMap<String, WalletIdentity>> = Mutex::new(HashMap::new());
+        // Height -> ValidatorId -> Commitment
+    static ref CANDIDATE_COMMITMENTS: Mutex<HashMap<u64, HashMap<String, CandidateSetCommitment>>> =
+        Mutex::new(HashMap::new());
+
+    // Height -> ValidatorId -> FinalSelection
+    static ref FINAL_SELECTIONS: Mutex<HashMap<u64, HashMap<String, FinalSelection>>> =
+        Mutex::new(HashMap::new());
+
+    // Height -> BlockHash -> Block
+    static ref CANDIDATE_BLOCKS: Mutex<HashMap<u64, HashMap<String, Block>>> =
+        Mutex::new(HashMap::new());
+
+        // Queue of pending staking rewards to be included in next block
+    static ref PENDING_REWARDS: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
 }
 
 #[wasm_bindgen]
@@ -142,7 +170,84 @@ extern "C" {
     fn log(s: &str);
 }
 
+#[wasm_bindgen]
+pub fn wallet_scan_blockchain(wallet_json: &str) -> Result<String, JsValue> {
+    // Deserialize the wallet
+    let mut wallet: Wallet = serde_json::from_str(wallet_json)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    
+    // Get the blockchain
+    let chain = BLOCKCHAIN.lock().unwrap();
+    
+    // Scan each block
+    for block in &chain.blocks {
+        wallet.scan_block(block);
+    }
+    
+    // Return the updated wallet as JSON
+    serde_json::to_string(&wallet)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
 
+#[wasm_bindgen]
+pub fn wallet_get_address(wallet_json: &str) -> Result<String, JsValue> {
+    let wallet: Wallet = serde_json::from_str(wallet_json)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    
+    // The wallet's address is their scan public key in hex
+    let address = hex::encode(wallet.scan_pub.compress().to_bytes());
+    
+    Ok(address)
+}
+
+#[wasm_bindgen]
+pub fn validate_address(address_hex: &str) -> Result<bool, JsValue> {
+    // Try to decode the hex
+    let bytes = hex::decode(address_hex)
+        .map_err(|_| JsValue::from_str("Invalid hex"))?;
+    
+    // Check if it's a valid compressed Ristretto point
+    if bytes.len() != 32 {
+        return Ok(false);
+    }
+    
+    match CompressedRistretto::from_slice(&bytes) {
+        Ok(compressed) => {
+            // Check if it decompresses to a valid point
+            Ok(compressed.decompress().is_some())
+        }
+        Err(_) => Ok(false)
+    }
+}
+
+#[wasm_bindgen]
+pub fn scan_pending_transactions(wallet_json: &str) -> Result<JsValue, JsValue> {
+    let wallet: Wallet = serde_json::from_str(wallet_json)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let pool = TX_POOL.lock().unwrap();
+    
+    let mut found_outputs = Vec::new();
+
+    // Create a dummy block to pass to the scan_block function
+    for tx in &pool.pending {
+        let mut temp_block = Block::genesis(); // A simple container
+        temp_block.transactions.push(tx.clone());
+
+        let mut temp_wallet = wallet.clone();
+        temp_wallet.scan_block(&temp_block);
+        
+        // Check if new UTXOs were found
+        if temp_wallet.owned_utxos.len() > wallet.owned_utxos.len() {
+             for utxo in temp_wallet.owned_utxos.iter().skip(wallet.owned_utxos.len()) {
+                // Here you can decide what info to return
+                found_outputs.push(utxo.value);
+             }
+        }
+    }
+    
+    serde_wasm_bindgen::to_value(&found_outputs)
+        .map_err(|e| e.into())
+}
 
 #[wasm_bindgen]
 pub fn greet(name: &str) -> String {
@@ -259,6 +364,50 @@ pub fn create_genesis_block() -> Result<JsValue, JsValue> {
 }
 
 
+#[wasm_bindgen]
+pub fn wallet_create_transaction(
+    wallet_json: &str,
+    amount: u64,
+    fee: u64,
+    recipient_scan_pub_hex: &str,
+) -> Result<JsValue, JsValue> {
+    // 1. Deserialize the wallet state from the JSON string provided by JavaScript.
+    let mut wallet: Wallet = serde_json::from_str(wallet_json)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    
+    // 2. Decode the recipient's public key from the hex string.
+    let pub_key_bytes = hex::decode(recipient_scan_pub_hex)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let compressed_point = CompressedRistretto::from_slice(&pub_key_bytes)
+        .map_err(|e| JsValue::from_str(&format!("Invalid public key bytes: {}", e)))?; // Convert error to JsValue
+
+    let recipient_scan_pub = compressed_point.decompress() // Now you can call decompress
+        .ok_or_else(|| JsValue::from_str("Invalid recipient public key"))?;
+
+    // 3. Call the internal create_transaction method on the Wallet struct.
+    //    This method contains all the complex logic for coin selection and stealth output creation.
+    let transaction = wallet.create_transaction(amount, fee, &recipient_scan_pub)
+        .map_err(|e| JsValue::from_str(&e))?;
+    
+    // 4. Serialize the wallet's NEW state back to JSON. This is crucial because
+    //    spending UTXOs and creating change modifies the wallet's state.
+    let updated_wallet_json = serde_json::to_string(&wallet).unwrap();
+
+    // 5. Create a result object to send back to JavaScript, containing
+    //    both the new transaction and the updated wallet state.
+    #[derive(Serialize)]
+    struct TxCreationResult {
+        transaction: Transaction,
+        updated_wallet_json: String,
+    }
+
+    let result = TxCreationResult {
+        transaction,
+        updated_wallet_json,
+    };
+
+    serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
+}
 
 
 
@@ -579,7 +728,13 @@ pub fn compute_stake_vdf(validator_id: String) -> Result<JsValue, JsValue> {
 
 // Activate stake with VDF proof
 #[wasm_bindgen]
-pub fn activate_stake_with_vdf(validator_id: String, vdf_proof_js: JsValue) -> Result<(), JsValue> {
+pub fn activate_stake_with_vdf(
+    validator_id: String,
+    vdf_proof_js: JsValue,
+    spend_public_key: Vec<u8>,   // 32-bytes compressed Ristretto
+    spend_private_key: Vec<u8>,   // 32-bytes private key
+) -> Result<(), JsValue> {
+
     let vdf_result: serde_json::Value = serde_wasm_bindgen::from_value(vdf_proof_js)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse VDF result: {}", e)))?;
 
@@ -605,13 +760,6 @@ pub fn activate_stake_with_vdf(validator_id: String, vdf_proof_js: JsValue) -> R
         return Err(JsValue::from_str("Invalid VDF proof"));
     }
     
-    // Get validator's public key from identity store
-    let identities = WALLET_IDENTITIES.lock().unwrap();
-    let identity = identities.get(&validator_id)
-        .ok_or_else(|| JsValue::from_str("Validator identity not found"))?;
-    let public_key = identity.public_key.clone();
-    drop(identities);
-
     // Create locked stake
     let locked_stake = VDFLockedStake {
         stake_tx: stake_tx.clone(),
@@ -620,11 +768,12 @@ pub fn activate_stake_with_vdf(validator_id: String, vdf_proof_js: JsValue) -> R
         activation_time: js_sys::Date::now() as u64,
     };
 
-    // Add to validators with public key
+    // Add to validators with BOTH public and private keys
     let mut validators = VALIDATORS.lock().unwrap();
     let validator = validators.entry(validator_id.clone()).or_insert(Validator {
         id: validator_id.clone(),
-        public_key,  // Use the identity public key
+        public_key: spend_public_key,
+        private_key: spend_private_key,  // store private key for signing
         locked_stakes: Vec::new(),
         total_locked: 0,
         active: true,
@@ -645,7 +794,11 @@ pub fn activate_stake_with_vdf(validator_id: String, vdf_proof_js: JsValue) -> R
 
 // Vote for a block (only with active VDF-locked stake)
 #[wasm_bindgen]
-pub fn vote_for_block(validator_id: String) -> Result<JsValue, JsValue> {
+pub fn vote_for_block(
+    validator_id: String,
+    spend_private_key: Vec<u8>,
+    selected_block_hash: String, // explicitly pass selected block
+) -> Result<JsValue, JsValue> {
     use curve25519_dalek::scalar::Scalar;
     
     let validators = VALIDATORS.lock().unwrap();
@@ -687,28 +840,41 @@ pub fn vote_for_block(validator_id: String) -> Result<JsValue, JsValue> {
                 drop(chain);
                 drop(manager);
                 
-                // Get validator's private key
-                let identities = WALLET_IDENTITIES.lock().unwrap();
-                let identity = identities.get(&validator_id)
-                    .ok_or_else(|| JsValue::from_str("Validator identity not found"))?;
-                let private_key_bytes = identity.private_key.clone();
-                drop(identities);
-                
+                // Get validator's SPEND private key for signing
+                let private_key_bytes = spend_private_key;
+
+                    
+
+
                 // Convert private key bytes to Scalar
                 let mut key_array = [0u8; 32];
                 key_array.copy_from_slice(&private_key_bytes);
                 let private_key = Scalar::from_bytes_mod_order(key_array);
                 
-                // Compute voting VDF (calibrated for ~4 minutes)
-                log(&format!("[RUST] Computing voting VDF for validator {}", validator_id));
-                let vote_input = format!("{}||{}", validator_id, candidate_hash);
-                let vote_iterations = 10_000; //240 * 100_000; // 24,000,000 iterations for ~4 minutes
+                // Use the calibrated VDF speed to calculate the iterations for the vote VDF.
+                // The whitepaper specifies this VDF should take approximately 4 minutes (240 seconds).
+
+                let calibrated_speed = *constants::VDF_ITERATIONS_PER_SECOND.lock().unwrap();
+                let vote_duration_seconds = 240; // 4 minutes as per the whitepaper
+                let vote_iterations = calibrated_speed * vote_duration_seconds;
+
+                log(&format!("[RUST] Starting {}-second vote VDF ({} iterations) for block {}",
+                    vote_duration_seconds, vote_iterations, &selected_block_hash[..8]));
+                
+                let vote_input = format!("{}||{}", validator_id, selected_block_hash);
+
                 
                 let vdf = VDF::new(2048).map_err(|e| JsValue::from_str(&e.to_string()))?;
                 let start_time = js_sys::Date::now();
+                
                 let vote_vdf_proof = compute_vdf_proof(vote_input.as_bytes(), vote_iterations, &vdf.modulus)
                     .map_err(|e| JsValue::from_str(&e))?;
+                    
                 let compute_time = js_sys::Date::now() - start_time;
+                
+                if compute_time < 180000 { // Less than 3 minutes
+                    log(&format!("[RUST] WARNING: VDF too fast! {}ms - increase iterations", compute_time));
+                }
                 log(&format!("[RUST] VDF computation took {}ms", compute_time));
                 
                 // Create vote message
@@ -859,228 +1025,35 @@ pub fn get_validators() -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&validator_list)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
-// Create a wallet transaction
-#[wasm_bindgen]
-pub fn create_wallet_transaction(
-    from_wallet_id: String,
-    to_wallet_id: String,
-    amount: u64,
-    fee: u64,
-) -> Result<JsValue, JsValue> {
-    use curve25519_dalek::scalar::Scalar;
-    use curve25519_dalek::constants::RISTRETTO_BASEPOINT_TABLE;
-    
-    log(&format!("[RUST] Creating MW tx: {} -> {} for {} (fee: {})", from_wallet_id, to_wallet_id, amount, fee));
-    
-    let mut wallets = WALLET_OUTPUTS.lock().unwrap();
-
-    // First, collect all the data we need from sender_outputs
-    let (selected_indices, inputs_for_tx, input_blinding_factors, total_available) = {
-        let sender_outputs = wallets.get(&from_wallet_id)
-            .ok_or_else(|| JsValue::from_str("Sender wallet not found"))?;
-
-        let total_needed = amount + fee;
-        let mut selected_indices = Vec::new();
-        let mut inputs_for_tx = Vec::new();
-        let mut input_blinding_factors: Vec<Scalar> = Vec::new();
-        let mut total_available = 0;
-
-        for (index, output) in sender_outputs.iter().enumerate() {
-            if !output.spent && total_available < total_needed {
-                total_available += output.value;
-                let blinding = Scalar::from_bytes_mod_order(
-                    output.blinding_factor.as_slice().try_into()
-                        .map_err(|_| JsValue::from_str("Invalid blinding factor length"))?
-                );
-                input_blinding_factors.push(blinding);
-                inputs_for_tx.push(TransactionInput { commitment: output.commitment.clone() });
-                selected_indices.push(index);
-            }
-        }
-
-        if total_available < total_needed {
-            return Err(JsValue::from_str("Insufficient funds."));
-        }
-
-        (selected_indices, inputs_for_tx, input_blinding_factors, total_available)
-    };
-
-    let mut outputs_for_tx = Vec::new();
-    let mut output_blinding_factors: Vec<Scalar> = Vec::new();
-
-    // Create recipient output
-    let recipient_blinding = mimblewimble::generate_secret_key();
-    let _recipient_commit = mimblewimble::commit(amount, &recipient_blinding)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let (recipient_proof, recipient_commit_compressed) = mimblewimble::create_range_proof(amount, &recipient_blinding)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-    outputs_for_tx.push(TransactionOutput {
-        commitment: recipient_commit_compressed.to_bytes().to_vec(),
-        range_proof: recipient_proof.to_bytes(),
-    });
-    output_blinding_factors.push(recipient_blinding);
-    
-    let recipient_wallet_output = WalletOutput {
-        value: amount,
-        blinding_factor: recipient_blinding.to_bytes().to_vec(),
-        commitment: recipient_commit_compressed.to_bytes().to_vec(),
-        spent: false,
-    };
-
-    // Handle change
-    let change_amount = total_available - (amount + fee);
-    let mut change_wallet_output: Option<WalletOutput> = None;
-    if change_amount > 0 {
-        let change_blinding = mimblewimble::generate_secret_key();
-        let _change_commit = mimblewimble::commit(change_amount, &change_blinding)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        let (change_proof, change_commit_compressed) = mimblewimble::create_range_proof(change_amount, &change_blinding)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-        outputs_for_tx.push(TransactionOutput {
-            commitment: change_commit_compressed.to_bytes().to_vec(),
-            range_proof: change_proof.to_bytes(),
-        });
-        output_blinding_factors.push(change_blinding);
-        
-        change_wallet_output = Some(WalletOutput {
-            value: change_amount,
-            blinding_factor: change_blinding.to_bytes().to_vec(),
-            commitment: change_commit_compressed.to_bytes().to_vec(),
-            spent: false,
-        });
-    }
-
-    // Calculate kernel blinding (much simpler with Scalar arithmetic!)
-    let sum_outputs: Scalar = output_blinding_factors.iter().sum();
-    let sum_inputs: Scalar = input_blinding_factors.iter().sum();
-    let kernel_blinding = sum_outputs - sum_inputs;
-
-    // Create kernel
-    let excess_pubkey = &kernel_blinding * RISTRETTO_BASEPOINT_TABLE;
-    let kernel_message_hash: [u8; 32] = Sha256::digest(format!("fee:{}", fee)).into();
-    let (challenge, signature_s) = mimblewimble::create_schnorr_signature(kernel_message_hash, &kernel_blinding)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-    // Serialize signature
-    let mut signature_bytes = Vec::new();
-    signature_bytes.extend_from_slice(&challenge.to_bytes());
-    signature_bytes.extend_from_slice(&signature_s.to_bytes());
-
-    let kernel = TransactionKernel {
-        excess: excess_pubkey.compress().to_bytes().to_vec(),
-        signature: signature_bytes,
-        fee,
-    };
-
-    let final_tx = Transaction {
-        inputs: inputs_for_tx,
-        outputs: outputs_for_tx,
-        kernel,
-    };
-
-    // Now update wallet states
-    // Mark selected outputs as spent
-    if let Some(sender_outputs) = wallets.get_mut(&from_wallet_id) {
-        for &index in &selected_indices {
-            sender_outputs[index].spent = true;
-        }
-        
-        // Add change output to sender's wallet
-        if let Some(change) = change_wallet_output {
-            sender_outputs.push(change);
-        }
-    }
-    
-    // Add recipient output
-    wallets.entry(to_wallet_id).or_default().push(recipient_wallet_output);
-    
-    // Add to transaction pool
-    let mut pool = TX_POOL.lock().unwrap();
-    pool.pending.push(final_tx.clone());
-    pool.fee_total += fee;
-
-    log("[RUST] Transaction created and added to pool successfully.");
-    serde_wasm_bindgen::to_value(&final_tx).map_err(|e| JsValue::from_str(&e.to_string()))
-}
 
 
-// Initialize wallet with some coins (for testing)
-#[wasm_bindgen]
-pub fn init_wallet(wallet_id: String, initial_balance: u64) -> Result<(), JsValue> {
-    use curve25519_dalek::constants::RISTRETTO_BASEPOINT_TABLE;
-    
-    // Generate identity key pair
-    let identity_private = mimblewimble::generate_secret_key();
-    let identity_public = &identity_private * RISTRETTO_BASEPOINT_TABLE;
-    
-    let wallet_identity = WalletIdentity {
-        private_key: identity_private.to_bytes().to_vec(),
-        public_key: identity_public.compress().to_bytes().to_vec(),
-    };
-    
-    // Store identity in global map
-    let mut identities = WALLET_IDENTITIES.lock().unwrap();
-    identities.insert(wallet_id.clone(), wallet_identity.clone());
-    drop(identities);
-    
-    // Create initial UTXO
-    let mut wallets = WALLET_OUTPUTS.lock().unwrap();
-    let blinding = mimblewimble::generate_secret_key();
-    let commitment = mimblewimble::commit(initial_balance, &blinding)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-    let output = WalletOutput {
-        value: initial_balance,
-        blinding_factor: blinding.to_bytes().to_vec(),
-        commitment: commitment.compress().to_bytes().to_vec(),
-        spent: false,
-    };
 
-    wallets.insert(wallet_id.clone(), vec![output.clone()]);
-    drop(wallets);
-
-    log(&format!("[RUST] Initialized wallet {} with {} coins and identity key", wallet_id, initial_balance));
-    Ok(())
-}
 
 // Get wallet balance
 #[wasm_bindgen]
-pub fn get_wallet_balance(wallet_id: String) -> Result<JsValue, JsValue> {
-    let wallets = WALLET_OUTPUTS.lock().unwrap();
+pub fn wallet_get_balance(wallet_json: &str) -> Result<u64, JsValue> {
+    // 1. Deserialize the wallet state passed from JavaScript.
+    let wallet: Wallet = serde_json::from_str(wallet_json)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-    let outputs = wallets.get(&wallet_id)
-        .ok_or_else(|| JsValue::from_str("Wallet not found"))?;
+    // 2. Call the internal balance() method on the Wallet struct.
+    //    This method simply sums the value of the UTXOs the wallet owns.
+    Ok(wallet.balance())
+}
 
-    let balance: u64 = outputs.iter()
-        .filter(|o| !o.spent)
-        .map(|o| o.value)
-        .sum();
 
-    let spent: u64 = outputs.iter()
-        .filter(|o| o.spent)
-        .map(|o| o.value)
-        .sum();
+#[wasm_bindgen]
+pub fn wallet_create() -> Result<String, JsValue> {
+    // 1. Create a new Wallet instance using the logic in wallet.rs
+    let wallet = Wallet::new();
 
-    #[derive(serde::Serialize)]
-    struct WalletInfo {
-        wallet_id: String,
-        balance: u64,
-        spent: u64,
-        num_outputs: usize,
-    }
-
-    let info = WalletInfo {
-        wallet_id,
-        balance,
-        spent,
-        num_outputs: outputs.len(),
-    };
-
-    serde_wasm_bindgen::to_value(&info)
+    // 2. Serialize the new wallet to a JSON string and return it.
+    // The JavaScript caller is now responsible for saving this string.
+    serde_json::to_string(&wallet)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
+
 
 // Get transaction pool
 #[wasm_bindgen]
@@ -1109,41 +1082,73 @@ pub fn mine_block_with_txs(
     height: u64,
     prev_hash: String,
     miner_id: String,
+    miner_pubkey_bytes: Vec<u8>, 
     difficulty: u8,
     max_attempts: u64,
-    vdf_proof_js: JsValue,  // Add this parameter
+    vdf_proof_js: JsValue,
 ) -> Result<JsValue, JsValue> {
     log(&format!("[RUST] Starting PoW mining with transactions. Height: {}, Difficulty: {}", height, difficulty));
 
-    // Deserialize the VDF proof
     let vdf_proof: VDFProof = serde_wasm_bindgen::from_value(vdf_proof_js)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize VDF proof: {}", e)))?;
     
-    // Get transactions from pool
-    let mut pool = TX_POOL.lock().unwrap();
-    let transactions = pool.pending.clone();
+    // --- FIX: Clone transactions from the pool instead of clearing it ---
+    let pool = TX_POOL.lock().unwrap();
+    let transactions_to_mine = pool.pending.clone();
     let fee_total = pool.fee_total;
-
-    // Calculate dynamic rewards
-    let chain = BLOCKCHAIN.lock().unwrap();
-    let last_block = chain.get_latest_block();
-    let participation_rate = if let Some(ref finalization) = last_block.finalization_data {
-        finalization.total_stake_voted as f64 / finalization.total_stake_active.max(1) as f64
+    drop(pool); // Release the lock
+    
+    let base_reward = 50_000_000u64; // base reward in smallest units
+    let difficulty_bonus = if difficulty > 1 {
+        // log2(D) * some_factor, ensure it's an integer operation
+        let factor = 10_000_000u64; // 10 coins bonus per difficulty bit
+        (difficulty as f64).log2().round() as u64 * factor
     } else {
-        1.0
+        0
     };
-    drop(chain);
+    let miner_reward = base_reward + difficulty_bonus + fee_total;
+    
+    // --- FIX: Correctly drain pending rewards ---
+    let pending_rewards = {
+        let mut rewards = PENDING_REWARDS.lock().unwrap();
+        rewards.drain(..).collect::<Vec<_>>()
+    };
+    
+    let mut all_rewards_with_ids = pending_rewards;
+    all_rewards_with_ids.push((miner_id.clone(), miner_reward));
 
-    let total_block_reward = calculate_dynamic_block_reward(difficulty, participation_rate);
-    let bonus_portion = if total_block_reward > 50 { total_block_reward - 50 } else { 0 };
-    let staker_reward = 50 / 3 + bonus_portion;
-    let miner_reward = total_block_reward - staker_reward + fee_total;
+    let mut rewards_with_keys: Vec<(Vec<u8>, u64)> = Vec::new();
+    let validators = VALIDATORS.lock().unwrap();
 
+    for (id, amount) in all_rewards_with_ids {
+        let pub_key = if id == miner_id {
+            // Use the public key passed into the function for the miner's reward
+            Some(miner_pubkey_bytes.clone()) 
+        } else {
+            // Look up the public key for staking rewards
+            validators.get(&id).map(|v| v.public_key.clone())
+        };
+
+        if let Some(key) = pub_key {
+            rewards_with_keys.push((key, amount));
+        } else {
+            log(&format!("[RUST_WARN] Could not find public key for reward recipient '{}'. Skipping reward.", id));
+        }
+    }
+
+    // Create a coinbase transaction that sends stealth outputs
+    let coinbase_tx = Transaction::create_coinbase(rewards_with_keys) // <-- Now passes the correct type
+        .map_err(|e| JsValue::from_str(&format!("Failed to create coinbase: {:?}", e)))?;
+    
+    let mut final_txs = vec![coinbase_tx];
+    final_txs.extend(transactions_to_mine.clone());
+
+    
     let mut block = Block {
         height,
         prev_hash,
-        transactions: transactions.clone(),
-        vdf_proof,  // Use the passed VDF proof
+        transactions: final_txs, // Use the combined list
+        vdf_proof,
         timestamp: js_sys::Date::now() as u64,
         nonce: 0,
         miner_id: miner_id.clone(),
@@ -1151,47 +1156,31 @@ pub fn mine_block_with_txs(
         finalization_data: None,
     };
 
-    // Apply cut-through before mining
     block.apply_cut_through()
         .map_err(|e| JsValue::from_str(&format!("Cut-through failed: {}", e)))?;
     
-    log(&format!("[RUST] After cut-through: {} transactions", block.transactions.len()));
+    log(&format!("[RUST] Mining block with {} transactions (including coinbase)", block.transactions.len()));
 
-    // Mine the block
     for attempt in 0..max_attempts {
         block.nonce = attempt;
         if block.is_valid_pow() {
             log(&format!("[RUST] Found valid PoW! Nonce: {}, Hash: {}", attempt, block.hash()));
 
-            // Clear transactions from pool
-            if !transactions.is_empty() {
-                pool.pending.clear();
-                pool.fee_total = 0;
+            // --- FIX: Return the block and used transactions together ---
+            #[derive(Serialize)]
+            struct MiningResult {
+                block: Block,
+                used_transactions: Vec<Transaction>,
             }
-
-            // Create miner reward
-            let mut wallets = WALLET_OUTPUTS.lock().unwrap();
-            let miner_blinding = mimblewimble::generate_secret_key();
-            let miner_commitment = mimblewimble::commit(miner_reward, &miner_blinding)
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-            let miner_coinbase_output = WalletOutput {
-                value: miner_reward,
-                blinding_factor: miner_blinding.to_bytes().to_vec(),
-                commitment: miner_commitment.compress().to_bytes().to_vec(),
-                spent: false,
+            
+            let result = MiningResult {
+                block,
+                // Return the original list of txs from the pool, not the cut-through version
+                used_transactions: transactions_to_mine, 
             };
 
-            wallets.entry(miner_id.clone()).or_default().push(miner_coinbase_output);
-            
-            log(&format!("[RUST] Miner {} earned {} coins", miner_id, miner_reward));
-
-            return serde_wasm_bindgen::to_value(&block)
+            return serde_wasm_bindgen::to_value(&result)
                 .map_err(|e| JsValue::from_str(&e.to_string()));
-        }
-
-        if attempt % 10000 == 0 {
-            log(&format!("[RUST] Mining attempt {}...", attempt));
         }
     }
 
@@ -1199,68 +1188,6 @@ pub fn mine_block_with_txs(
 }
 
 
-// Helper function to distribute staker rewards
-fn calculate_dynamic_block_reward(difficulty: u8, participation_rate: f64) -> u64 {
-    let base_reward = 50u64;
-    
-    // Difficulty bonus: log2(difficulty)
-    let difficulty_bonus = if difficulty > 1 {
-        (difficulty as f64).log2() as u64
-    } else {
-        0
-    };
-    
-    // Participation penalty: reduce rewards if participation is low
-    let participation_multiplier = if participation_rate > 0.8 {
-        1.0 // Full rewards above 80% participation
-    } else {
-        participation_rate // Linear reduction below 80%
-    };
-    
-    let total_reward = base_reward + difficulty_bonus;
-    (total_reward as f64 * participation_multiplier) as u64
-}
-
-fn distribute_staker_rewards(block_height: u64, total_reward: u64) -> Result<(), JsValue> {
-    let _validators = VALIDATORS.lock().unwrap(); // Added underscore to fix warning
-    let chain = BLOCKCHAIN.lock().unwrap();
-    let _current_height = chain.current_height; // Added underscore to fix warning
-    
-    // Find the block we're distributing rewards for
-    let block = chain.blocks.iter()
-        .find(|b| b.height == block_height)
-        .ok_or_else(|| JsValue::from_str("Block not found"))?;
-    
-    if let Some(ref finalization_data) = block.finalization_data {
-        let mut wallets = WALLET_OUTPUTS.lock().unwrap();
-        
-        // Distribute rewards proportionally to voting stake
-        for vote in &finalization_data.votes {
-            let validator_reward = (total_reward * vote.stake_amount) / finalization_data.total_stake_voted;
-            
-            if validator_reward > 0 {
-                // Create reward output for validator
-                let reward_blinding = mimblewimble::generate_secret_key();
-                let reward_commitment = mimblewimble::commit(validator_reward, &reward_blinding)
-                    .map_err(|e| JsValue::from_str(&e.to_string()))?;
-                
-                let reward_output = WalletOutput {
-                    value: validator_reward,
-                    blinding_factor: reward_blinding.to_bytes().to_vec(),
-                    commitment: reward_commitment.compress().to_bytes().to_vec(),
-                    spent: false,
-                };
-                
-                wallets.entry(vote.validator_id.clone()).or_default().push(reward_output);
-                
-                log(&format!("[RUST] Validator {} earned {} coins for staking {} tokens", 
-                    vote.validator_id, validator_reward, vote.stake_amount));
-            }
-        }
-    }
-    
-    Ok(())
-}
 
 #[wasm_bindgen]
 pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
@@ -1527,16 +1454,7 @@ pub fn validate_and_sync_chain(chain_json: JsValue) -> Result<JsValue, JsValue> 
         local_chain.add_block(block.clone())
             .map_err(|e| JsValue::from_str(&format!("Failed to add block {}: {:?}", i, e)))?;
         
-        // Distribute staker rewards for this block
-        if let Some(ref finalization) = block.finalization_data {
-            // Calculate participation rate from finalization data
-            let participation_rate = finalization.total_stake_voted as f64 / finalization.total_stake_active.max(1) as f64;
-            
-            // Now pass both parameters
-            let total_reward = calculate_dynamic_block_reward(block.difficulty, participation_rate);
-            let staker_portion = total_reward / 3 + (total_reward - 50).max(0);
-            distribute_staker_rewards(block.height, staker_portion)?;
-        }
+ 
     }
     
     log(&format!("[RUST] Successfully synced and validated {} blocks", 
@@ -1544,84 +1462,89 @@ pub fn validate_and_sync_chain(chain_json: JsValue) -> Result<JsValue, JsValue> 
     
     Ok(JsValue::from_bool(true))
 }
-#[wasm_bindgen]
-pub fn get_wallet_data(wallet_id: String) -> Result<JsValue, JsValue> {
-    let wallets = WALLET_OUTPUTS.lock().unwrap();
-    let wallet_outputs = wallets.get(&wallet_id)
-        .ok_or_else(|| JsValue::from_str("Wallet not found"))?
-        .clone();
-    drop(wallets);
-    
-    let identities = WALLET_IDENTITIES.lock().unwrap();
-    let identity = identities.get(&wallet_id)
-        .ok_or_else(|| JsValue::from_str("Wallet identity not found"))?
-        .clone();
-    drop(identities);
-    
-    let wallet_data = WalletData {
-        version: 2,
-        identity,
-        outputs: wallet_outputs,
-        created_at: js_sys::Date::now() as u64,
-    };
 
-    serde_wasm_bindgen::to_value(&wallet_data)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
-}
+pub fn distribute_staker_rewards(
+    staker_reward: u64,
+    valid_votes: &Vec<crate::block::ValidatorVote>,
+    total_voted_stake: u64,
+) -> Result<(), JsValue> {
+    if staker_reward > 0 && !valid_votes.is_empty() && total_voted_stake > 0 {
+        let mut pending_rewards = PENDING_REWARDS.lock().unwrap();
 
-#[wasm_bindgen]
-pub fn restore_wallet(wallet_id: String, wallet_data_js: JsValue) -> Result<(), JsValue> {
-    let wallet_data: WalletData = serde_wasm_bindgen::from_value(wallet_data_js)
-        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize wallet data: {}", e)))?;
-    
-    // Validate version
-    if wallet_data.version != 2 {
-        return Err(JsValue::from_str(&format!("Unsupported wallet version: {}", wallet_data.version)));
+        for vote in valid_votes {
+            let validator_reward = (staker_reward as u128 * vote.stake_amount as u128 / total_voted_stake as u128) as u64;
+
+            if validator_reward > 0 {
+                pending_rewards.push((vote.validator_id.clone(), validator_reward));
+            }
+        }
     }
-    
-    // Validate identity key lengths
-    if wallet_data.identity.private_key.len() != 32 || wallet_data.identity.public_key.len() != 32 {
-        return Err(JsValue::from_str("Invalid identity key lengths"));
-    }
-    
-    // Restore identity
-    let mut identities = WALLET_IDENTITIES.lock().unwrap();
-    identities.insert(wallet_id.clone(), wallet_data.identity);
-    drop(identities);
-    
-    // Restore outputs
-    let mut wallets = WALLET_OUTPUTS.lock().unwrap();
-    wallets.insert(wallet_id, wallet_data.outputs);
-    drop(wallets);
-
     Ok(())
 }
+
+#[wasm_bindgen]
+pub fn wallet_get_data(wallet_json: &str) -> Result<JsValue, JsValue> {
+    let wallet: Wallet = serde_json::from_str(wallet_json)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    #[derive(Serialize)]
+    struct WalletData {
+        balance: u64,
+        utxo_count: usize,
+        scan_pub_key_hex: String,
+        spend_pub_key_hex: String,
+    }
+
+    let data = WalletData {
+        balance: wallet.balance(),
+        utxo_count: wallet.owned_utxos.len(),
+        scan_pub_key_hex: hex::encode(wallet.scan_pub.compress().to_bytes()),
+        spend_pub_key_hex: hex::encode(wallet.spend_pub.compress().to_bytes()),
+    };
+
+    serde_wasm_bindgen::to_value(&data).map_err(|e| e.into())
+}
+
+
 #[wasm_bindgen]
 pub fn get_current_difficulty() -> Result<u8, JsValue> {
     let chain = BLOCKCHAIN.lock().unwrap();
     Ok(chain.calculate_next_difficulty())
 }
 #[wasm_bindgen]
-pub fn check_and_report_double_votes(reporter_id: String) -> Result<JsValue, JsValue> {
-    let evidence_list = slashing::check_for_double_votes();
+pub fn check_and_report_violations(reporter_id: String) -> Result<JsValue, JsValue> {
+    let evidence_list = slashing::check_all_violations();
     
     if evidence_list.is_empty() {
-        log("[SLASHING] No double votes detected"); // Removed second parameter
-        return Ok(JsValue::from_str("No double votes found"));
+        log("[SLASHING] No violations detected");
+        return Ok(JsValue::from_str("No violations found"));
     }
     
     let mut slashed_count = 0;
+    let mut total_reward = 0;
     
     for evidence in evidence_list {
-        match slashing::process_slashing_evidence(evidence.clone(), &reporter_id) {
-            Ok(_) => {
-                log(&format!("[SLASHING] Successfully slashed validator {}", evidence.validator_id)); // Removed second parameter
+        match slashing::process_slashing_evidence(evidence.clone()) {
+            Ok(reward_amount) => {
+                let validator_id = match &evidence {
+                    slashing::SlashingEvidence::DoubleVote { validator_id, .. } => validator_id,
+                    slashing::SlashingEvidence::DishonestVoting { validator_id, .. } => validator_id,
+                };
+                log(&format!("[SLASHING] Successfully slashed validator {}", validator_id));
                 slashed_count += 1;
+                total_reward += reward_amount;
             }
             Err(e) => {
-                log(&format!("[SLASHING] Failed to slash {}: {}", evidence.validator_id, e)); // Removed second parameter
+                log(&format!("[SLASHING] Failed to process evidence: {}", e));
             }
         }
+    }
+
+    // Queue rewards for the reporter
+    if total_reward > 0 {
+        let mut rewards = PENDING_REWARDS.lock().unwrap();
+        rewards.push((reporter_id.clone(), total_reward));
+        log(&format!("[SLASHING] Queued {} total reward for reporter {}", total_reward, reporter_id));
     }
     
     Ok(JsValue::from_f64(slashed_count as f64))
@@ -1633,7 +1556,6 @@ pub fn report_double_vote(
     height: u64,
     block_hash1: String,
     block_hash2: String,
-    reporter_id: String
 ) -> Result<(), JsValue> {
     let votes = BLOCK_VOTES.lock().unwrap();
     
@@ -1669,7 +1591,7 @@ pub fn report_double_vote(
     
     drop(votes);
     
-    slashing::process_slashing_evidence(evidence, &reporter_id)
+    slashing::process_slashing_evidence(evidence)
         .map_err(|e| JsValue::from_str(&e))?;
     
     Ok(())
@@ -1791,4 +1713,265 @@ pub fn compute_block_vdf_proof(prev_hash: String) -> Result<JsValue, JsValue> {
     
     serde_wasm_bindgen::to_value(&vdf_proof)
         .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+// In lib.rs
+
+#[wasm_bindgen]
+pub fn create_candidate_commitment(
+    validator_id: String,
+    height: u64,
+    known_block_hashes: Vec<String>,
+) -> Result<JsValue, JsValue> {
+    // Get validator's private key
+    let validators = VALIDATORS.lock().unwrap();
+    let validator = validators.get(&validator_id)
+        .ok_or_else(|| JsValue::from_str("Validator not found"))?;
+    
+    // Sort hashes for deterministic commitment
+    let mut sorted_hashes = known_block_hashes;
+    sorted_hashes.sort();
+    sorted_hashes.dedup();
+    
+    // Create commitment
+    let commitment = CandidateSetCommitment {
+        validator_id: validator_id.clone(),
+        height,
+        candidate_hashes: sorted_hashes,
+        timestamp: js_sys::Date::now() as u64,
+        signature: vec![], // Will be filled next
+    };
+    
+    // Sign the commitment
+    let message = format!("{:?}", commitment);
+    let signature = sign_message(&message, &validator.private_key)?;
+    
+    let mut signed_commitment = commitment;
+    signed_commitment.signature = signature;
+    
+    // Store it
+    let mut commitments = CANDIDATE_COMMITMENTS.lock().unwrap();
+    let height_commitments = commitments.entry(height).or_insert_with(HashMap::new);
+    height_commitments.insert(validator_id, signed_commitment.clone());
+    
+    serde_wasm_bindgen::to_value(&signed_commitment)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn get_all_known_blocks_from_commitments(height: u64) -> Result<Vec<String>, JsValue> {
+    let commitments = CANDIDATE_COMMITMENTS.lock().unwrap();
+    let mut all_hashes = HashSet::new();
+    
+    if let Some(height_commitments) = commitments.get(&height) {
+        for (_, commitment) in height_commitments {
+            for hash in &commitment.candidate_hashes {
+                all_hashes.insert(hash.clone());
+            }
+        }
+    }
+    
+    Ok(all_hashes.into_iter().collect())
+}
+
+#[wasm_bindgen]
+pub fn select_best_block(height: u64) -> Result<String, JsValue> {
+    let blocks = CANDIDATE_BLOCKS.lock().unwrap();
+    
+    if let Some(height_blocks) = blocks.get(&height) {
+        // Find block with lowest hash (most work)
+        let best = height_blocks.values()
+            .min_by(|a, b| a.hash().cmp(&b.hash()))
+            .ok_or_else(|| JsValue::from_str("No blocks found"))?;
+        
+        Ok(best.hash())
+    } else {
+        Err(JsValue::from_str("No blocks at this height"))
+    }
+}
+
+#[wasm_bindgen]
+pub fn get_genesis_timestamp() -> u64 {
+    crate::constants::GENESIS_TIMESTAMP_MS
+}
+
+#[wasm_bindgen]
+pub fn wallet_get_stealth_address(wallet_json: &str) -> Result<String, JsValue> {
+    let wallet: Wallet = serde_json::from_str(wallet_json)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    
+    let scan_pub_bytes = wallet.scan_pub.compress().to_bytes();
+    
+    crate::address::encode_stealth_address(&scan_pub_bytes)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn create_transaction_to_stealth_address(
+    wallet_json: &str,
+    amount: u64,
+    fee: u64,
+    stealth_address: &str, // "pb1..." format
+) -> Result<JsValue, JsValue> {
+    // Decode stealth address to get recipient's scan public key
+    let scan_pub_bytes = crate::address::decode_stealth_address(stealth_address)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    
+    // Convert to hex for existing function
+    let scan_pub_hex = hex::encode(scan_pub_bytes);
+    
+    // Use existing transaction creation
+    wallet_create_transaction(wallet_json, amount, fee, &scan_pub_hex)
+}
+
+#[wasm_bindgen]
+pub fn sign_message(message: String, private_key_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
+    // Hash the message to create a 32-byte challenge
+    let message_hash: [u8; 32] = Sha256::digest(message.as_bytes()).into();
+
+    // Convert the private key bytes into a Scalar
+    let mut key_array = [0u8; 32];
+    key_array.copy_from_slice(&private_key_bytes);
+    let private_key = Scalar::from_bytes_mod_order(key_array);
+
+    // Create the Schnorr signature
+    let (challenge, s) = mimblewimble::create_schnorr_signature(message_hash, &private_key)
+        .map_err(|e| JsValue::from_str(&format!("Failed to create signature: {:?}", e)))?;
+    
+    // Serialize the signature into a single byte vector
+    let mut signature = Vec::with_capacity(64);
+    signature.extend_from_slice(&challenge.to_bytes());
+    signature.extend_from_slice(&s.to_bytes());
+
+    Ok(signature)
+}
+#[wasm_bindgen]
+pub fn create_final_selection(
+    validator_id: String,
+    height: u64,
+    selected_block_hash: String,
+) -> Result<JsValue, JsValue> {
+    // Get validator's private key for signing
+    let validators = VALIDATORS.lock().unwrap();
+    let validator = validators.get(&validator_id)
+        .ok_or_else(|| JsValue::from_str("Validator not found"))?;
+    
+    let private_key = validator.private_key.clone(); // Need to store this!
+    drop(validators);
+    
+    // Create final selection
+    let selection = FinalSelection {
+        validator_id: validator_id.clone(),
+        height,
+        selected_block_hash: selected_block_hash.clone(),
+        signature: vec![], // Will be filled next
+    };
+    
+    // Sign the selection
+    let message = format!("selection:{}:{}:{}", 
+        selection.validator_id, 
+        selection.height, 
+        selection.selected_block_hash
+    );
+    let signature = sign_message(message, private_key)?;
+    
+    let mut signed_selection = selection;
+    signed_selection.signature = signature;
+    
+    // Store it
+    let mut selections = FINAL_SELECTIONS.lock().unwrap();
+    let height_selections = selections.entry(height).or_insert_with(HashMap::new);
+    height_selections.insert(validator_id, signed_selection.clone());
+    
+    serde_wasm_bindgen::to_value(&signed_selection)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+// In lib.rs - Add these helper functions
+#[wasm_bindgen]
+pub fn store_candidate_commitment(
+    height: u64,
+    validator_id: String,
+    commitment_js: JsValue,
+) -> Result<(), JsValue> {
+    let commitment: CandidateSetCommitment = serde_wasm_bindgen::from_value(commitment_js)?;
+    
+    let mut commitments = CANDIDATE_COMMITMENTS.lock().unwrap();
+    let height_commitments = commitments.entry(height).or_insert_with(HashMap::new);
+    height_commitments.insert(validator_id, commitment);
+    
+    Ok(())
+}
+
+#[wasm_bindgen]
+pub fn store_final_selection(
+    height: u64,
+    validator_id: String,
+    selection_js: JsValue,
+) -> Result<(), JsValue> {
+    let selection: FinalSelection = serde_wasm_bindgen::from_value(selection_js)?;
+    
+    let mut selections = FINAL_SELECTIONS.lock().unwrap();
+    let height_selections = selections.entry(height).or_insert_with(HashMap::new);
+    height_selections.insert(validator_id, selection);
+    
+    Ok(())
+}
+
+#[wasm_bindgen]
+pub fn get_candidate_blocks_at_height(height: u64) -> Result<JsValue, JsValue> {
+    let blocks = CANDIDATE_BLOCKS.lock().unwrap();
+    let height_blocks = blocks.get(&height)
+        .map(|hb| hb.values().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    
+    serde_wasm_bindgen::to_value(&height_blocks)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn remove_transactions_from_pool(txs_to_remove_js: JsValue) -> Result<(), JsValue> {
+    let transactions: Vec<Transaction> = serde_wasm_bindgen::from_value(txs_to_remove_js)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let mut pool = TX_POOL.lock().unwrap();
+
+    // Create a set of hashes to remove for efficient lookup
+    let hashes_to_remove: std::collections::HashSet<String> = transactions.iter().map(|tx| tx.hash()).collect();
+
+    let initial_count = pool.pending.len();
+
+    // Retain only the transactions that are NOT in the removal set
+    pool.pending.retain(|tx| !hashes_to_remove.contains(&tx.hash()));
+
+    // Recalculate total fees
+    pool.fee_total = pool.pending.iter().map(|tx| tx.kernel.fee).sum();
+
+    let removed_count = initial_count - pool.pending.len();
+    log(&format!("[TX_POOL] Removed {} transactions from the pool.", removed_count));
+
+    Ok(())
+}
+/// Runs a raw VDF squaring loop for a specified number of iterations and returns the time taken in milliseconds.
+/// This is used for calibration from the JS side.
+#[wasm_bindgen]
+pub fn run_vdf_benchmark(iterations: u64) -> Result<f64, JsValue> {
+    let vdf = VDF::new(2048).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let mut x = num_bigint::BigUint::from(2u32); // Simple starting number
+    let modulus = &*vdf.modulus;
+
+    let start_time = Date::now();
+
+    for _ in 0..iterations {
+        x = (&x * &x) % modulus;
+    }
+
+    let end_time = Date::now();
+    Ok(end_time - start_time)
+}
+
+/// Sets the globally accessible calibrated VDF speed.
+#[wasm_bindgen]
+pub fn set_calibrated_vdf_speed(iterations_per_second: u64) {
+    let mut vdf_speed = constants::VDF_ITERATIONS_PER_SECOND.lock().unwrap();
+    *vdf_speed = iterations_per_second;
+    log(&format!("[RUST] VDF speed calibrated and set to {} iterations/sec", iterations_per_second));
 }

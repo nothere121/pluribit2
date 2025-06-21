@@ -7,9 +7,9 @@
   "scripts": {
     "build-p2p": "webpack --config webpack.config.cjs",
     "build-wasm": "wasm-pack build --target web",
+    "build-wasm-opt": "wasm-pack build --target web && wasm-opt -O4 -o pkg/pluribit_core_bg.wasm pkg/pluribit_core_bg.wasm",
     "build": "npm run build-wasm && npm run build-p2p",
-    "serve": "python3 -m http.server 8000",
-    "bootstrap": "node bootstrap-node.js"
+    "serve": "python3 -m http.server 8000"
   },
   "keywords": [],
   "author": "",

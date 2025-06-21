@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use lazy_static::lazy_static;
 use serde::{Serialize, Deserialize};
 use crate::UTXOSnapshot;
+use crate::constants
 
 lazy_static! {
     /// Global UTXO set: maps compressed commitment bytes to their TransactionOutput
@@ -61,23 +62,24 @@ impl Blockchain {
             .expect("blockchain always has at least the genesis block")
     }
 
-    /// Retarget every 144 blocks toward 40s per block
+    /// Retarget every 144 blocks toward 20m per block
     pub fn calculate_next_difficulty(&self) -> u8 {
-        const ADJUSTMENT_INTERVAL: u64 = 144;
-        const TARGET_BLOCK_TIME_MS: u64 = 40_000; // Change from u128 to u64
-
-        if self.current_height == 0
-            || (self.current_height + 1) % ADJUSTMENT_INTERVAL != 0
+         if self.current_height == 0
+            || (self.current_height + 1) % constants::DIFFICULTY_ADJUSTMENT_INTERVAL != 0
         {
             return self.current_difficulty;
         }
 
-        let start_height = self.current_height.saturating_sub(ADJUSTMENT_INTERVAL - 1);
+        let start_height = self.current_height.saturating_sub(constants::DIFFICULTY_ADJUSTMENT_INTERVAL - 1);
+        
         let start_block = &self.blocks[start_height as usize];
         let end_block = &self.blocks[self.current_height as usize];
 
         let actual_time = end_block.timestamp - start_block.timestamp;
-        let expected_time = ADJUSTMENT_INTERVAL * TARGET_BLOCK_TIME_MS; // Now both are u64
+        
+        // Calculate the expected time using the constants, converting seconds to milliseconds
+        let expected_time = constants::DIFFICULTY_ADJUSTMENT_INTERVAL * (constants::TARGET_BLOCK_TIME * 1000);
+
 
         let mut new_diff = self.current_difficulty;
         if actual_time < expected_time / 2 {
@@ -145,12 +147,15 @@ impl Blockchain {
 
         // 7. Append block & update maps/height
         let h = block.hash();
+        // We need to keep a reference to the block before it's moved into the map
+        //let new_block_ref = block.clone(); 
         self.blocks.push(block.clone());
         self.block_by_hash.insert(h, block);
         self.current_height += 1;
 
         // 8. Retarget difficulty if needed
         self.current_difficulty = self.calculate_next_difficulty();
+
 
         Ok(())
     }

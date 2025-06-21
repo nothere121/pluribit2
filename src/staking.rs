@@ -87,3 +87,55 @@ pub fn calculate_time_weighted_stake(stake: &VDFLockedStake) -> u64 {
     let weight_factor = 1.0 + (stake.stake_tx.lock_duration as f64 / 365.0);
     (stake.stake_tx.stake_amount as f64 * weight_factor) as u64
 }
+
+
+/// Allows a validator to unstake early, burning a portion of their stake.
+/// Returns the amount of stake that was burned.
+pub fn unstake_early(validator_id: &str, stake_commitment_hash: &str, current_height: u64) -> Result<u64, String> {
+    let mut vals = VALIDATORS.lock().unwrap();
+    let validator = vals.get_mut(validator_id)
+        .ok_or_else(|| "Validator not found".to_string())?;
+
+    // Find the specific stake to remove
+    let stake_index = validator.locked_stakes.iter().position(|s| {
+        // A unique identifier for a stake would be ideal, here we use a hash of its data
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(s.stake_tx.block_hash.as_bytes());
+        hasher.update(&s.stake_tx.stake_amount.to_le_bytes());
+        hex::encode(hasher.finalize()) == stake_commitment_hash
+    }).ok_or_else(|| "Specific stake lock not found for this validator".to_string())?;
+
+    let stake = &validator.locked_stakes[stake_index];
+
+    // Ensure it's not already expired
+    if current_height >= stake.unlock_height {
+        return Err("Cannot early-unstake an expired lock. It should be pruned automatically.".to_string());
+    }
+
+    // Calculate penalty based on whitepaper formula (Definition 10)
+    let total_duration = stake.stake_tx.lock_duration;
+    let served_duration = current_height.saturating_sub(stake.stake_tx.lock_height);
+    let max_penalty_rate = 0.50; // 50% max penalty rate from paper
+
+    let time_remaining_ratio = 1.0 - (served_duration as f64 / total_duration as f64);
+    let penalty_rate = time_remaining_ratio * max_penalty_rate;
+
+    let staked_amount = stake.stake_tx.stake_amount;
+    let burn_penalty = (staked_amount as f64 * penalty_rate) as u64;
+
+    // The amount to be returned to the user (this would require a transaction)
+    let return_amount = staked_amount - burn_penalty;
+
+    // Remove the stake and update validator's total
+    validator.locked_stakes.remove(stake_index);
+    validator.total_locked = validator.total_locked.saturating_sub(staked_amount);
+
+    log(&format!(
+        "[STAKING] Early unstake for {}. Original: {}, Returned: {}, Burned: {}",
+        validator_id, staked_amount, return_amount, burn_penalty
+    ));
+
+    // For now, we just burn the funds. Returning them would require a new transaction type.
+    // The burned amount is effectively removed from the total supply.
+    Ok(burn_penalty)
+}

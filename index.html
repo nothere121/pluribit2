@@ -193,9 +193,23 @@
                 <button id="logoutWalletBtn">Lock Wallet</button>
                 <hr style="margin: 1.5rem 0; border: 1px solid #f0f0f0;">
                 <div class="grid-container">
+                    <div class="card" id="wallet-address-display">
+                        <h4>Your Stealth Address</h4>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <code id="stealth-address-code" style="flex: 1; padding: 10px; background: #f0f0f0; border-radius: 4px; font-size: 0.9em; word-break: break-all;">
+                                Loading...
+                            </code>
+                            <button id="copy-address-btn" style="flex-shrink: 0;">Copy</button>
+                        </div>
+                        <p style="font-size: 0.85em; color: #666; margin-top: 10px;">
+                            ⚡️ Share this address to receive payments<br>
+                            🔒 Each payment creates a unique, unlinkable output<br>
+                            🎭 Your privacy is protected by default
+                        </p>
+                    </div>
                     <div class="card">
                         <h4>Send Transaction</h4>
-                        <input type="text" id="txTo" placeholder="Recipient Wallet Name">
+                        <input type="text" id="txTo" placeholder="Recipient Address (pb1...)">
                         <input type="number" id="txAmount" placeholder="Amount">
                         <input type="number" id="txFee" placeholder="Fee" value="1">
                         <button id="sendTxBtn">Send Transaction</button>
@@ -262,8 +276,8 @@
             </div>
             <div class="card">
                 <h4>Slashing Monitor</h4>
-                <p>Check for and report double voting violations</p>
-                <button id="checkDoubleVotesBtn">Check for Double Votes</button>
+                    <p>Check for and report voting violations</p>
+                    <button id="checkDoubleVotesBtn">Check for Violations</button>
                 <p id="slashingStatus"></p>
             </div>
         </div>
@@ -310,6 +324,9 @@
             txAmount: document.getElementById('txAmount'),
             txFee: document.getElementById('txFee'),
             sendTxBtn: document.getElementById('sendTxBtn'),
+            stealthAddressCode: document.getElementById('stealth-address-code'), 
+            copyAddressBtn: document.getElementById('copy-address-btn'),   
+            
             // Mining Tab
             minerId: document.getElementById('minerId'),
             startMiningBtn: document.getElementById('startMiningBtn'),
@@ -382,6 +399,12 @@
                 case 'walletInitialized':
                     log(`Wallet '${payload.walletId}' initialized. Keyfile download will begin.`, 'info');
                     break;
+                case 'walletAddress':
+                    if (payload.walletId === state.currentWalletId) {
+                        elements.stealthAddressCode.textContent = payload.address;                        
+                        elements.copyAddressBtn.onclick = () => copyAddress(payload.address);
+                    }
+                    break;
                 case 'downloadWalletFile':
                     handleDownloadWalletFile(payload);
                     activateWalletDashboard(payload.fileName.replace('pluribit-wallet-', '').replace('.json', ''));
@@ -424,13 +447,13 @@
                     log('Stake has been activated! You are now eligible to validate.', 'success');
                     elements.startValidatingBtn.disabled = false;
                     break;
-                case 'doubleVotesChecked':
+                case 'violationsChecked':
                     if (payload.slashedCount > 0) {
                         elements.slashingStatus.textContent = `Found and slashed ${payload.slashedCount} violators!`;
                         elements.slashingStatus.style.color = 'var(--danger-color)';
-                        updateWalletBalance(state.currentWalletId); // Update to show reward
+                        updateWalletBalance(state.currentWalletId);
                     } else {
-                        elements.slashingStatus.textContent = 'No double votes detected';
+                        elements.slashingStatus.textContent = 'No violations detected';
                         elements.slashingStatus.style.color = 'var(--primary-color)';
                     }
                     break;
@@ -543,6 +566,7 @@
 
             elements.walletSetupView.classList.add('hidden');
             elements.walletDashboardView.classList.remove('hidden');
+            worker.postMessage({ action: 'getWalletAddress', walletId });
 
             // Enable other tabs
             ['tab-mining', 'tab-staking', 'tab-explorer'].forEach(id => document.getElementById(id).disabled = false);
@@ -554,7 +578,13 @@
         function updateWalletBalance(walletId) {
             worker.postMessage({ action: 'getWalletBalance', walletId });
         }
-
+        function copyAddress(address) {
+            navigator.clipboard.writeText(address).then(() => {
+                log('Address copied to clipboard!', 'success');
+            }, () => {
+                log('Failed to copy address.', 'error');
+            });
+        }
         function handleDownloadWalletFile(payload) {
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload.data, null, 2));
             const downloadAnchorNode = document.createElement('a');
@@ -631,12 +661,12 @@
         };
         elements.checkDoubleVotesBtn.onclick = () => {
             if (!state.currentWalletId) {
-                log('Please load a wallet first to report double votes', 'error');
+                log('Please load a wallet first to report violations', 'error');
                 return;
             }
             
-            log('Checking for double votes...', 'info');
-            worker.postMessage({ action: 'checkDoubleVotes', reporterId: state.currentWalletId });
+            log('Checking for violations...', 'info');
+            worker.postMessage({ action: 'checkViolations', reporterId: state.currentWalletId });
         };
         // --- VIEW UPDATERS ---
         function handleConsensusUpdate(payload) {

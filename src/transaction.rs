@@ -9,6 +9,8 @@ use sha2::{Digest, Sha256};
 use crate::mimblewimble;
 use crate::blockchain::UTXO_SET;
 use curve25519_dalek::traits::Identity;
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_TABLE;
+
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct TransactionInput {
@@ -19,6 +21,8 @@ pub struct TransactionInput {
 pub struct TransactionOutput {
     pub commitment: Vec<u8>,
     pub range_proof: Vec<u8>,
+    pub ephemeral_key: Option<Vec<u8>>, // Stores the sender's ephemeral public key R
+    pub stealth_payload: Option<Vec<u8>>, // Stores the encrypted nonce || cipher
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -37,6 +41,25 @@ pub struct Transaction {
 
 
 impl TransactionKernel {
+    
+    pub fn new(blinding: Scalar, fee: u64) -> Result<Self, String> {
+        let excess = mimblewimble::derive_public_key(&blinding);
+        let message_hash: [u8; 32] = Sha256::digest(format!("fee:{}", fee).as_bytes()).into();
+
+        let (challenge, s) = mimblewimble::create_schnorr_signature(message_hash, &blinding)
+            .map_err(|e| e.to_string())?;
+
+        let mut signature = Vec::with_capacity(64);
+        signature.extend_from_slice(&challenge.to_bytes());
+        signature.extend_from_slice(&s.to_bytes());
+
+        Ok(TransactionKernel {
+            excess: excess.compress().to_bytes().to_vec(),
+            signature,
+            fee,
+        })
+    }
+    
     /// Properly aggregate multiple kernels with signature aggregation
     pub fn aggregate(kernels: &[TransactionKernel]) -> BitQuillResult<TransactionKernel> {
         
@@ -182,23 +205,62 @@ impl Transaction {
         Ok(true)
     }
 
-    /// Convenience stub for coinbase (no inputs, single output, zero fee)
-    pub fn create_coinbase(_miner_id: &str, amount: u64) -> Self {
-        let blinding = mimblewimble::generate_secret_key();
-        let (proof, commitment) = mimblewimble::create_range_proof(amount, &blinding)
-            .unwrap();
-        Transaction {
-            inputs: vec![],
-            outputs: vec![TransactionOutput {
+    /// Create a coinbase transaction (no inputs, only outputs)
+    pub fn create_coinbase(rewards: Vec<(Vec<u8>, u64)>) -> BitQuillResult<Self> {
+        use crate::stealth;
+        use rand::rngs::OsRng;
+        
+        let mut outputs = Vec::new();
+        //let mut total_reward = 0u64;
+        let mut blinding_sum = Scalar::default();
+        
+        // Create stealth output for each recipient
+        for (recipient_pub_key_bytes, amount) in rewards {
+            
+            // Parse the public key bytes that were passed in
+            let scan_pub_compressed = CompressedRistretto::from_slice(&recipient_pub_key_bytes)
+                .map_err(|_| BitQuillError::ValidationError("Invalid public key".to_string()))?;
+
+            let scan_pub = scan_pub_compressed.decompress()
+                .ok_or_else(|| BitQuillError::ValidationError("Failed to decompress public key".to_string()))?;
+            
+            
+            // Create stealth output
+            let r = Scalar::random(&mut OsRng);
+            let blinding = Scalar::random(&mut OsRng);
+            let (ephemeral_key, payload) = stealth::encrypt_stealth_out(&r, &scan_pub, amount, &blinding);
+            
+            let (proof, commitment) = mimblewimble::create_range_proof(amount, &blinding)?;
+            
+            outputs.push(TransactionOutput {
                 commitment: commitment.to_bytes().to_vec(),
-                range_proof: proof.to_bytes().to_vec(),
-            }],
+                range_proof: proof.to_bytes(),
+                ephemeral_key: Some(ephemeral_key.compress().to_bytes().to_vec()),
+                stealth_payload: Some(payload),
+            });
+            
+           // total_reward += amount;
+            blinding_sum += blinding;
+        }
+        
+        // Create kernel with the sum of all blindings
+        let excess = &blinding_sum * RISTRETTO_BASEPOINT_TABLE;
+        let kernel_message_hash: [u8; 32] = Sha256::digest(b"coinbase").into();
+        let (challenge, s) = mimblewimble::create_schnorr_signature(kernel_message_hash, &blinding_sum)?;
+        
+        let mut signature_bytes = Vec::new();
+        signature_bytes.extend_from_slice(&challenge.to_bytes());
+        signature_bytes.extend_from_slice(&s.to_bytes());
+        
+        Ok(Transaction {
+            inputs: vec![],
+            outputs,
             kernel: TransactionKernel {
-                excess: vec![0; 32],
-                signature: vec![],
+                excess: excess.compress().to_bytes().to_vec(),
+                signature: signature_bytes,
                 fee: 0,
             },
-        }
+        })
     }
     
     #[allow(non_snake_case)]

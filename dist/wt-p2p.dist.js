@@ -71628,6 +71628,31 @@ class PluribitP2P {
         this.peerDiscoveryInterval = null;
     }
 
+
+    /**
+     * Creates and seeds a number of "channel" torrents.
+     * Inspired by the "shard" concept from Ember, these torrents act as
+     * dedicated, content-light meeting points to ensure robust peer discovery.
+     * @private
+     */
+    _startChannelSeeding() {
+        console.log('[P2P] Starting peer discovery via channel torrents...');
+        const CHANNEL_COUNT = 5; // Use 5 dedicated torrents as meeting points
+        const trackers = this.getTrackers();
+
+        for (let i = 0; i < CHANNEL_COUNT; i++) {
+            const channelName = `pluribit-channel-v1-${i}`;
+            const channelFile = new File([`pluribit-p2p-discovery-channel-${i}`], `${channelName}.txt`, { type: 'text/plain' });
+
+            // Seed this channel torrent. Its content is irrelevant; its infohash is the meeting point.
+            this.client.seed(channelFile, { name: channelName, announce: trackers }, (torrent) => {
+                console.log(`[P2P] Seeding discovery channel #${i} to find peers. Infohash: ${torrent.infoHash}`);
+                // The generic handler will attach the wire protocol for any peers found on this torrent.
+                // NOTE: No need to call setupTorrentHandlers here, the global 'torrent' event listener in start() handles it.
+            });
+        }
+    }
+
     /**
      * Initializes the WebTorrent client and starts periodic tasks.
      * This is the main entry point for activating the P2P layer.
@@ -71656,6 +71681,9 @@ class PluribitP2P {
             // Set up global event listeners for the client
             this.client.on('error', (err) => this.handleError(err));
             this.client.on('torrent', (torrent) => this.setupTorrentHandlers(torrent));
+
+            // Start seeding dedicated channel torrents for robust peer discovery.
+            this._startChannelSeeding();
 
             this.startPeriodicTasks();
             return this.peerId;
@@ -71699,27 +71727,42 @@ class PluribitP2P {
         const self = this;
         const EXTENSION_NAME = 'pluribit_protocol_v2';
 
-        wire.use(function(wire) {
-            wire.on('extended', function(extensionName, buffer) {
-                if (extensionName === EXTENSION_NAME) {
-                    try {
-                        const message = JSON.parse(buffer.toString());
-                        self.handleWireMessage(message, wire);
-                    } catch (e) {
-                        console.error('[P2P] Failed to parse incoming wire message:', e);
-                    }
-                }
-            });
+        // 1. Define the extension as a proper constructor function. This is the
+        //    standard pattern for the 'bittorrent-protocol' library used by WebTorrent.
+        function PluribitExtension() {}
 
-            // Bootstrap new peers by sending them our current state.
+        // 2. The extension name MUST be on the prototype.
+        PluribitExtension.prototype.name = EXTENSION_NAME;
+
+        // 3. Implement `onExtendedHandshake`. This function is called ONLY AFTER
+        //    the peer confirms it also supports our custom extension.
+        PluribitExtension.prototype.onExtendedHandshake = function(handshake) {
+            console.log(`[P2P] Handshake complete with peer: ${wire.peerId}. Ready to communicate.`);
+            
+            // CORRECT: Send the initial sync message *after* the handshake.
             const syncMessage = {
                 type: 'INDEX_SYNC',
                 knownBlocks: Object.fromEntries(self.knownBlocks),
                 knownSnapshots: Object.fromEntries(self.knownSnapshots)
             };
             self.sendWireMessage(wire, syncMessage, EXTENSION_NAME);
-        });
+        };
 
+        // 4. Implement `onMessage`. This is called when an incoming message
+        //    for THIS extension is received.
+        PluribitExtension.prototype.onMessage = function(buffer) {
+            try {
+                const message = JSON.parse(buffer.toString());
+                self.handleWireMessage(message, wire);
+            } catch (e) {
+                console.error('[P2P] Failed to parse incoming wire message:', e);
+            }
+        };
+
+        // 5. Register our extension class on the wire.
+        wire.use(PluribitExtension);
+
+        // 6. Track the wire for broadcasting and cleanup.
         this.connectedWires.add(wire);
         wire.on('close', () => this.connectedWires.delete(wire));
     }

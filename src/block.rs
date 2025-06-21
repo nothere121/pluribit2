@@ -12,6 +12,7 @@ use crate::error::BitQuillResult;
 use crate::transaction::TransactionInput;
 use crate::transaction::TransactionOutput;
 use crate::transaction::TransactionKernel;
+use crate::constants::{GENESIS_TIMESTAMP_MS, GENESIS_BITCOIN_HASH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockFinalization {
@@ -52,10 +53,10 @@ impl Block {
             height: 0,
             prev_hash: "0".repeat(64),
             transactions: vec![],
-            vdf_proof: VDFProof { y: vec![], pi: vec![], l: vec![], r: vec![] },
-            timestamp: 0,
+            vdf_proof: VDFProof::default(), // Use default for cleanliness
+            timestamp: GENESIS_TIMESTAMP_MS, // Use the new constant
             nonce: 0,
-            miner_id: "00000000000000000000656b995c9fec9ff94b554dc4aad46c06b71f94088c3c/2025-06-16 00:57:38 GMT +10//GENESIS".into(),
+            miner_id: format!("genesis_anchor_{}", GENESIS_BITCOIN_HASH), 
             difficulty: 1,
             finalization_data: None,
         }

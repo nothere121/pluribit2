@@ -1,12 +1,9 @@
 // vdf_clock.rs
-use crate::vdf::{VDF, VDFProof};
+use crate::{vdf::{VDF, VDFProof}, error::BitQuillResult, log, constants};
 use crate::error::BitQuillResult;
 use crate::log; 
 use serde::{Serialize, Deserialize};
 use sha2::{Digest, Sha256};
-
-// Calibrated for ~1 second per tick on average browser
-const VDF_ITERATIONS_PER_TICK: u64 = 10; //change back to 10_000 in prod Much lower for testing
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +35,9 @@ impl VDFClock {
     }
     
     pub fn tick(&mut self, vdf: &VDF) -> BitQuillResult<()> {
+        // Get the calibrated number of iterations for one second from our global constant.
+        let iterations_for_one_tick = *constants::VDF_ITERATIONS_PER_SECOND.lock().unwrap();
+        
         // Compute one tick forward with proper iterations
         let proof = vdf.compute_with_proof(&self.current_output, VDF_ITERATIONS_PER_TICK)?;
         self.current_output = proof.y.clone();
