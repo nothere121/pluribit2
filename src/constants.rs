@@ -52,20 +52,36 @@ pub const MAX_CONTENT_SIZE: usize       = 1_000_000;  // 1 MB per paragraph
 // —————— Pluribit Consensus Settings ——————
 
 /// Phase durations (in seconds)
-pub const MINING_PHASE_DURATION: u64 = 600;      // 10 minutes
-pub const VALIDATION_PHASE_DURATION: u64 = 300;   // 5 minutes
-pub const PROPAGATION_PHASE_DURATION: u64 = 300;  // 5 minutes
-pub const CYCLE_DURATION: u64 = 1200;             // 20 minutes total
+pub const MINING_PHASE_DURATION: u64 = 60;      // 1 minutes
+pub const VALIDATION_PHASE_DURATION: u64 = 30;   // 0.5 minutes
+pub const PROPAGATION_PHASE_DURATION: u64 = 30;  // 0.5 minutes
+pub const CYCLE_DURATION: u64 = 120;             // 2 minutes total
 
 /// Target total block time (in seconds)
-pub const TARGET_BLOCK_TIME: u64 = 1200;           // 20 minutes
+pub const TARGET_BLOCK_TIME: u64 = 120;           // 2 minutes
 
-/// How many blocks between each difficulty adjustment
-pub const DIFFICULTY_ADJUSTMENT_INTERVAL: u64 = 144;  // ≈48 hours at 20 min/blk
+/// How many blocks between each difficulty adjustment (approx. 13 days at 2 min/blk)
+pub const DIFFICULTY_ADJUSTMENT_INTERVAL: u64 = 9360; 
 
 // Genesis anchor details from the plan
 pub const GENESIS_TIMESTAMP_MS: u64 = 1750000658000; // 2025-06-15 14:57:38 UTC
 pub const GENESIS_BITCOIN_HASH: &str = "00000000000000000000656b995c9fec9ff94b554dc4aad46c06b71f94088c3c";
 
 // Bootstrap period
-pub const BOOTSTRAP_BLOCKS: u64 = 720; // 10 days worth of blocks
+pub const BOOTSTRAP_BLOCKS: u64 = 2; // reduced for testing. should be 9360 i.e. 13 days worth of blocks or 1 difficulty adjustment period
+
+/// The base reward for the genesis block period, in bits.
+pub const INITIAL_BASE_REWARD: u64 = 50_000_000;
+
+/// The number of blocks between each block reward halving.
+pub const HALVING_INTERVAL: u64 = 210_000;
+
+/// The number of blocks after which the halving cycle resets (approx. 100 years at 2 min/block i.e. 30 blocks*24 hours *365.25 days *100 years).
+pub const REWARD_RESET_INTERVAL: u64 = 2_629_000; 
+
+
+/// The factor to scale the log2(Difficulty) bonus to make it economically significant.
+pub const DIFFICULTY_BONUS_FACTOR: u64 = 10_000_000;
+
+/// The maximum size of a block in bytes.
+pub const MAX_BLOCK_SIZE_BYTES: usize = 4 * 1024 * 1024; // 4 MB

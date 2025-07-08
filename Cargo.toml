@@ -35,6 +35,8 @@ sha2 = "0.10"
 # Browser/Wasm specific utilities
 web-sys = { version = "0.3", features = ["console"] }
 js-sys = "0.3.77"
+bech32 = "0.9.1"
+wasm-bindgen-test = "0.3.50"
 
 
 [package.metadata.wasm-pack.profile.release]
@@ -42,3 +44,4 @@ wasm-opt = false        # <-- skip wasm-opt for --release builds
 
 [package.metadata.wasm-pack.profile.dev]
 wasm-opt = false        # <-- skip it for --dev too, just in case
+

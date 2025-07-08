@@ -8,7 +8,7 @@ use num_bigint::BigUint;
 use num_traits::One;
 use hex;
 use bincode;
-use crate::error::BitQuillResult;
+use crate::error::PluribitResult;
 use crate::transaction::TransactionInput;
 use crate::transaction::TransactionOutput;
 use crate::transaction::TransactionKernel;
@@ -149,7 +149,7 @@ impl Block {
     }
     
         /// Apply cut-through to remove intermediate transactions
-    pub fn apply_cut_through(&mut self) -> BitQuillResult<()> {
+    pub fn apply_cut_through(&mut self) -> PluribitResult<()> {
         if self.transactions.is_empty() {
             return Ok(());
         }
@@ -267,29 +267,119 @@ impl Block {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transaction::TransactionBuilder;
+    use crate::transaction::{Transaction, TransactionInput, TransactionOutput, TransactionKernel};
+    use sha2::{Digest, Sha256};
+    use crate::mimblewimble;
 
     #[test]
     fn merkle_root_empty() {
         let b = Block::genesis();
-        assert_eq!(b.tx_root(), Sha256::digest(&[]).into());
+        let expected_hash: [u8; 32] = Sha256::digest(&[]).into();
+        assert_eq!(b.tx_root(), expected_hash);
     }
 
     #[test]
     fn different_tx_order_changes_root() {
         let mut a = Block::genesis();
         let mut b = Block::genesis();
-        let tx1 = TransactionBuilder::new().add_input(10).add_output(10).build().unwrap();
-        let tx2 = TransactionBuilder::new().add_input(20).add_output(20).build().unwrap();
+        
+        let tx1 = Transaction {
+            inputs: vec![],
+            outputs: vec![],
+            kernel: TransactionKernel { excess: vec![1], signature: vec![], fee: 10 },
+        };
+        let tx2 = Transaction {
+            inputs: vec![],
+            outputs: vec![],
+            kernel: TransactionKernel { excess: vec![2], signature: vec![], fee: 20 },
+        };
+
         a.transactions = vec![tx1.clone(), tx2.clone()];
         b.transactions = vec![tx2, tx1];
+        
         assert_ne!(a.tx_root(), b.tx_root());
+    }
+
+    #[test]
+    fn test_apply_cut_through_aggregates_correctly() {
+        use curve25519_dalek::scalar::Scalar;
+        use rand::thread_rng;
+        
+        // Create proper test data
+        let mut rng = thread_rng();
+        
+        // Create an output C1 (from a previous block)
+        let blinding1 = Scalar::random(&mut rng);
+        let c1_point = mimblewimble::commit(100, &blinding1).unwrap();
+        let c1_commitment_bytes = c1_point.compress().to_bytes().to_vec();
+
+        // Tx1: Spends C1 (100) and creates C2 (70), fee = 30
+        let blinding2 = Scalar::random(&mut rng);
+        let c2_point = mimblewimble::commit(70, &blinding2).unwrap();
+        let kernel_blinding1 = blinding2 - blinding1; // Output blinding - input blinding
+        
+        // Create valid kernel with proper excess point
+        let excess1 = mimblewimble::commit(30, &kernel_blinding1).unwrap(); // fee*H + kernel_blinding*G
+        
+        let tx1 = Transaction {
+            inputs: vec![TransactionInput { commitment: c1_commitment_bytes.clone() }],
+            outputs: vec![TransactionOutput { 
+                commitment: c2_point.compress().to_bytes().to_vec(), 
+                range_proof: vec![1; 100], // Dummy proof
+                ephemeral_key: None, 
+                stealth_payload: None 
+            }],
+            kernel: TransactionKernel { 
+                excess: excess1.compress().to_bytes().to_vec(), 
+                signature: vec![0; 64], // Dummy but correct size
+                fee: 30 
+            }
+        };
+
+        // Tx2: Spends C2 (70) and creates C3 (60), fee = 10
+        let blinding3 = Scalar::random(&mut rng);
+        let c3_point = mimblewimble::commit(60, &blinding3).unwrap();
+        let kernel_blinding2 = blinding3 - blinding2;
+        
+        let excess2 = mimblewimble::commit(10, &kernel_blinding2).unwrap();
+        
+        let tx2 = Transaction {
+            inputs: vec![TransactionInput { commitment: c2_point.compress().to_bytes().to_vec() }],
+            outputs: vec![TransactionOutput { 
+                commitment: c3_point.compress().to_bytes().to_vec(), 
+                range_proof: vec![2; 100], // Dummy proof
+                ephemeral_key: None,
+                stealth_payload: None
+            }],
+            kernel: TransactionKernel { 
+                excess: excess2.compress().to_bytes().to_vec(), 
+                signature: vec![0; 64], 
+                fee: 10 
+            }
+        };
+
+        let mut block = Block::genesis();
+        block.transactions = vec![tx1, tx2];
+
+        block.apply_cut_through().unwrap();
+
+        assert_eq!(block.transactions.len(), 1, "Block should have only one aggregated transaction after cut-through");
+        
+        let final_tx = &block.transactions[0];
+        assert_eq!(final_tx.inputs.len(), 1, "Aggregated tx should have one input");
+        assert_eq!(final_tx.inputs[0].commitment, c1_commitment_bytes, "The input should be the external input C1");
+        
+        assert_eq!(final_tx.outputs.len(), 1, "Aggregated tx should have one output");
+        assert_eq!(final_tx.outputs[0].commitment, c3_point.compress().to_bytes().to_vec(), "The output should be the unspent output C3");
+        
+        assert_eq!(final_tx.kernel.fee, 40, "Kernel fees should be aggregated (30 + 10)");
     }
 
     #[test]
     fn pow_checks_target() {
         let mut b = Block::genesis();
         b.nonce = 0;
+        b.difficulty = 10;
         assert!(!b.is_valid_pow());
     }
 
@@ -298,7 +388,8 @@ mod tests {
         let mut b = Block::genesis();
         b.timestamp = 1_000;
         assert!(b.has_valid_timestamp(0));
-        b.timestamp = 0 + 2*60*60*1000 + 1;
+        
+        b.timestamp = 0 + 2 * 60 * 60 * 1000 + 1;
         assert!(!b.has_valid_timestamp(0));
     }
 }

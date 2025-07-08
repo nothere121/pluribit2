@@ -117,3 +117,135 @@ pub fn decrypt_stealth_output(
     // must be performed by the calling function.
     Some((value, blinding))
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use curve25519_dalek::scalar::Scalar;
+    use rand::rngs::OsRng;
+    
+    #[test]
+    fn test_hash_to_scalar() {
+        let label = b"test_label";
+        let data = b"test_data";
+        
+        let scalar1 = hash_to_scalar(label, data);
+        let scalar2 = hash_to_scalar(label, data);
+        
+        // Should be deterministic
+        assert_eq!(scalar1, scalar2);
+        
+        // Different inputs should give different outputs
+        let scalar3 = hash_to_scalar(b"different", data);
+        assert_ne!(scalar1, scalar3);
+    }
+    
+    #[test]
+    fn test_derive_subaddress() {
+        let scan_priv = Scalar::random(&mut OsRng);
+        let spend_priv = Scalar::random(&mut OsRng);
+        let scan_pub = &scan_priv * &*RISTRETTO_BASEPOINT_TABLE;
+        let spend_pub = &spend_priv * &*RISTRETTO_BASEPOINT_TABLE;
+        
+        // Derive subaddresses
+        let sub1 = derive_subaddress(&scan_pub, &spend_pub, 0);
+        let sub2 = derive_subaddress(&scan_pub, &spend_pub, 1);
+        let sub3 = derive_subaddress(&scan_pub, &spend_pub, 0);
+        
+        // Different indices should give different addresses
+        assert_ne!(sub1, sub2);
+        
+        // Same index should give same address
+        assert_eq!(sub1, sub3);
+        
+        // Should not equal the original spend pub
+        assert_ne!(sub1, spend_pub);
+    }
+    
+    #[test]
+    fn test_stealth_encryption_decryption() {
+        let scan_priv = Scalar::random(&mut OsRng);
+        let scan_pub = &scan_priv * &*RISTRETTO_BASEPOINT_TABLE;
+        
+        let value = 123456u64;
+        let blinding = Scalar::random(&mut OsRng);
+        let r = Scalar::random(&mut OsRng);
+        
+        // Encrypt
+        let (ephemeral_key, ciphertext) = encrypt_stealth_out(&r, &scan_pub, value, &blinding);
+        
+        // Decrypt
+        let result = decrypt_stealth_output(&scan_priv, &ephemeral_key, &ciphertext);
+        
+        assert!(result.is_some());
+        let (decrypted_value, decrypted_blinding) = result.unwrap();
+        assert_eq!(decrypted_value, value);
+        assert_eq!(decrypted_blinding, blinding);
+    }
+    
+    #[test]
+    fn test_stealth_decryption_wrong_key() {
+        let scan_priv1 = Scalar::random(&mut OsRng);
+        let scan_pub1 = &scan_priv1 * &*RISTRETTO_BASEPOINT_TABLE;
+        let scan_priv2 = Scalar::random(&mut OsRng);
+        
+        let value = 100u64;
+        let blinding = Scalar::random(&mut OsRng);
+        let r = Scalar::random(&mut OsRng);
+        
+        // Encrypt with pub1
+        let (ephemeral_key, ciphertext) = encrypt_stealth_out(&r, &scan_pub1, value, &blinding);
+        
+        // Try to decrypt with priv2 (wrong key)
+        let result = decrypt_stealth_output(&scan_priv2, &ephemeral_key, &ciphertext);
+        
+        // Should fail or give wrong values
+        if let Some((dec_val, _dec_blind)) = result {
+            assert_ne!(dec_val, value);
+            // The probability of accidentally getting the right value is negligible
+        }
+    }
+    
+    #[test]
+    fn test_stealth_ciphertext_tampering() {
+        let scan_priv = Scalar::random(&mut OsRng);
+        let scan_pub = &scan_priv * &*RISTRETTO_BASEPOINT_TABLE;
+        
+        let value = 1000u64;
+        let blinding = Scalar::random(&mut OsRng);
+        let r = Scalar::random(&mut OsRng);
+        
+        // Encrypt
+        let (ephemeral_key, mut ciphertext) = encrypt_stealth_out(&r, &scan_pub, value, &blinding);
+        
+        // Tamper with ciphertext
+        if ciphertext.len() > 30 {
+            ciphertext[30] ^= 0xFF;
+        }
+        
+        // Decryption should fail due to AEAD
+        let result = decrypt_stealth_output(&scan_priv, &ephemeral_key, &ciphertext);
+        assert!(result.is_none());
+    }
+    
+    #[test]
+    fn test_stealth_nonce_uniqueness() {
+        let scan_pub = &Scalar::random(&mut OsRng) * &*RISTRETTO_BASEPOINT_TABLE;
+        let value = 100u64;
+        let blinding = Scalar::random(&mut OsRng);
+        
+        // Create multiple encryptions
+        let mut nonces = Vec::new();
+        for _ in 0..10 {
+            let r = Scalar::random(&mut OsRng);
+            let (_, ciphertext) = encrypt_stealth_out(&r, &scan_pub, value, &blinding);
+            
+            // Extract nonce (first 24 bytes)
+            let nonce = &ciphertext[..24];
+            nonces.push(nonce.to_vec());
+        }
+        
+        // All nonces should be unique
+        let unique_count = nonces.iter().collect::<std::collections::HashSet<_>>().len();
+        assert_eq!(unique_count, nonces.len());
+    }
+}

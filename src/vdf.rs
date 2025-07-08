@@ -1,5 +1,5 @@
 use crate::constants::*;
-use crate::error::{BitQuillError, BitQuillResult};
+use crate::error::{PluribitError, PluribitResult};
 use crate::utils::calculate_power_safely;
 
 use num_bigint::{BigUint, RandBigInt};
@@ -63,21 +63,21 @@ pub struct VDF {
 }
 
 impl VDF {
-    pub fn new(_bit_length: usize) -> BitQuillResult<Self> {
+    pub fn new(_bit_length: usize) -> PluribitResult<Self> {
         // Use standardized RSA modulus instead of generating p*q
         let modulus_hex = "C7970CEEDCC3B0754490201A7AA613CD73911081C790F5F1A8726F463550BB5B7FF0DB8E1EA1189EC72F93D1650011BD721AEEACC2ACDE32A04107F0648C2813A31F5B0B7765FF8B44B4B6FFC93384B646EB09C7CF5E8592D40EA33C80039F35B4F14A04B51F7BFD781BE4D1673164BA8EB991C2C4D730BBBE35F592BDEF524AF7E8DAEFD26C66FC02C479AF89D64D373F442709439DE66CEB955F3EA37D5159F6135809F85334B5CB1813ADDC80CD05609F10AC6A95AD65872C909525BDAD32BC729592642920F24C61DC5B3C3B7923E56B16A4D9D373D8721F24A3FC0F1B3131F55615172866BCCC30F95054C824E733A5EB6817F7BC16399D48C6361CC7E5";
         
         // Convert hex to BigUint
         match BigUint::parse_bytes(modulus_hex.as_bytes(), 16) {
             Some(modulus) => Ok(VDF { modulus: Arc::new(modulus) }),
-            None => Err(BitQuillError::VdfError("Failed to parse standardized RSA modulus".to_string()))
+            None => Err(PluribitError::VdfError("Failed to parse standardized RSA modulus".to_string()))
         }
     }
 
     // Generate a prime number of the specified bit length
-    pub fn generate_prime(bit_length: usize) -> BitQuillResult<BigUint> {
+    pub fn generate_prime(bit_length: usize) -> PluribitResult<BigUint> {
         if bit_length < 16 || bit_length > 4096 {
-            return Err(BitQuillError::ValidationError(format!(
+            return Err(PluribitError::ValidationError(format!(
                 "Invalid bit length for prime generation: {}", bit_length
             )));
         }
@@ -109,21 +109,21 @@ impl VDF {
             attempts += 1;
         }
         
-        Err(BitQuillError::VdfError(format!(
+        Err(PluribitError::VdfError(format!(
             "Failed to generate prime after {} attempts", max_attempts
         )))
     }
 
     // Generate a small prime for the Wesolowski proof
-    pub fn generate_proof_prime() -> BitQuillResult<BigUint> {
+    pub fn generate_proof_prime() -> PluribitResult<BigUint> {
         // Generate a ~128-bit prime for l as recommended by Wesolowski
         Self::generate_prime(128)
     }
 
     // Compute the VDF with Wesolowski proof: x^(2^t) mod N
-    pub fn compute_with_proof(&self, input: &[u8], iterations: u64) -> BitQuillResult<VDFProof> {
+    pub fn compute_with_proof(&self, input: &[u8], iterations: u64) -> PluribitResult<VDFProof> {
         if iterations > MAX_VDF_ITERATIONS {
-            return Err(BitQuillError::ValidationError(format!(
+            return Err(PluribitError::ValidationError(format!(
                 "Iterations {} exceeds maximum allowed {}", iterations, MAX_VDF_ITERATIONS
             )));
         }
@@ -158,7 +158,7 @@ impl VDF {
         // For large t, calculate q = floor((2^t - (2^t mod l)) / l) carefully
         let power = match calculate_power_safely(iterations) {
             Ok(p) => p,
-            Err(e) => return Err(BitQuillError::VdfError(e))
+            Err(e) => return Err(PluribitError::VdfError(e))
         };
         
         let q_times_l = power - two_t_mod_l;
@@ -176,7 +176,7 @@ impl VDF {
     }
 
     // Verify a VDF output using Wesolowski's efficient verification
-    pub fn verify(&self, input: &[u8], proof: &VDFProof) -> BitQuillResult<bool> {
+    pub fn verify(&self, input: &[u8], proof: &VDFProof) -> PluribitResult<bool> {
         // Hash the input to get our starting value x
         let mut hasher = Sha256::new();
         hasher.update(input);
@@ -194,7 +194,7 @@ impl VDF {
         
         // Verify l is a reasonable prime to prevent attacks
         if l.bits() < 120 || !is_prime(&l, 20) {
-            return Err(BitQuillError::VdfError("Invalid proof prime l".to_string()));
+            return Err(PluribitError::VdfError("Invalid proof prime l".to_string()));
         }
 
         // Verify: y == pi^l * x^r mod N
@@ -222,16 +222,16 @@ impl VDF {
     }
 
     // Recreate VDF from serialized modulus
-    pub fn from_modulus_bytes(bytes: &[u8]) -> BitQuillResult<Self> {
+    pub fn from_modulus_bytes(bytes: &[u8]) -> PluribitResult<Self> {
         if bytes.is_empty() {
-            return Err(BitQuillError::ValidationError("Empty modulus bytes".to_string()));
+            return Err(PluribitError::ValidationError("Empty modulus bytes".to_string()));
         }
         
         let modulus = Arc::new(BigUint::from_bytes_be(bytes));
         
         // Basic validation
         if modulus.bits() < 1024 {
-            return Err(BitQuillError::ValidationError(format!(
+            return Err(PluribitError::ValidationError(format!(
                 "Modulus too small: {} bits (min 1024)", modulus.bits()
             )));
         }
@@ -364,4 +364,41 @@ pub fn compute_vdf_proof(input: &[u8], iterations: u64, modulus: &BigUint) -> Re
         l: l.to_bytes_be(),
         r: r.to_bytes_be(),
     })
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // New Test for VDF Proof and Verification
+    #[test]
+    fn test_vdf_roundtrip() {
+        let vdf = VDF::new(2048).unwrap();
+        let input = b"hello world";
+        let iterations = 100; // Use a small number for a fast test
+
+        // 1. Compute the VDF proof
+        let proof = vdf.compute_with_proof(input, iterations).unwrap();
+        assert!(!proof.y.is_empty());
+        assert!(!proof.pi.is_empty());
+
+        // 2. Verify the proof
+        let is_valid = vdf.verify(input, &proof).unwrap();
+        assert!(is_valid, "VDF proof should be valid"); // Verification checks if y == pi^l * x^r mod N 
+    }
+
+    // New Test for Invalid VDF Proof
+    #[test]
+    fn test_vdf_fails_on_bad_proof() {
+        let vdf = VDF::new(2048).unwrap();
+        let input = b"hello world";
+        let iterations = 100;
+
+        let mut proof = vdf.compute_with_proof(input, iterations).unwrap();
+        
+        // Tamper with the proof
+        proof.y[0] = proof.y[0].wrapping_add(1);
+
+        let is_valid = vdf.verify(input, &proof).unwrap();
+        assert!(!is_valid, "VDF proof should be invalid after tampering");
+    }
 }

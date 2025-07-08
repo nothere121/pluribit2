@@ -183,4 +183,103 @@ fn create_stealth_output(
     ))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transaction::Transaction;
+    use crate::mimblewimble;
+    use crate::block::Block;
+    use curve25519_dalek::scalar::Scalar;
+    use rand::rngs::OsRng;
 
+    #[test]
+    fn test_wallet_scan_block_finds_utxo() {
+        let mut recipient_wallet = Wallet::new();
+        assert_eq!(recipient_wallet.balance(), 0);
+
+        let value = 1000;
+        let r = Scalar::random(&mut OsRng);
+        let blinding = Scalar::random(&mut OsRng);
+
+        // Corrected: encrypt_stealth_out returns a tuple, not a Result
+        let (ephemeral_key, payload) = stealth::encrypt_stealth_out(
+            &r,
+            &recipient_wallet.scan_pub,
+            value,
+            &blinding,
+        );
+        
+        let commitment = mimblewimble::commit(value, &blinding).unwrap();
+        let (range_proof, _) = mimblewimble::create_range_proof(value, &blinding).unwrap();
+
+        let output = TransactionOutput {
+            commitment: commitment.compress().to_bytes().to_vec(),
+            range_proof: range_proof.to_bytes(),
+            ephemeral_key: Some(ephemeral_key.compress().to_bytes().to_vec()),
+            stealth_payload: Some(payload),
+        };
+
+        let tx = Transaction {
+            inputs: vec![],
+            outputs: vec![output],
+            kernel: TransactionKernel {
+                excess: vec![0; 32],
+                signature: vec![0; 64],
+                fee: 0,
+            },
+        };
+        let mut block = Block::genesis();
+        block.transactions.push(tx);
+
+        recipient_wallet.scan_block(&block);
+
+        assert_eq!(recipient_wallet.balance(), value);
+        assert_eq!(recipient_wallet.owned_utxos.len(), 1);
+        assert_eq!(recipient_wallet.owned_utxos[0].value, value);
+    }
+    #[test]
+fn test_wallet_create_transaction() {
+    let mut sender = Wallet::new();
+    let recipient = Wallet::new();
+    
+    // Give sender some UTXOs
+    sender.owned_utxos.push(WalletUtxo {
+        value: 1000,
+        blinding: Scalar::from(1u64),
+        commitment: mimblewimble::commit(1000, &Scalar::from(1u64)).unwrap().compress(),
+    });
+    
+    // Create transaction
+    let tx = sender.create_transaction(600, 50, &recipient.scan_pub);
+    assert!(tx.is_ok());
+    
+    let tx = tx.unwrap();
+    assert_eq!(tx.inputs.len(), 1);
+    assert_eq!(tx.outputs.len(), 2); // Payment + change
+    assert_eq!(tx.kernel.fee, 50);
+    
+    // Sender should have change UTXO
+    assert_eq!(sender.balance(), 350); // 1000 - 600 - 50
+}
+
+#[test]
+fn test_wallet_insufficient_funds() {
+    let mut sender = Wallet::new();
+    let recipient = Wallet::new();
+    
+    // Give sender insufficient funds
+    sender.owned_utxos.push(WalletUtxo {
+        value: 100,
+        blinding: Scalar::from(1u64),
+        commitment: mimblewimble::commit(100, &Scalar::from(1u64)).unwrap().compress(),
+    });
+    
+    // Try to send more than available
+    let result = sender.create_transaction(150, 10, &recipient.scan_pub);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Insufficient funds"));
+    
+    // Wallet should still have original UTXO
+    assert_eq!(sender.balance(), 100);
+}
+}

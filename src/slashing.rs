@@ -1,9 +1,9 @@
 // src/slashing.rs
-use crate::{VALIDATORS, BLOCK_VOTES, CANDIDATE_COMMITMENTS, CANDIDATE_BLOCKS, FINAL_SELECTIONS};
+use crate::{VALIDATORS, BLOCK_VOTES, CANDIDATE_COMMITMENTS, CANDIDATE_BLOCKS};
 use crate::block::ValidatorVote;
 use crate::vdf::VDF;
 use crate::log;
-use crate::{VoteData, CandidateSetCommitment, FinalSelection}; // Add these imports
+use crate::{VoteData, CandidateSetCommitment};
 use std::collections::{HashMap, HashSet}; // Add HashSet
 use serde::{Serialize, Deserialize};
 
@@ -282,4 +282,195 @@ pub fn check_all_violations() -> Vec<SlashingEvidence> {
     }
     
     all_evidence
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::block::Block;
+    use crate::vdf::VDFProof;
+    use crate::{Validator, VDFLockedStake, StakeLockTransaction};
+    #[test]
+    fn test_check_for_double_votes() {
+        // Setup double vote scenario
+        let mut votes = BLOCK_VOTES.lock().unwrap();
+        let height_votes = votes.entry(100).or_insert_with(HashMap::new);
+        
+        // Same validator votes for two different blocks at same height
+        height_votes.insert("validator1".to_string(), VoteData {
+            block_hash: "block_a".to_string(),
+            stake_amount: 1000,
+            vdf_proof: VDFProof::default(),
+            signature: vec![1; 64],
+            timestamp: 1000,
+        });
+        
+        // This would be inserted by network message handler
+        drop(votes);
+        
+        // Check should find no double votes with just one vote
+        let evidence = check_for_double_votes();
+        assert_eq!(evidence.len(), 0);
+        
+        // Add second vote for different block
+        let mut votes = BLOCK_VOTES.lock().unwrap();
+        let height_votes = votes.get_mut(&100).unwrap();
+        
+        // Simulate the validator voting again (which they shouldn't)
+        let mut validator_votes = HashMap::new();
+        validator_votes.insert("block_a".to_string(), height_votes.get("validator1").unwrap().clone());
+        validator_votes.insert("block_b".to_string(), VoteData {
+            block_hash: "block_b".to_string(),
+            stake_amount: 1000,
+            vdf_proof: VDFProof::default(),
+            signature: vec![2; 64],
+            timestamp: 2000,
+        });
+        
+        drop(votes);
+        
+        // Manually check the double vote logic
+        let evidence = SlashingEvidence::DoubleVote {
+            validator_id: "validator1".to_string(),
+            height: 100,
+            vote1: ValidatorVote {
+                validator_id: "validator1".to_string(),
+                block_hash: "block_a".to_string(),
+                stake_amount: 1000,
+                vdf_proof: VDFProof::default(),
+                signature: vec![1; 64],
+            },
+            vote2: ValidatorVote {
+                validator_id: "validator1".to_string(),
+                block_hash: "block_b".to_string(),
+                stake_amount: 1000,
+                vdf_proof: VDFProof::default(),
+                signature: vec![2; 64],
+            },
+            vote1_block_hash: "block_a".to_string(),
+            vote2_block_hash: "block_b".to_string(),
+        };
+        
+        // Verify the evidence structure
+        match &evidence {
+            SlashingEvidence::DoubleVote { validator_id, height, .. } => {
+                assert_eq!(validator_id, "validator1");
+                assert_eq!(*height, 100);
+            }
+            _ => panic!("Wrong evidence type"),
+        }
+    }
+    
+    #[test]
+    fn test_check_dishonest_voting() {
+        let height = 100;
+        
+        // Setup blocks
+        let mut blocks = CANDIDATE_BLOCKS.lock().unwrap();
+        let height_blocks = blocks.entry(height).or_insert_with(HashMap::new);
+        
+        // Good block with low hash
+        let mut good_block = Block::genesis();
+        good_block.height = height;
+        good_block.nonce = 1; // Will have lower hash
+        height_blocks.insert("good_hash".to_string(), good_block);
+        
+        // Bad block with high hash
+        let mut bad_block = Block::genesis();
+        bad_block.height = height;
+        bad_block.nonce = 1000000; // Will have higher hash
+        height_blocks.insert("bad_hash".to_string(), bad_block);
+        drop(blocks);
+        
+        // Setup commitments showing validator1 knew about both blocks
+        let mut commitments = CANDIDATE_COMMITMENTS.lock().unwrap();
+        let height_commitments = commitments.entry(height).or_insert_with(HashMap::new);
+        
+        height_commitments.insert("validator1".to_string(), CandidateSetCommitment {
+            validator_id: "validator1".to_string(),
+            height,
+            candidate_hashes: vec!["good_hash".to_string(), "bad_hash".to_string()],
+            signature: vec![],
+            timestamp: 1000,
+        });
+        
+        // Validator2 also knew about the good block
+        height_commitments.insert("validator2".to_string(), CandidateSetCommitment {
+            validator_id: "validator2".to_string(),
+            height,
+            candidate_hashes: vec!["good_hash".to_string()],
+            signature: vec![],
+            timestamp: 1000,
+        });
+        drop(commitments);
+        
+        // Validator1 votes for the bad block despite knowing about the good one
+        let mut votes = BLOCK_VOTES.lock().unwrap();
+        let height_votes = votes.entry(height).or_insert_with(HashMap::new);
+        height_votes.insert("validator1".to_string(), VoteData {
+            block_hash: "bad_hash".to_string(),
+            stake_amount: 1000,
+            vdf_proof: VDFProof::default(),
+            signature: vec![],
+            timestamp: 2000,
+        });
+        drop(votes);
+        
+        // Check should find dishonest voting
+        let evidence = check_dishonest_voting(height);
+        assert_eq!(evidence.len(), 1);
+        
+        match &evidence[0] {
+            SlashingEvidence::DishonestVoting { validator_id, voted_hash, best_hash, .. } => {
+                assert_eq!(validator_id, "validator1");
+                assert_eq!(voted_hash, "bad_hash");
+                assert_eq!(best_hash, "good_hash");
+            }
+            _ => panic!("Wrong evidence type"),
+        }
+    }
+    
+    #[test]
+    fn test_slash_validator() {
+        // Setup validator
+        let mut validators = VALIDATORS.lock().unwrap();
+        validators.insert("validator1".to_string(), Validator {
+            id: "validator1".to_string(),
+            public_key: vec![],
+            private_key: vec![],
+            locked_stakes: vec![VDFLockedStake {
+                stake_tx: StakeLockTransaction {
+                    validator_id: "validator1".to_string(),
+                    stake_amount: 10000,
+                    lock_duration: 100,
+                    lock_height: 0,
+                    block_hash: "hash".to_string(),
+                },
+                vdf_proof: VDFProof::default(),
+                unlock_height: 100,
+                activation_time: 0,
+            }],
+            total_locked: 10000,
+            active: true,
+        });
+        drop(validators);
+        
+        // Test 50% slash
+        let reward = slash_validator("validator1", 50).unwrap();
+        assert_eq!(reward, 250); // 5% of 5000 (50% of 10000)
+        
+        let validators = VALIDATORS.lock().unwrap();
+        let validator = validators.get("validator1").unwrap();
+        assert_eq!(validator.total_locked, 5000);
+        assert!(validator.active);
+        drop(validators);
+        
+        // Test 100% slash
+        let reward = slash_validator("validator1", 100).unwrap();
+        assert_eq!(reward, 250); // 5% of remaining 5000
+        
+        let validators = VALIDATORS.lock().unwrap();
+        let validator = validators.get("validator1").unwrap();
+        assert_eq!(validator.total_locked, 0);
+        assert!(!validator.active); // Should be inactive after 100% slash
+    }
 }

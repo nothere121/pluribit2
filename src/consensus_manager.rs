@@ -6,8 +6,6 @@ use crate::constants::{MINING_PHASE_DURATION, VALIDATION_PHASE_DURATION};
 use serde::{Serialize, Deserialize};
 use crate::log;
 use crate::vdf::VDF;
-//use crate::{WALLET_OUTPUTS, WalletOutput};
-//use crate::mimblewimble;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ConsensusPhase {
@@ -192,7 +190,7 @@ impl ConsensusManager {
                 Ok(_) => {
                     // If this is the *last* bootstrap block, log a special message
                     if block.height == BOOTSTRAP_BLOCKS {
-                        log!("[CONSENSUS] Bootstrap complete! Full stake validation is now required for the next block.");
+                        log("[CONSENSUS] Bootstrap complete! Full stake validation is now required for the next block.");
                     }
                     true
                 }
@@ -209,7 +207,6 @@ impl ConsensusManager {
     
     fn finalize_with_stake_validation(&self, mut block: Block) -> bool {
 
-        use crate::transaction::Transaction; // Ensure Transaction is in scope for .hash()
         use curve25519_dalek::scalar::Scalar;
         use curve25519_dalek::ristretto::CompressedRistretto;
         use sha2::{Sha256, Digest};
@@ -361,15 +358,12 @@ impl ConsensusManager {
         let block_height = block.height;
         let reward_votes = valid_votes.clone();
         
-        // --- MODIFICATION START ---
         // Keep a copy of the transactions that are about to be finalized.
         let finalized_transactions = block.transactions.clone();
-        // --- MODIFICATION END ---
-        
-        drop(validators);
+
         drop(chain);
         let mut chain = BLOCKCHAIN.lock().unwrap();
-
+        
         match chain.add_block(block) {
             Ok(_) => {
                 // --- MODIFICATION START ---
@@ -399,16 +393,41 @@ impl ConsensusManager {
                 drop(votes);
                 
                 // Distribute staking rewards
-                if staker_reward_pool > 0 && !reward_votes.is_empty() && total_voted_stake > 0 {
+                // --- Time-Weighted Reward Distribution Logic ---
+
+                // 1. Calculate the TOTAL time-weighted stake of all validators who cast a valid vote.
+                // This requires accessing the validator's full stake details, not just the vote amount.
+                let mut total_time_weighted_voted_stake = 0u64;
+                for vote in &reward_votes {
+                    if let Some(validator) = validators.get(&vote.validator_id) {
+                        // Sum the time-weighted value of all of this validator's locked stakes.
+                        let validator_time_weighted_stake: u64 = validator.locked_stakes.iter()
+                            .map(|stake| crate::staking::calculate_time_weighted_stake(stake))
+                            .sum();
+                        total_time_weighted_voted_stake += validator_time_weighted_stake;
+                    }
+                }
+
+                // 2. Distribute the reward pool based on each validator's proportional time-weighted stake.
+                if staker_reward_pool > 0 && total_time_weighted_voted_stake > 0 {
                     let mut pending_rewards = crate::PENDING_REWARDS.lock().unwrap();
                     
                     for vote in &reward_votes {
-                        let validator_reward = (staker_reward_pool as u128 * vote.stake_amount as u128 / total_voted_stake as u128) as u64;
-                        
-                        if validator_reward > 0 {
-                            pending_rewards.push((vote.validator_id.clone(), validator_reward));
-                            log(&format!("[CONSENSUS] Queued {} coins reward for validator {}", 
-                                validator_reward, vote.validator_id));
+                        if let Some(validator) = validators.get(&vote.validator_id) {
+                            let validator_time_weighted_stake: u64 = validator.locked_stakes.iter()
+                                .map(|stake| crate::staking::calculate_time_weighted_stake(stake))
+                                .sum();
+
+                            if validator_time_weighted_stake > 0 {
+                                // Calculate reward proportional to their share of the total TIME-WEIGHTED stake.
+                                let validator_reward = (staker_reward_pool as u128 * validator_time_weighted_stake as u128 / total_time_weighted_voted_stake as u128) as u64;
+                                
+                                if validator_reward > 0 {
+                                    pending_rewards.push((vote.validator_id.clone(), validator_reward));
+                                    log(&format!("[CONSENSUS] Queued {} coins reward for validator {} (Time-Weighted Stake: {})", 
+                                                validator_reward, vote.validator_id, validator_time_weighted_stake));
+                                }
+                            }
                         }
                     }
                 }
@@ -430,4 +449,144 @@ pub struct ConsensusResult {
     pub phase_start_time: u64,
     pub best_candidate_block: Option<Block>,
     pub block_added: bool,
+}
+#[cfg(test)]
+mod tests {
+    use wasm_bindgen_test::*;
+    use super::*;
+    use crate::block::Block;
+    
+    #[wasm_bindgen_test]
+    fn test_consensus_manager_initialization() {
+        let manager = ConsensusManager::new();
+        assert_eq!(manager.current_phase, ConsensusPhase::Mining);
+        assert_eq!(manager.phase_timer, MINING_PHASE_DURATION);
+        assert!(manager.best_candidate_block.is_none());
+    }
+    
+    #[wasm_bindgen_test]
+    fn test_phase_transitions() {
+        let mut manager = ConsensusManager::new();
+
+        // Tick until just before the first transition
+        for _ in 0..(MINING_PHASE_DURATION - 1) {
+            manager.tick();
+        }
+        
+        // The next tick should transition from Mining to Validation
+        let result_to_validation = manager.tick();
+        assert_eq!(result_to_validation.current_phase, ConsensusPhase::Validation, "Should have transitioned to Validation");
+        assert_eq!(manager.phase_timer, VALIDATION_PHASE_DURATION, "Timer should reset for validation phase");
+        
+        // Tick until just before the second transition
+        for _ in 0..(VALIDATION_PHASE_DURATION - 1) {
+            manager.tick();
+        }
+        
+        // The next tick should transition back to Mining
+        let result_to_mining = manager.tick();
+        assert_eq!(result_to_mining.current_phase, ConsensusPhase::Mining, "Should have transitioned back to Mining");
+    }
+    
+    #[wasm_bindgen_test]
+    fn test_validation_subphases() {
+        let mut manager = ConsensusManager::new();
+        manager.current_phase = ConsensusPhase::Validation;
+        manager.phase_start_time = js_sys::Date::now() as u64;
+        
+        // Immediate check - provisional commitment
+        assert_eq!(manager.get_validation_subphase(), Some(ValidationSubPhase::ProvisionalCommitment));
+        
+        // Simulate 65 seconds elapsed
+        manager.phase_start_time = (js_sys::Date::now() as u64) - 65000;
+        assert_eq!(manager.get_validation_subphase(), Some(ValidationSubPhase::Reconciliation));
+        
+        // Simulate 95 seconds elapsed
+        manager.phase_start_time = (js_sys::Date::now() as u64) - 95000;
+        assert_eq!(manager.get_validation_subphase(), Some(ValidationSubPhase::VDFVoting));
+    }
+    
+    #[wasm_bindgen_test]
+    fn test_submit_pow_candidate() {
+        let mut manager = ConsensusManager::new();
+        
+        // Create a valid candidate block
+        let mut candidate = Block::genesis();
+        candidate.height = 1;
+        candidate.difficulty = 4;
+        candidate.nonce = 0;
+        
+        // Find valid PoW
+        while !candidate.is_valid_pow() {
+            candidate.nonce += 1;
+        }
+        
+        // Mock VDF clock state
+        {
+            let mut clock = VDF_CLOCK.lock().unwrap();
+            clock.current_tick = 100; // Allow submission
+            clock.ticks_per_block = 10;
+        }
+        
+        // Should accept during mining phase
+        assert!(manager.submit_pow_candidate(candidate.clone()).is_ok());
+        assert!(manager.best_candidate_block.is_some());
+        
+        // Should reject during validation phase
+        manager.current_phase = ConsensusPhase::Validation;
+        assert!(manager.submit_pow_candidate(candidate).is_err());
+    }
+    
+    #[wasm_bindgen_test]
+    fn test_best_candidate_selection() {
+        let mut manager = ConsensusManager::new();
+        // Create two candidates with different hashes
+        let mut candidate1 = Block::genesis();
+        candidate1.height = 1;
+        candidate1.difficulty = 1;
+        candidate1.nonce = 1; // [302]
+        // Find a valid PoW
+        while !candidate1.is_valid_pow() {
+            candidate1.nonce += 1;
+        }
+        
+        let mut candidate2 = Block::genesis();
+        candidate2.height = 1;
+        candidate2.difficulty = 1;
+        candidate2.nonce = 100000; // [303]
+        // Find a valid PoW
+        while !candidate2.is_valid_pow() {
+            candidate2.nonce += 1;
+        }
+        
+        // Mock VDF clock
+        {
+            let mut clock = VDF_CLOCK.lock().unwrap();
+            clock.current_tick = 100; // [304]
+            clock.ticks_per_block = 10;
+        }
+        
+        // Submit both candidates
+        manager.submit_pow_candidate(candidate1.clone()).unwrap();
+        let hash1 = candidate1.hash(); // [305]
+        
+        manager.submit_pow_candidate(candidate2.clone()).unwrap();
+        let hash2 = candidate2.hash();
+        
+        // The one with lower hash should win
+        let best_hash = manager.best_candidate_block.as_ref().unwrap().hash();
+        assert!(best_hash == hash1.min(hash2)); // [306]
+    }
+    
+    #[test]
+    fn test_dynamic_block_reward() {
+        // Test with various difficulty and participation rates
+        assert_eq!(ConsensusManager::calculate_dynamic_block_reward(1, 1.0), 50);
+        assert_eq!(ConsensusManager::calculate_dynamic_block_reward(4, 1.0), 52); // log2(4) = 2
+        assert_eq!(ConsensusManager::calculate_dynamic_block_reward(8, 1.0), 53); // log2(8) = 3
+        
+        // Test participation penalty
+        assert_eq!(ConsensusManager::calculate_dynamic_block_reward(1, 0.5), 25); // 50% participation
+        assert_eq!(ConsensusManager::calculate_dynamic_block_reward(4, 0.5), 26); // (50+2) * 0.5
+    }
 }
