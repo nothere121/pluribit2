@@ -286,6 +286,12 @@ pub fn check_all_violations() -> Vec<SlashingEvidence> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lazy_static::lazy_static;
+    use std::sync::Mutex;
+
+    lazy_static! {
+        static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
+    }
     use crate::block::Block;
     use crate::vdf::VDFProof;
     use crate::{Validator, VDFLockedStake, StakeLockTransaction};
@@ -362,6 +368,8 @@ mod tests {
     
     #[test]
     fn test_check_dishonest_voting() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
         let height = 100;
         
         // Setup blocks

@@ -151,27 +151,28 @@ impl Blockchain {
             ));
         }
 
-        // 5. Verify all transactions with proper context
-        let total_fees = block.transactions.iter()
-            .filter(|tx| !tx.inputs.is_empty()) // Fees from non-coinbase txs
-            .map(|tx| tx.kernel.fee)
-            .sum();
-        
-        let expected_reward = self.calculate_block_reward(block.height, block.difficulty, total_fees);
-
-        for tx in &block.transactions {
-            if tx.inputs.is_empty() {
-                // It's a coinbase, pass the expected reward for the special check.
-                tx.verify(Some(expected_reward))?;
-            } else {
-                // It's a regular transaction, no reward context needed.
-                tx.verify(None)?;
-            }
-        }
-
-        // 6. Update UTXO set: spend inputs, add outputs
+        // --- MOVED LOGIC STARTS HERE ---
+        // 5. Update UTXO set and Verify all transactions within the same scope
         {
             let mut utxos = UTXO_SET.lock().unwrap();
+
+            let total_fees = block.transactions.iter()
+                .filter(|tx| !tx.inputs.is_empty())
+                .map(|tx| tx.kernel.fee)
+                .sum();
+            let expected_reward = self.calculate_block_reward(block.height, block.difficulty, total_fees);
+
+            for tx in &block.transactions {
+                if tx.inputs.is_empty() {
+                    // It's a coinbase, it doesn't need the UTXO set for verification.
+                    tx.verify(Some(expected_reward), None)?;
+                } else {
+                    // It's a regular transaction, pass the UTXO set we have locked.
+                    tx.verify(None, Some(&utxos))?;
+                }
+            }
+
+            // Now, apply the UTXO changes
             for tx in &block.transactions {
                 // spend
                 for inp in &tx.inputs {
@@ -194,19 +195,16 @@ impl Blockchain {
             let mut roots = UTXO_ROOTS.lock().unwrap();
             roots.insert(self.current_height + 1, merkle_root);
         }
+        // --- MOVED LOGIC ENDS HERE ---
 
         // 7. Append block & update maps/height
         let h = block.hash();
-        // We need to keep a reference to the block before it's moved into the map
-        //let new_block_ref = block.clone(); 
         self.blocks.push(block.clone());
         self.block_by_hash.insert(h, block);
         self.current_height += 1;
 
         // 8. Retarget difficulty if needed
         self.current_difficulty = self.calculate_next_difficulty();
-
-
         Ok(())
     }
     

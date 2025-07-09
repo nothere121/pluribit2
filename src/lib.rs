@@ -1321,16 +1321,16 @@ pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
 
 #[wasm_bindgen]
 pub fn verify_transaction(tx_json: JsValue) -> Result<bool, JsValue> {
-    // Use add_transaction_to_pool logic but return bool instead of error
-    match add_transaction_to_pool(tx_json) {
-        Ok(_) => {
-            // Remove from pool since we're just verifying
-            let mut pool = TX_POOL.lock().unwrap();
-            pool.pending.pop();
-            pool.fee_total -= pool.pending.last().map(|tx| tx.kernel.fee).unwrap_or(0);
-            Ok(true)
-        },
-        Err(_) => Ok(false)
+    let tx: Transaction = serde_wasm_bindgen::from_value(tx_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize transaction: {}", e)))?;
+
+    // Lock the UTXO set to pass it to the verify function.
+    let utxos = crate::blockchain::UTXO_SET.lock().unwrap();
+    
+    // Call verify with the correct arguments.
+    match tx.verify(None, Some(&utxos)) {
+        Ok(_) => Ok(true),
+        Err(_) => Ok(false),
     }
 }
 
@@ -2076,7 +2076,7 @@ pub fn restore_blockchain_from_state(state_json: &str) -> Result<(), JsValue> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use wasm_bindgen_test::*;
     use super::*;
@@ -2194,6 +2194,7 @@ mod tests {
             value: 1000,
             blinding: Scalar::random(&mut rand::thread_rng()),
             commitment: mimblewimble::commit(1000, &Scalar::from(1u64)).unwrap().compress(),
+            block_height: 0,
         };
         
         // Clear pool
@@ -2604,7 +2605,8 @@ pub fn rewind_block(block_js: JsValue) -> Result<(), JsValue> {
         for tx in block.transactions {
             if !tx.inputs.is_empty() { // Skip coinbase
                 // Verify the transaction is still valid before adding back
-                match tx.verify(None) {
+                let utxo_set = blockchain::UTXO_SET.lock().unwrap();
+                match tx.verify(None, Some(&utxo_set)) {
                     Ok(_) => {
                         tx_pool.pending.push(tx.clone());
                         tx_pool.fee_total += tx.kernel.fee;

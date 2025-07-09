@@ -450,7 +450,8 @@ pub struct ConsensusResult {
     pub best_candidate_block: Option<Block>,
     pub block_added: bool,
 }
-#[cfg(test)]
+
+#[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use wasm_bindgen_test::*;
     use super::*;

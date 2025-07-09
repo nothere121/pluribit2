@@ -222,16 +222,19 @@ class MockWire extends EventEmitter {
     }
 }
 
-// --- EXISTING TESTS ---
+// ---  TESTS ---
 test('Database Tests', (t) => {
-    t.test('Chain State DB', async (st) => {
+    t.test('Block DB', async (st) => {
         const testChainDb = new Level(`test-db-chain-${Date.now()}`, { valueEncoding: 'json' });
-        db.__setDbs(testChainDb, null);
-        const mockChain = { height: 1, hash: 'abc' };
-        await db.saveChainState(mockChain);
-        const loadedChain = await db.loadChainState();
-        st.deepEqual(loadedChain, mockChain, 'Should save and load chain state correctly');
+        const testMetaDb = new Level(`test-db-meta-${Date.now()}`, { valueEncoding: 'json' });
+        db.__setDbs(testChainDb, null, testMetaDb);
+        const mockBlock = { height: 1, hash: 'abc' };
+        await db.saveBlock(mockBlock);
+        const loadedBlock = await db.loadBlock(1);
+        st.deepEqual(loadedBlock, mockBlock, 'Should save and load a block correctly');
+
         await testChainDb.close();
+        await testMetaDb.close();
         st.end();
     });
 
@@ -650,20 +653,21 @@ test('Edge Cases', (t) => {
 // --- STATE PERSISTENCE TESTS ---
 test('State Persistence', (t) => {
     t.test('Chain State Save and Restore', async (st) => {
-        const originalState = {
-            current_height: 10,
-            blocks: [{ height: 0 }, { height: 1 }],
-            current_difficulty: 2
-        };
+        const originalBlocks = [{ height: 0, hash: 'zero' }, { height: 1, hash: 'one' }];
 
-        const testDb = new Level(`test-chain-${Date.now()}`, { valueEncoding: 'json' });
-        db.__setDbs(testDb, null);
-        await db.saveChainState(originalState);
+        const testChainDb = new Level(`test-chain-${Date.now()}`, { valueEncoding: 'json' });
+        const testMetaDb = new Level(`test-db-meta-${Date.now()}`, { valueEncoding: 'json' });
+        db.__setDbs(testChainDb, null, testMetaDb);
 
-        const restored = await db.loadChainState();
-        st.deepEqual(restored, originalState, 'Should restore exact chain state');
+        for (const block of originalBlocks) {
+            await db.saveBlock(block);
+        }
 
-        await testDb.close();
+        const restored = await db.getAllBlocks();
+        st.deepEqual(restored, originalBlocks, 'Should restore exact chain state by getting all blocks');
+
+        await testChainDb.close();
+        await testMetaDb.close();
         st.end();
     });
 

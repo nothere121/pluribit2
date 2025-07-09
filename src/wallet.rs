@@ -8,7 +8,6 @@ use serde::{Serialize, Deserialize};
 use crate::merkle;
 use crate::blockchain::UTXO_SET;
 use crate::HashSet;
-use crate::BLOCKCHAIN;
 use crate::{
     block::Block,
     mimblewimble, // For commit() and create_range_proof()
@@ -21,6 +20,7 @@ pub struct WalletUtxo {
     pub value: u64,
     pub blinding: Scalar,
     pub commitment: CompressedRistretto,
+    pub block_height: u64, 
 }
 
 /// The main Wallet struct, holding keys and owned funds.
@@ -96,6 +96,7 @@ impl Wallet {
                                         value,
                                         blinding,
                                         commitment: commitment.compress(),
+                                        block_height: block.height, 
                                     });
                                 }
                             }
@@ -114,12 +115,12 @@ impl Wallet {
         recipient_scan_pub: &RistrettoPoint,
     ) -> Result<Transaction, String> {
         let total_needed = amount + fee;
+        let current_height = crate::BLOCKCHAIN.lock().unwrap().current_height;
 
-        // Get current height for merkle proof generation
-        let current_height = BLOCKCHAIN.lock().unwrap().current_height;
         
         // Get current UTXO set for proof generation
-        let utxo_set = UTXO_SET.lock().unwrap();
+        let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap();
+
         let utxo_vec: Vec<(Vec<u8>, crate::transaction::TransactionOutput)> = 
             utxo_set.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
@@ -139,9 +140,10 @@ impl Wallet {
                 let commitment_bytes = utxo.commitment.to_bytes().to_vec();
                 let merkle_proof = merkle::generate_utxo_proof(&commitment_bytes, &utxo_vec).ok();
                 
-                inputs_to_spend.push(TransactionInput { 
+                inputs_to_spend.push(TransactionInput {
                     commitment: commitment_bytes,
                     merkle_proof,
+                    source_height: utxo.block_height, 
                 });
                 input_utxos.push(utxo.clone());
                 false // Remove from available UTXOs
@@ -174,6 +176,7 @@ impl Wallet {
                 value: change,
                 blinding: change_blinding,
                 commitment: CompressedRistretto::from_slice(&change_output.commitment).unwrap(),
+                block_height: current_height + 1, // Change UTXO will be in the next block
             };
             outputs.push(change_output);
             blinding_sum_out += change_blinding;
@@ -195,9 +198,9 @@ impl Wallet {
     }
 }
 
-/// A private helper function to create a single stealth output.
+/// A public helper function to create a single stealth output.
 /// Returns the transaction output and the blinding factor used.
-fn create_stealth_output(
+pub fn create_stealth_output(
     value: u64,
     scan_pub: &RistrettoPoint,
 ) -> Result<(TransactionOutput, Scalar), String> {
@@ -284,6 +287,7 @@ fn test_wallet_create_transaction() {
         value: 1000,
         blinding: Scalar::from(1u64),
         commitment: mimblewimble::commit(1000, &Scalar::from(1u64)).unwrap().compress(),
+        block_height: 0,
     });
     
     // Create transaction
@@ -309,6 +313,7 @@ fn test_wallet_insufficient_funds() {
         value: 100,
         blinding: Scalar::from(1u64),
         commitment: mimblewimble::commit(100, &Scalar::from(1u64)).unwrap().compress(),
+        block_height: 0,
     });
     
     // Try to send more than available

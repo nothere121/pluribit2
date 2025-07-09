@@ -17,6 +17,7 @@ use crate::log;
 pub struct TransactionInput {
     pub commitment: Vec<u8>,
     pub merkle_proof: Option<crate::merkle::MerkleProof>,
+    pub source_height: u64, 
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -158,7 +159,7 @@ impl Transaction {
     /// 3) Sum(inputs) == Sum(outputs) + excess
     /// 4) All inputs exist in the UTXO set
     #[allow(non_snake_case)]
-    pub fn verify(&self, block_reward: Option<u64>) -> PluribitResult<()> {
+    pub fn verify(&self, block_reward: Option<u64>, utxos_opt: Option<&std::collections::HashMap<Vec<u8>, TransactionOutput>>) -> PluribitResult<()> {
         // 1) Range proofs
         for output in &self.outputs {
             let C = CompressedRistretto::from_slice(&output.commitment)
@@ -213,21 +214,31 @@ impl Transaction {
 
         // 4) UTXO existence and merkle proofs (only for regular transactions)
         if block_reward.is_none() {
-            let utxos = UTXO_SET.lock().unwrap();
+            let utxos = utxos_opt.ok_or(PluribitError::InvalidInput("UTXO set is required for regular transaction verification".to_string()))?;
             for inp in &self.inputs {
                 if !utxos.contains_key(&inp.commitment) {
                     return Err(PluribitError::UnknownInput);
                 }
                 
+                if let Some(proof) = &inp.merkle_proof {
+                    let roots = crate::blockchain::UTXO_ROOTS.lock().unwrap();
+                    if let Some(root) = roots.get(&inp.source_height) {
 
-                if inp.merkle_proof.is_none() {
-                       return Err(PluribitError::ValidationError(
-                           "Missing required merkle proof".to_string()
-                    ));
+                        // ---- START DEBUG LOGS ----
+                        let proof_reconstructed_root = proof.reconstruct_root(); // We will add this helper function next
+                        println!("[DEBUG] Official Merkle Root (Height {}): {}", inp.source_height, hex::encode(root));
+                        println!("[DEBUG] Proof Reconstructed Root:      {}", hex::encode(proof_reconstructed_root));
+                        // ---- END DEBUG LOGS ----
+
+                        if !proof.verify(root) {
+                            return Err(PluribitError::ValidationError("Invalid merkle proof".to_string()));
+                        }
+                    } else {
+                        return Err(PluribitError::ValidationError(format!("Missing UTXO root for height {}", inp.source_height)));
+                    }
+                } else {
+                    return Err(PluribitError::ValidationError("Missing required merkle proof".to_string()));
                 }
-                    
-
-                
             }
         }
 
@@ -348,7 +359,12 @@ mod tests {
     use crate::wallet::Wallet; // Added for coinbase test
     use curve25519_dalek::scalar::Scalar; // Added for regular tx test
     use crate::mimblewimble::kernel_excess_to_pubkey;
+    use lazy_static::lazy_static; 
+    use std::sync::Mutex;      
 
+    lazy_static! {               
+        static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
+    }                            
     // New Test for Coinbase Logic
     #[test]
     fn test_coinbase_creation_and_verification() {
@@ -366,60 +382,98 @@ mod tests {
 
         // 3. Verify the transaction with the CORRECT reward context. This should succeed.
         assert!(
-            coinbase_tx.verify(Some(reward_amount)).is_ok(),
+            coinbase_tx.verify(Some(reward_amount), None).is_ok(),
             "Coinbase verification should succeed with the correct reward"
         );
 
         // 4. Verify the transaction with the WRONG reward context. This must fail.
         assert!(
-            coinbase_tx.verify(Some(wrong_reward)).is_err(),
+            coinbase_tx.verify(Some(wrong_reward), None).is_err(),
             "Coinbase verification should fail with an incorrect reward"
         );
 
         // 5. Verify the transaction as if it were a regular transaction. This must fail.
         assert!(
-            coinbase_tx.verify(None).is_err(),
+            coinbase_tx.verify(None, None).is_err(),
             "Coinbase verification should fail when treated as a regular transaction"
         );
     }
 
-    // Existing Test (Modified slightly for clarity)
     #[test]
     fn test_transaction_roundtrip() {
-        // This test is a placeholder for a full regular transaction test.
-        // It needs to be expanded to be meaningful.
-        let blinding = Scalar::from(5u64);
-        let commitment = mimblewimble::commit(5, &blinding).unwrap();
+        let _guard = TEST_MUTEX.lock().unwrap();
+        // 0. Setup a clean environment for this test.
+        UTXO_SET.lock().unwrap().clear();
+        let mut chain = crate::blockchain::Blockchain::new();
+        let sender_wallet = Wallet::new();
+        let recipient_wallet = Wallet::new();
 
-        let inp = TransactionInput { commitment: commitment.compress().to_bytes().to_vec(), merkle_proof: None };
-
+        // 1. Fund an initial UTXO by mining a block.
+        let reward = crate::blockchain::get_current_base_reward(1);
+        let coinbase_tx = Transaction::create_coinbase(vec![(sender_wallet.scan_pub.compress().to_bytes().to_vec(), reward)]).unwrap();
         
-        // This tx is invalid as created, but shows the structure.
-        let tx = Transaction { 
-            inputs: vec![inp.clone()], 
-            outputs: vec![], 
-            kernel: TransactionKernel { 
-                excess: vec![], 
-                signature: vec![], 
-                fee: 0 
-            } 
+        let mut block1 = crate::block::Block::genesis();
+        block1.height = 1;
+        block1.prev_hash = chain.get_latest_block().hash();
+        block1.transactions.push(coinbase_tx.clone());
+        
+        let vdf = crate::vdf::VDF::new(2048).unwrap();
+        block1.vdf_proof = vdf.compute_with_proof(block1.prev_hash.as_bytes(), 100).unwrap();
+        for _ in 0..100000 {
+            if block1.is_valid_pow() {
+                break;
+            }
+            block1.nonce += 1;
+        }
+        assert!(block1.is_valid_pow(), "Failed to find valid PoW in reasonable time");
+        chain.add_block(block1.clone()).unwrap();
+
+        // 2. Scan the block to get the details of the UTXO we want to spend.
+        let mut temp_wallet = sender_wallet;
+        temp_wallet.scan_block(&block1);
+        let input_utxo = temp_wallet.owned_utxos[0].clone();
+        
+        // 3. Manually construct every part of the spending transaction.
+        let amount_to_send = 900;
+        let fee = 10;
+
+        // a. Create the recipient's and sender's (change) outputs.
+        let (recipient_output, recipient_blinding) = crate::wallet::create_stealth_output(amount_to_send, &recipient_wallet.scan_pub).unwrap();
+        let change_amount = input_utxo.value - amount_to_send - fee;
+        let (change_output, change_blinding) = crate::wallet::create_stealth_output(change_amount, &temp_wallet.scan_pub).unwrap();
+
+        // b. Create the transaction kernel using the difference in blinding factors.
+        let kernel_blinding = input_utxo.blinding - (recipient_blinding + change_blinding);
+        let kernel = TransactionKernel::new(kernel_blinding, fee).unwrap();
+
+        // c. Generate the Merkle proof for the input UTXO against the correct blockchain state.
+        let proof = {
+            let utxo_set_map = UTXO_SET.lock().unwrap();
+            let utxo_vec: Vec<(Vec<u8>, TransactionOutput)> = utxo_set_map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            crate::merkle::generate_utxo_proof(&input_utxo.commitment.to_bytes(), &utxo_vec).unwrap()
+        }; // Lock is released here
+
+        // d. Assemble the final, valid transaction.
+        let spending_tx = Transaction {
+            inputs: vec![TransactionInput {
+                commitment: input_utxo.commitment.to_bytes().to_vec(),
+                merkle_proof: Some(proof),
+                source_height: input_utxo.block_height,
+            }],
+            outputs: vec![recipient_output, change_output],
+            kernel,
         };
-        
-        // To make this test pass, you would need to:
-        // 1. Properly construct outputs and a kernel.
-        // 2. Add the input commitment to the global UTXO_SET for the verify() call.
-        let mut utxos = UTXO_SET.lock().unwrap();
-        utxos.insert(inp.commitment.clone(), TransactionOutput {
-            commitment: inp.commitment.clone(),
-            range_proof: vec![],
-            ephemeral_key: None,
-            stealth_payload: None,
-        });
-        
-        // As written, this tx is invalid and verify() will fail.
-        // The goal is to show where the test would go.
-        assert!(tx.verify(None).is_err());
+
+        // 4. Verify that this correctly constructed transaction is valid.
+        {
+            //let utxo_set = UTXO_SET.lock().unwrap();
+            let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap();
+
+            assert!(spending_tx.verify(None, Some(&utxo_set)).is_ok(), "Manually constructed transaction should be valid");
+        } // Lock is released here
+
     }
+    
     #[test]
 fn test_transaction_kernel_aggregate() {
     // Create multiple kernels
@@ -440,57 +494,7 @@ fn test_transaction_kernel_aggregate() {
     assert!(excess_point.is_ok());
 }
 
-#[test]
-fn test_transaction_verify_regular() {
-    // Create a transaction that spends existing UTXO
-    let blinding_in = Scalar::from(1u64);
-    let blinding_out = Scalar::from(2u64);
-    let value_in = 100u64;
-    let value_out = 90u64;
-    let fee = 10u64;
-    // Create input commitment and add to UTXO set
-    let input_commitment = mimblewimble::commit(value_in, &blinding_in).unwrap();
-    UTXO_SET.lock().unwrap().insert(
-        input_commitment.compress().to_bytes().to_vec(),
-        TransactionOutput {
-            commitment: input_commitment.compress().to_bytes().to_vec(),
-            range_proof: vec![],
-            ephemeral_key: None,
-            stealth_payload: None,
-        }
-    );
-    // Create output with range proof
-    let (range_proof, output_commitment) = mimblewimble::create_range_proof(value_out, &blinding_out).unwrap();
-    // Create kernel
-    let kernel_blinding = blinding_in - blinding_out;
-    let kernel = TransactionKernel::new(kernel_blinding, fee).unwrap();
 
-    // ADD A DUMMY MERKLE PROOF TO SATISFY THE VERIFY FUNCTION
-    let dummy_proof = crate::merkle::MerkleProof {
-        leaf_hash: [0u8; 32],
-        siblings: vec![],
-        leaf_index: 0,
-    };
-
-    let tx = Transaction {
-        inputs: vec![TransactionInput {
-            commitment: input_commitment.compress().to_bytes().to_vec(),
-            merkle_proof: Some(dummy_proof), // <-- ADDED DUMMY PROOF
-        }],
-        outputs: vec![TransactionOutput {
-            commitment: output_commitment.to_bytes().to_vec(),
-            range_proof: range_proof.to_bytes(),
-            ephemeral_key: None,
-            stealth_payload: None,
-         }],
-        kernel,
-    };
-    // Should verify successfully
-    assert!(tx.verify(None).is_ok());
-    
-    // Clean up
-    UTXO_SET.lock().unwrap().clear();
-}
 
 #[test]
 fn test_transaction_hash() {
@@ -522,5 +526,99 @@ fn test_transaction_hash() {
     tx3.kernel.fee = 20;
     assert_ne!(tx1.hash(), tx3.hash());
 }
-    
+  #[test]
+fn test_verify_with_valid_merkle_proof() {
+    let _guard = TEST_MUTEX.lock().unwrap(); 
+    let mut chain = crate::blockchain::Blockchain::new();
+    let recipient_wallet = Wallet::new();
+    let recipient_pubkey_bytes = recipient_wallet.scan_pub.compress().to_bytes().to_vec();
+
+    // 2. Create a coinbase transaction with the CORRECT reward amount.
+    let correct_reward = crate::blockchain::get_current_base_reward(1);
+    let coinbase_tx = Transaction::create_coinbase(vec![(recipient_pubkey_bytes, correct_reward)]).unwrap();
+
+    let mut block1 = crate::block::Block::genesis();
+    block1.height = 1;
+    block1.prev_hash = chain.get_latest_block().hash();
+    block1.transactions.push(coinbase_tx.clone());
+
+    let vdf = crate::vdf::VDF::new(2048).unwrap();
+    block1.vdf_proof = vdf.compute_with_proof(block1.prev_hash.as_bytes(), 10).unwrap();
+    for _ in 0..100000 {
+        if block1.is_valid_pow() {
+            break;
+        }
+        block1.nonce += 1;
+    }
+    assert!(block1.is_valid_pow(), "Failed to find valid PoW in reasonable time");
+    chain.add_block(block1).unwrap();
+
+    let mut utxo_wallet = Wallet::new();
+    utxo_wallet.scan_priv = recipient_wallet.scan_priv;
+    utxo_wallet.spend_priv = recipient_wallet.spend_priv;
+    utxo_wallet.scan_pub = recipient_wallet.scan_pub;
+    utxo_wallet.spend_pub = recipient_wallet.spend_pub;
+    for block in &chain.blocks {
+        utxo_wallet.scan_block(block);
+    }
+    // Assert the wallet has the correct, larger balance.
+    assert_eq!(utxo_wallet.balance(), correct_reward);
+
+    // Spend from the larger balance.
+    let spending_tx = utxo_wallet.create_transaction(correct_reward - 100, 10, &Wallet::new().scan_pub).unwrap();
+
+    let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap();
+    assert!(spending_tx.verify(None, Some(&utxo_set)).is_ok(), "Transaction with a valid merkle proof should be verified");
+}
+
+    #[test]
+    fn test_verify_fails_with_invalid_merkle_proof() {
+        let _guard = TEST_MUTEX.lock().unwrap(); 
+        // Setup is the same as the valid test.
+        let mut chain = crate::blockchain::Blockchain::new();
+        let recipient_wallet = Wallet::new();
+        let recipient_pubkey_bytes = recipient_wallet.scan_pub.compress().to_bytes().to_vec();
+        let correct_reward = crate::blockchain::get_current_base_reward(1);
+        let coinbase_tx = Transaction::create_coinbase(vec![(recipient_pubkey_bytes, correct_reward)]).unwrap();
+        let mut block1 = crate::block::Block::genesis();
+        block1.height = 1;
+        block1.difficulty = 1; 
+        block1.prev_hash = chain.get_latest_block().hash();
+        block1.transactions.push(coinbase_tx.clone());
+        let vdf = crate::vdf::VDF::new(2048).unwrap();
+        block1.vdf_proof = vdf.compute_with_proof(block1.prev_hash.as_bytes(), 100).unwrap();
+        for _ in 0..100000 {
+            if block1.is_valid_pow() {
+                break;
+            }
+            block1.nonce += 1;
+        }
+        assert!(block1.is_valid_pow(), "Failed to find valid PoW in reasonable time");
+        chain.add_block(block1).unwrap();
+
+        let mut utxo_wallet = Wallet::new();
+        utxo_wallet.scan_priv = recipient_wallet.scan_priv;
+        utxo_wallet.scan_pub = recipient_wallet.scan_pub;
+        utxo_wallet.spend_priv = recipient_wallet.spend_priv;
+        utxo_wallet.spend_pub = recipient_wallet.spend_pub;
+        for block in &chain.blocks {
+            utxo_wallet.scan_block(block);
+        }
+
+        // Create the transaction, which generates a valid proof.
+        let mut spending_tx = utxo_wallet.create_transaction(900, 10, &Wallet::new().scan_pub).unwrap();
+
+        // Manually tamper with the proof to make it invalid.
+        if let Some(proof) = &mut spending_tx.inputs[0].merkle_proof {
+            if !proof.siblings.is_empty() {
+                proof.siblings[0][0] ^= 0xFF; // Flip a byte in a sibling hash
+            }
+        }
+
+        // Verification should now fail.
+        //let utxo_set = UTXO_SET.lock().unwrap();
+        let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap();
+        assert!(spending_tx.verify(None, Some(&utxo_set)).is_err(), "Transaction with an invalid merkle proof should fail verification");
+        
+    }
 }

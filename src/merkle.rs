@@ -39,6 +39,25 @@ impl MerkleProof {
         
         &current_hash == root
     }
+    /// Reconstruct the root hash from the proof for debugging.
+    pub fn reconstruct_root(&self) -> [u8; 32] {
+        let mut current_hash = self.leaf_hash;
+        let mut index = self.leaf_index;
+        
+        for sibling in &self.siblings {
+            let mut hasher = Sha256::new();
+            if index & 1 == 0 {
+                hasher.update(&current_hash);
+                hasher.update(sibling);
+            } else {
+                hasher.update(sibling);
+                hasher.update(&current_hash);
+            }
+            current_hash = hasher.finalize().into();
+            index >>= 1;
+        }
+        current_hash
+    }
 }
 
 /// Build a Merkle tree and generate proofs for all leaves
@@ -107,13 +126,17 @@ pub fn generate_utxo_proof(
     utxo_commitment: &[u8],
     all_utxos: &[(Vec<u8>, crate::transaction::TransactionOutput)],
 ) -> PluribitResult<MerkleProof> {
-    // Find the UTXO's position
-    let position = all_utxos.iter()
+    // Make a mutable, sorted copy to match the root generation logic
+    let mut sorted_utxos = all_utxos.to_vec();
+    sorted_utxos.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // Find the UTXO's position in the *sorted* list
+    let position = sorted_utxos.iter()
         .position(|(comm, _)| comm == utxo_commitment)
         .ok_or_else(|| PluribitError::ValidationError("UTXO not found in set".to_string()))?;
-    
-    // Calculate leaf hashes
-    let leaves: Vec<[u8; 32]> = all_utxos.iter()
+        
+    // Calculate leaf hashes from the sorted list
+    let leaves: Vec<[u8; 32]> = sorted_utxos.iter()
         .map(|(commitment, output)| {
             let mut hasher = Sha256::new();
             hasher.update(commitment);
@@ -121,7 +144,7 @@ pub fn generate_utxo_proof(
             hasher.finalize().into()
         })
         .collect();
-    
+        
     let (proofs, _root) = build_merkle_tree_with_proofs(&leaves);
     
     Ok(proofs[position].clone())

@@ -182,6 +182,7 @@ mod tests {
         assert_eq!(weighted_6m, 1498); // ~1.5x weight
     }
     
+    #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen_test]
     fn test_activate_stake() {
         // Add pending stake
