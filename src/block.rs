@@ -129,7 +129,8 @@ impl Block {
 
     /// Verify the VDF proof against `prev_hash` as the challenge.
     pub fn has_valid_vdf_proof(&self) -> bool {
-        if self.height == 0 {
+        // Skip VDF verification for genesis and bootstrap blocks
+        if self.height == 0 || self.height <= crate::constants::BOOTSTRAP_BLOCKS {
             return true;
         }
         let vdf = match VDF::new(2048) { // Add the parameter

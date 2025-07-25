@@ -562,45 +562,13 @@ pub fn submit_pow_candidate(block_js: JsValue) -> Result<(), JsValue> {
 
     match manager.current_phase {
         ConsensusPhase::Mining => {
-            // Check VDF timing
-            let clock = VDF_CLOCK.lock().unwrap();
-            if !clock.can_submit_block(block.height) {
-                let required_tick = block.height * clock.ticks_per_block;
-                return Err(JsValue::from_str(&format!(
-                    "Cannot submit block yet. Current tick: {}, Required: {}",
-                    clock.current_tick, required_tick
-                )));
-            }
-
-            // Check if this block is better than current candidate
-            if let Some(ref current_best) = manager.best_candidate_block {
-                // For PoW: Lower hash = more work done = better block
-                let block_hash = block.hash();
-                let current_best_hash = current_best.hash();
-                
-                // Compare hashes lexicographically (as hex strings)
-                // Lower hash value = more leading zeros = more work
-                if block_hash > current_best_hash {
-                    log(&format!("[RUST] Rejected candidate block - higher hash {} > {} (less work) than current best", 
-                        &block_hash[..8], &current_best_hash[..8]));
-                    return Ok(());
-                }
-                
-                // If hashes are somehow equal (extremely unlikely), use timestamp as tiebreaker
-                if block_hash == current_best_hash && block.timestamp > current_best.timestamp {
-                    log("[RUST] Rejected candidate block - same hash but later timestamp");
-                    return Ok(());
-                }
-            }
-
-            // Log acceptance
-            log(&format!("[RUST] Accepted new candidate block with hash {}", &block.hash()[..8]));
-
-            manager.best_candidate_block = Some(block);
-            log("[RUST] Accepted new candidate block.");
+            // The manager's internal method now contains the detailed logic
+            manager.submit_pow_candidate(block)
+                .map_err(|e| JsValue::from_str(&e))?;
         }
-        ConsensusPhase::Validation => {
-            return Err(JsValue::from_str("Cannot submit block during validation phase"));
+        // Combine the other two cases, as they have the same outcome
+        ConsensusPhase::Validation | ConsensusPhase::Propagation => {
+            return Err(JsValue::from_str("Cannot submit PoW candidate during Validation or Propagation phases"));
         }
     }
 

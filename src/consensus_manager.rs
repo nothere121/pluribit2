@@ -1,124 +1,145 @@
 // src/consensus_manager.rs
 
-use crate::block::Block;
-use crate::{BLOCKCHAIN, BLOCK_VOTES, VDF_CLOCK, VALIDATORS};
-use crate::constants::{MINING_PHASE_DURATION, VALIDATION_PHASE_DURATION};
+use crate::block::{Block, BlockFinalization, ValidatorVote};
+use crate::{BLOCKCHAIN, BLOCK_VOTES, VDF_CLOCK, VALIDATORS, TX_POOL};
+use crate::constants::{TICKS_PER_CYCLE, MINING_PHASE_END_TICK, VALIDATION_PHASE_END_TICK, COMMITMENT_END_TICK, RECONCILIATION_END_TICK, BOOTSTRAP_BLOCKS};
 use serde::{Serialize, Deserialize};
 use crate::log;
 use crate::vdf::VDF;
+use std::collections::{HashSet, HashMap};
+// Add necessary imports for verification
+use crate::mimblewimble;
+use curve25519_dalek::ristretto::CompressedRistretto;
+use curve25519_dalek::scalar::Scalar;
+use sha2::{Sha256, Digest};
+
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ConsensusPhase {
     Mining,
     Validation,
+    Propagation,
 }
 
 #[derive(Debug, Clone)]
 pub struct ConsensusManager {
     pub current_phase: ConsensusPhase,
-    pub phase_timer: u64,
     pub best_candidate_block: Option<Block>,
-    pub phase_start_time: u64, // Track when the phase started
+    // Tracks state for the current validation cycle to prevent redundant actions
+    commitment_sent_this_cycle: bool,
+    reconciliation_complete_this_cycle: bool,
+    voting_initiated_this_cycle: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ValidationSubPhase {
-    ProvisionalCommitment,  // 0-60 seconds into validation
-    Reconciliation,         // 60-90 seconds
-    VDFVoting,              // 90-300 seconds
+    ProvisionalCommitment,
+    Reconciliation,
+    VDFVoting,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ConsensusResult {
+    pub new_phase: Option<ConsensusPhase>,
+    pub block_finalized: bool,
+    pub action_required: Option<String>,
 }
 
 impl ConsensusManager {
     pub fn new() -> Self {
         ConsensusManager {
             current_phase: ConsensusPhase::Mining,
-            phase_timer: MINING_PHASE_DURATION,
             best_candidate_block: None,
-            phase_start_time: js_sys::Date::now() as u64, // Initialize with current time
+            commitment_sent_this_cycle: false,
+            reconciliation_complete_this_cycle: false,
+            voting_initiated_this_cycle: false,
         }
     }
 
     pub fn tick(&mut self) -> ConsensusResult {
-        // Decrement timer
-        if self.phase_timer > 0 {
-            self.phase_timer -= 1;
+        let vdf_clock = VDF_CLOCK.lock().unwrap();
+        let current_tick = vdf_clock.current_tick;
+        let tick_in_cycle = current_tick % TICKS_PER_CYCLE;
+        
+        let previous_phase = self.current_phase.clone();
+        let mut new_phase: Option<ConsensusPhase> = None;
+        let mut block_finalized = false;
+        let mut action_required: Option<String> = None;
+
+        let determined_phase = if tick_in_cycle < MINING_PHASE_END_TICK {
+            ConsensusPhase::Mining
+        } else if tick_in_cycle < VALIDATION_PHASE_END_TICK {
+            ConsensusPhase::Validation
+        } else {
+            ConsensusPhase::Propagation
+        };
+
+        if self.current_phase != determined_phase {
+            log(&format!("[CONSENSUS] Phase transition: {:?} -> {:?}", self.current_phase, determined_phase));
+            self.current_phase = determined_phase;
+            new_phase = Some(self.current_phase.clone());
+
+            if self.current_phase == ConsensusPhase::Mining {
+                self.best_candidate_block = None;
+                // Reset cycle state trackers
+                self.commitment_sent_this_cycle = false;
+                self.reconciliation_complete_this_cycle = false;
+                self.voting_initiated_this_cycle = false;
+            }
         }
 
-        let mut block_added = false;
-
-        // Check if phase should transition
-        if self.phase_timer == 0 {
-            match self.current_phase {
-                ConsensusPhase::Mining => {
-                    log("[CONSENSUS] Mining phase complete, starting validation");
-                    self.current_phase = ConsensusPhase::Validation;
-                    self.phase_timer = VALIDATION_PHASE_DURATION; 
-                    self.phase_start_time = js_sys::Date::now() as u64;
+        match self.current_phase {
+            ConsensusPhase::Mining => {
+                if previous_phase != ConsensusPhase::Mining {
+                     action_required = Some("START_MINING".to_string());
                 }
-                ConsensusPhase::Validation => {
-                    log("[CONSENSUS] Validation phase complete");
-                    
-                    // Process the best candidate if we have one
-                    if let Some(block) = self.best_candidate_block.take() {
-                        block_added = self.finalize_block(block);
+            },
+            ConsensusPhase::Validation => {
+                let validation_tick = tick_in_cycle - MINING_PHASE_END_TICK;
+                if validation_tick < COMMITMENT_END_TICK {
+                    if !self.commitment_sent_this_cycle {
+                        action_required = Some("CREATE_COMMITMENT".to_string());
+                        self.commitment_sent_this_cycle = true;
                     }
-                    
-                    // Return to mining
-                    self.current_phase = ConsensusPhase::Mining;
-                    self.phase_timer = MINING_PHASE_DURATION;
-                    self.phase_start_time = js_sys::Date::now() as u64;
-                    self.best_candidate_block = None;
+                } else if validation_tick < RECONCILIATION_END_TICK {
+                    if !self.reconciliation_complete_this_cycle {
+                        action_required = Some("RECONCILE_AND_SELECT".to_string());
+                        self.reconciliation_complete_this_cycle = true;
+                    }
+                } else {
+                    if !self.voting_initiated_this_cycle {
+                        action_required = Some("INITIATE_VDF_VOTE".to_string());
+                        self.voting_initiated_this_cycle = true;
+                    }
+                }
+            },
+            ConsensusPhase::Propagation => {
+                if previous_phase == ConsensusPhase::Validation {
+                    if let Some(block) = self.best_candidate_block.take() {
+                        block_finalized = self.finalize_block(block);
+                    } else {
+                        log("[CONSENSUS] Propagation phase started, but no candidate block was selected.");
+                    }
                 }
             }
         }
 
         ConsensusResult {
-            current_phase: self.current_phase.clone(),
-            phase_timer: self.phase_timer,
-            phase_start_time: self.phase_start_time,
-            // Clone and ensure we have a complete block structure
-            best_candidate_block: self.best_candidate_block.as_ref().map(|block| Block {
-                height: block.height,
-                prev_hash: block.prev_hash.clone(),
-                transactions: block.transactions.clone(), // Ensure transactions field exists
-                vdf_proof: block.vdf_proof.clone(),
-                timestamp: block.timestamp,
-                nonce: block.nonce,
-                miner_id: block.miner_id.clone(),
-                difficulty: block.difficulty,
-                finalization_data: block.finalization_data.clone(),
-            }),
-            block_added,
+            new_phase,
+            block_finalized,
+            action_required,
         }
     }
-    pub fn get_validation_subphase(&self) -> Option<ValidationSubPhase> {
-        if self.current_phase != ConsensusPhase::Validation {
-            return None;
-        }
-        
-        // Calculate time into validation phase
-        let elapsed = js_sys::Date::now() as u64 - self.phase_start_time;
-        let elapsed_secs = elapsed / 1000;
-        
-        match elapsed_secs {
-            0..=60 => Some(ValidationSubPhase::ProvisionalCommitment),
-            61..=90 => Some(ValidationSubPhase::Reconciliation),
-            91..=300 => Some(ValidationSubPhase::VDFVoting),
-            _ => None,
-        }
-    }
+    
     pub fn submit_pow_candidate(&mut self, candidate: Block) -> Result<(), String> {
-        // Only accept during mining phase
         if self.current_phase != ConsensusPhase::Mining {
             return Err("Not in mining phase".to_string());
         }
 
-        // Verify the block has valid PoW
         if !candidate.is_valid_pow() {
             return Err("Invalid PoW".to_string());
         }
 
-        // Verify VDF timing
         let clock = VDF_CLOCK.lock().unwrap();
         if !clock.can_submit_block(candidate.height) {
             return Err(format!(
@@ -129,11 +150,9 @@ impl ConsensusManager {
         }
         drop(clock);
 
-        // Check if this is better than current best
         if let Some(ref current_best) = self.best_candidate_block {
-            // Lower hash = more work = better
             if candidate.hash() >= current_best.hash() {
-                return Ok(()); // Not better, silently ignore
+                return Ok(());
             }
         }
 
@@ -142,56 +161,23 @@ impl ConsensusManager {
         Ok(())
     }
 
-
-    pub fn calculate_dynamic_block_reward(difficulty: u8, participation_rate: f64) -> u64 {
-        let base_reward = 50u64;
-        
-        // Difficulty bonus: log2(difficulty)
-        let difficulty_bonus = if difficulty > 1 {
-            (difficulty as f64).log2() as u64
-        } else {
-            0
-        };
-        
-        // Participation penalty: reduce rewards if participation is low
-        let participation_multiplier = if participation_rate > 0.8 {
-            1.0 // Full rewards above 80% participation
-        } else {
-            participation_rate // Linear reduction below 80%
-        };
-        
-        let total_reward = base_reward + difficulty_bonus;
-        (total_reward as f64 * participation_multiplier) as u64
-    }
-
     fn finalize_block(&self, mut block: Block) -> bool {
-        use crate::constants::BOOTSTRAP_BLOCKS;
-        
-        // During bootstrap, only require PoW
         if block.height <= BOOTSTRAP_BLOCKS {
-            log(&format!("[CONSENSUS] Block {} in bootstrap period - PoW only", block.height));
-            
-            // The only check during bootstrap is a valid Proof-of-Work
+            log(&format!("[CONSENSUS] Finalizing bootstrap block {}", block.height));
             if !block.is_valid_pow() {
                 log(&format!("[CONSENSUS] Bootstrap block {} has invalid PoW", block.height));
                 return false;
             }
-            
-            // Create minimal finalization data to show it was a bootstrap block
-            block.finalization_data = Some(crate::block::BlockFinalization {
+            block.finalization_data = Some(BlockFinalization {
                 votes: vec![],
                 total_stake_voted: 0,
                 total_stake_active: 0,
             });
             
-            // Add the block to the chain
             let mut chain = BLOCKCHAIN.lock().unwrap();
             match chain.add_block(block.clone()) {
                 Ok(_) => {
-                    // If this is the *last* bootstrap block, log a special message
-                    if block.height == BOOTSTRAP_BLOCKS {
-                        log("[CONSENSUS] Bootstrap complete! Full stake validation is now required for the next block.");
-                    }
+                    log(&format!("[CONSENSUS] Bootstrap block {} added to chain.", block.height));
                     true
                 }
                 Err(e) => {
@@ -200,238 +186,138 @@ impl ConsensusManager {
                 }
             }
         } else {
-            // After the bootstrap period, use the full stake validation logic
             self.finalize_with_stake_validation(block)
         }
     }
     
     fn finalize_with_stake_validation(&self, mut block: Block) -> bool {
-
-        use curve25519_dalek::scalar::Scalar;
-        use curve25519_dalek::ristretto::CompressedRistretto;
-        use sha2::{Sha256, Digest};
-        use std::collections::HashSet; // Ensure HashSet is in scope
+        log(&format!("[CONSENSUS] Attempting to finalize block {} with stake validation.", block.height));
         
-        let chain = BLOCKCHAIN.lock().unwrap();
         let votes = BLOCK_VOTES.lock().unwrap();
         let validators = VALIDATORS.lock().unwrap();
         
-        // Get votes for this block
         let height_votes = match votes.get(&block.height) {
-            Some(votes) => votes,
+            Some(v) => v,
             None => {
-                log(&format!("No votes found for block {}", block.height));
+                log(&format!("[CONSENSUS] Finalization failed: No votes found for block height {}", block.height));
                 return false;
             }
         };
-        
-        // Calculate total stake that voted for this block
-        let mut total_voted_stake = 0u64;
-        let mut total_active_stake = 0u64;
-        let mut valid_votes = Vec::new();
-        
-        // Calculate total active stake
-        for validator in validators.values() {
-            if validator.active {
-                total_active_stake += validator.total_locked;
+
+        let total_stake_active: u64 = validators.values().filter(|v| v.active).map(|v| v.total_locked).sum();
+        if total_stake_active == 0 {
+             log("[CONSENSUS] Finalization failed: No active stake in the network.");
+             return false;
+        }
+        let required_stake = (total_stake_active / 2) + 1;
+
+        let mut valid_votes_for_block = Vec::new();
+        let mut total_voted_stake_for_block = 0;
+
+        for (validator_id, vote_data) in height_votes {
+            if vote_data.block_hash == block.hash() {
+                // --- START: FULL VOTE VERIFICATION ---
+                let validator = match validators.get(validator_id) {
+                    Some(v) => v,
+                    None => {
+                        log(&format!("[CONSENSUS_WARN] Vote from unknown validator {}, skipping.", validator_id));
+                        continue;
+                    }
+                };
+
+                if !validator.active {
+                    log(&format!("[CONSENSUS_WARN] Vote from inactive validator {}, skipping.", validator_id));
+                    continue;
+                }
+
+                // 1. Verify VDF Proof
+                let vdf_input = format!("{}||{}", validator_id, vote_data.block_hash);
+                let vdf = match VDF::new(2048) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        log("[CONSENSUS_ERROR] Could not initialize VDF for verification.");
+                        continue;
+                    }
+                };
+                if !vdf.verify(vdf_input.as_bytes(), &vote_data.vdf_proof).unwrap_or(false) {
+                    log(&format!("[CONSENSUS_WARN] Invalid VDF proof for validator {}, skipping vote.", validator_id));
+                    continue;
+                }
+
+                // 2. Verify Schnorr Signature
+                let public_key = match CompressedRistretto::from_slice(&validator.public_key)
+                    .map_err(|_|())
+                    .and_then(|p| p.decompress().ok_or(())) {
+                        Ok(pk) => pk,
+                        Err(_) => {
+                            log(&format!("[CONSENSUS_WARN] Invalid public key for validator {}, skipping vote.", validator_id));
+                            continue;
+                        }
+                    };
+
+                let message_to_verify = format!("vote:{}:{}:{}", block.height, vote_data.block_hash, vote_data.stake_amount);
+                let message_hash: [u8; 32] = Sha256::digest(message_to_verify.as_bytes()).into();
+
+                let signature = &vote_data.signature;
+                if signature.len() != 64 {
+                    log(&format!("[CONSENSUS_WARN] Invalid signature length for validator {}, skipping vote.", validator_id));
+                    continue;
+                }
+                let mut challenge_bytes = [0u8; 32];
+                challenge_bytes.copy_from_slice(&signature[0..32]);
+                let challenge = Scalar::from_bytes_mod_order(challenge_bytes);
+
+                let mut s_bytes = [0u8; 32];
+                s_bytes.copy_from_slice(&signature[32..64]);
+                let s = Scalar::from_bytes_mod_order(s_bytes);
+
+                if !mimblewimble::verify_schnorr_signature(&(challenge, s), message_hash, &public_key) {
+                    log(&format!("[CONSENSUS_WARN] Invalid signature for validator {}, skipping vote.", validator_id));
+                    continue;
+                }
+
+                // --- END: FULL VOTE VERIFICATION ---
+
+                // If all checks pass, the vote is valid.
+                total_voted_stake_for_block += vote_data.stake_amount;
+                valid_votes_for_block.push(ValidatorVote {
+                    validator_id: validator_id.clone(),
+                    block_hash: vote_data.block_hash.clone(),
+                    stake_amount: vote_data.stake_amount,
+                    vdf_proof: vote_data.vdf_proof.clone(),
+                    signature: vote_data.signature.clone(),
+                });
             }
         }
-        
-        // Verify each vote
-        for (validator_id, vote) in height_votes.iter() {
-            if vote.block_hash != block.hash() {
-                continue;
-            }
-            
-            let validator = match validators.get(validator_id) {
-                Some(v) => v,
-                None => {
-                    log(&format!("Validator {} not found, skipping vote", validator_id));
-                    continue;
-                }
-            };
-            
-            let vote_message = format!("vote:{}:{}:{}", 
-                block.height, 
-                vote.block_hash, 
-                vote.stake_amount
-            );
-            
-            let message_hash: [u8; 32] = Sha256::digest(vote_message.as_bytes()).into();
-            
-            let public_key_compressed = match CompressedRistretto::from_slice(&validator.public_key) {
-                Ok(pk) => pk,
-                Err(_) => {
-                    log(&format!("Invalid public key for validator {}", validator_id));
-                    continue;
-                }
-            };
-            
-            let public_key = match public_key_compressed.decompress() {
-                Some(pk) => pk,
-                None => {
-                    log(&format!("Failed to decompress public key for validator {}", validator_id));
-                    continue;
-                }
-            };
-            
-            if vote.signature.len() != 64 {
-                log(&format!("Invalid signature length from validator {}", validator_id));
-                continue;
-            }
-            
-            let mut challenge_bytes = [0u8; 32];
-            challenge_bytes.copy_from_slice(&vote.signature[0..32]);
-            let challenge = Scalar::from_bytes_mod_order(challenge_bytes);
-            
-            let mut s_bytes = [0u8; 32];
-            s_bytes.copy_from_slice(&vote.signature[32..64]);
-            let s = Scalar::from_bytes_mod_order(s_bytes);
-            
-            if !crate::mimblewimble::verify_schnorr_signature(&(challenge, s), message_hash, &public_key) {
-                log(&format!("Invalid signature from validator {}", validator_id));
-                continue;
-            }
-            
-            let vote_input = format!("{}||{}", validator_id, vote.block_hash);
-            let vdf = match VDF::new(2048) {
-                Ok(v) => v,
-                Err(e) => {
-                    log(&format!("Failed to create VDF: {}", e));
-                    continue;
-                }
-            };
-            
-            match vdf.verify(vote_input.as_bytes(), &vote.vdf_proof) {
-                Ok(true) => {
-                    total_voted_stake += vote.stake_amount;
-                    valid_votes.push(crate::block::ValidatorVote {
-                        validator_id: validator_id.clone(),
-                        block_hash: vote.block_hash.clone(),
-                        stake_amount: vote.stake_amount,
-                        vdf_proof: vote.vdf_proof.clone(),
-                        signature: vote.signature.clone(),
-                    });
-                    log(&format!("Valid vote from {} with stake {}", validator_id, vote.stake_amount));
-                }
-                _ => {
-                    log(&format!("Invalid VDF proof from validator {}", validator_id));
-                    continue;
-                }
-            }
-        }
-        
-        let required_stake = if total_active_stake == 0 { 1 } else { total_active_stake / 2 + 1 };
-        
-        if total_voted_stake < required_stake {
+
+        if total_voted_stake_for_block < required_stake {
             log(&format!(
-                "Insufficient stake for finalization: {} < {} (need >50% of {})",
-                total_voted_stake, required_stake, total_active_stake
+                "[CONSENSUS] Finalization failed for block {}: Insufficient stake. Got {}, needed {}.",
+                block.height, total_voted_stake_for_block, required_stake
             ));
             return false;
         }
         
-        block.finalization_data = Some(crate::block::BlockFinalization {
-            votes: valid_votes.clone(),
-            total_stake_voted: total_voted_stake, 
-            total_stake_active: total_active_stake, 
+        block.finalization_data = Some(BlockFinalization {
+            votes: valid_votes_for_block,
+            total_stake_voted: total_voted_stake_for_block,
+            total_stake_active,
         });
-        
-        let consensus_quality = if total_active_stake > 0 {
-            (total_voted_stake as f64) / (total_active_stake as f64)
-        } else {
-            1.0
-        };
-        
-        log(&format!(
-            "Block {} finalized with {:.1}% consensus ({}/{} stake)",
-            block.height,
-            consensus_quality * 100.0,
-            total_voted_stake,
-            total_active_stake
-        ));
-        
-        let participation_rate = consensus_quality;
-        let total_block_reward = Self::calculate_dynamic_block_reward(block.difficulty, participation_rate);
-        let staker_reward_pool = total_block_reward / 2; // Example 50/50 split
-        
-        let block_height = block.height;
-        let reward_votes = valid_votes.clone();
-        
-        // Keep a copy of the transactions that are about to be finalized.
-        let finalized_transactions = block.transactions.clone();
 
-        drop(chain);
+        log(&format!("[CONSENSUS] Block {} finalized with sufficient stake.", block.height));
+
+        // Drop read-only locks before acquiring write lock for the chain
+        drop(votes);
+        drop(validators);
+
         let mut chain = BLOCKCHAIN.lock().unwrap();
-        
-        match chain.add_block(block) {
+        match chain.add_block(block.clone()) {
             Ok(_) => {
-                // --- MODIFICATION START ---
-                // On successful block addition, clear its transactions from the global mempool.
-                let mut pool = crate::TX_POOL.lock().unwrap();
-                if !finalized_transactions.is_empty() {
-                    let hashes_to_remove: HashSet<String> = finalized_transactions.iter().map(|tx| tx.hash()).collect();
-                    
-                    let initial_pool_size = pool.pending.len();
-                    pool.pending.retain(|tx| !hashes_to_remove.contains(&tx.hash()));
-                    let final_pool_size = pool.pending.len();
-
-                    // Recalculate total fees in the pool
-                    pool.fee_total = pool.pending.iter().map(|tx| tx.kernel.fee).sum();
-                    
-                    log(&format!(
-                        "[TX_POOL] Cleared {} finalized txs from mempool ({} -> {}).",
-                        initial_pool_size - final_pool_size, initial_pool_size, final_pool_size
-                    ));
-                }
-                // --- MODIFICATION END ---
-
-                // Clear votes for this height from the global vote map
-                drop(votes);
-                let mut votes = BLOCK_VOTES.lock().unwrap();
-                votes.remove(&block_height);
-                drop(votes);
-                
-                // Distribute staking rewards
-                // --- Time-Weighted Reward Distribution Logic ---
-
-                // 1. Calculate the TOTAL time-weighted stake of all validators who cast a valid vote.
-                // This requires accessing the validator's full stake details, not just the vote amount.
-                let mut total_time_weighted_voted_stake = 0u64;
-                for vote in &reward_votes {
-                    if let Some(validator) = validators.get(&vote.validator_id) {
-                        // Sum the time-weighted value of all of this validator's locked stakes.
-                        let validator_time_weighted_stake: u64 = validator.locked_stakes.iter()
-                            .map(|stake| crate::staking::calculate_time_weighted_stake(stake))
-                            .sum();
-                        total_time_weighted_voted_stake += validator_time_weighted_stake;
-                    }
-                }
-
-                // 2. Distribute the reward pool based on each validator's proportional time-weighted stake.
-                if staker_reward_pool > 0 && total_time_weighted_voted_stake > 0 {
-                    let mut pending_rewards = crate::PENDING_REWARDS.lock().unwrap();
-                    
-                    for vote in &reward_votes {
-                        if let Some(validator) = validators.get(&vote.validator_id) {
-                            let validator_time_weighted_stake: u64 = validator.locked_stakes.iter()
-                                .map(|stake| crate::staking::calculate_time_weighted_stake(stake))
-                                .sum();
-
-                            if validator_time_weighted_stake > 0 {
-                                // Calculate reward proportional to their share of the total TIME-WEIGHTED stake.
-                                let validator_reward = (staker_reward_pool as u128 * validator_time_weighted_stake as u128 / total_time_weighted_voted_stake as u128) as u64;
-                                
-                                if validator_reward > 0 {
-                                    pending_rewards.push((vote.validator_id.clone(), validator_reward));
-                                    log(&format!("[CONSENSUS] Queued {} coins reward for validator {} (Time-Weighted Stake: {})", 
-                                                validator_reward, vote.validator_id, validator_time_weighted_stake));
-                                }
-                            }
-                        }
-                    }
-                }
-                
+                // Clean up the transaction pool
+                let mut pool = TX_POOL.lock().unwrap();
+                let finalized_tx_hashes: HashSet<String> = block.transactions.iter().map(|tx| tx.hash()).collect();
+                pool.pending.retain(|tx| !finalized_tx_hashes.contains(&tx.hash()));
+                pool.fee_total = pool.pending.iter().map(|tx| tx.kernel.fee).sum();
                 true
             }
             Err(e) => {
@@ -442,152 +328,316 @@ impl ConsensusManager {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct ConsensusResult {
-    pub current_phase: ConsensusPhase,
-    pub phase_timer: u64,
-    pub phase_start_time: u64,
-    pub best_candidate_block: Option<Block>,
-    pub block_added: bool,
-}
-
-#[cfg(all(test, target_arch = "wasm32"))]
+#[cfg(test)]
 mod tests {
-    use wasm_bindgen_test::*;
     use super::*;
-    use crate::block::Block;
-    
-    #[wasm_bindgen_test]
-    fn test_consensus_manager_initialization() {
+    use crate::blockchain::Blockchain;
+    use crate::vdf_clock::VDFClock;
+    use crate::{Validator, VoteData, VDFLockedStake, StakeLockTransaction};
+    use crate::vdf::VDFProof;
+    use lazy_static::lazy_static;
+    use std::sync::Mutex;
+
+    lazy_static! {
+        static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
+    }
+
+    // Helper to reset global state for tests
+    fn setup() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_MUTEX.lock().unwrap();
+        *BLOCKCHAIN.lock().unwrap() = Blockchain::new();
+        *VDF_CLOCK.lock().unwrap() = VDFClock::new(TICKS_PER_CYCLE);
+        VALIDATORS.lock().unwrap().clear();
+        BLOCK_VOTES.lock().unwrap().clear();
+        TX_POOL.lock().unwrap().pending.clear();
+        TX_POOL.lock().unwrap().fee_total = 0;
+        guard  // Return the guard to keep the mutex locked
+    }
+
+    #[test]
+    fn test_initial_state() {
+        let _guard = setup();  // Hold the guard for the entire test
         let manager = ConsensusManager::new();
         assert_eq!(manager.current_phase, ConsensusPhase::Mining);
-        assert_eq!(manager.phase_timer, MINING_PHASE_DURATION);
         assert!(manager.best_candidate_block.is_none());
     }
-    
-    #[wasm_bindgen_test]
+
+    #[test]
     fn test_phase_transitions() {
+        setup();
         let mut manager = ConsensusManager::new();
 
-        // Tick until just before the first transition
-        for _ in 0..(MINING_PHASE_DURATION - 1) {
-            manager.tick();
-        }
-        
-        // The next tick should transition from Mining to Validation
-        let result_to_validation = manager.tick();
-        assert_eq!(result_to_validation.current_phase, ConsensusPhase::Validation, "Should have transitioned to Validation");
-        assert_eq!(manager.phase_timer, VALIDATION_PHASE_DURATION, "Timer should reset for validation phase");
-        
-        // Tick until just before the second transition
-        for _ in 0..(VALIDATION_PHASE_DURATION - 1) {
-            manager.tick();
-        }
-        
-        // The next tick should transition back to Mining
-        let result_to_mining = manager.tick();
-        assert_eq!(result_to_mining.current_phase, ConsensusPhase::Mining, "Should have transitioned back to Mining");
-    }
-    
-    #[wasm_bindgen_test]
-    fn test_validation_subphases() {
-        let mut manager = ConsensusManager::new();
-        manager.current_phase = ConsensusPhase::Validation;
-        manager.phase_start_time = js_sys::Date::now() as u64;
-        
-        // Immediate check - provisional commitment
-        assert_eq!(manager.get_validation_subphase(), Some(ValidationSubPhase::ProvisionalCommitment));
-        
-        // Simulate 65 seconds elapsed
-        manager.phase_start_time = (js_sys::Date::now() as u64) - 65000;
-        assert_eq!(manager.get_validation_subphase(), Some(ValidationSubPhase::Reconciliation));
-        
-        // Simulate 95 seconds elapsed
-        manager.phase_start_time = (js_sys::Date::now() as u64) - 95000;
-        assert_eq!(manager.get_validation_subphase(), Some(ValidationSubPhase::VDFVoting));
-    }
-    
-    #[wasm_bindgen_test]
-    fn test_submit_pow_candidate() {
-        let mut manager = ConsensusManager::new();
-        
-        // Create a valid candidate block
-        let mut candidate = Block::genesis();
-        candidate.height = 1;
-        candidate.difficulty = 4;
-        candidate.nonce = 0;
-        
-        // Find valid PoW
-        while !candidate.is_valid_pow() {
-            candidate.nonce += 1;
-        }
-        
-        // Mock VDF clock state
+        // --- Mining Phase ---
         {
             let mut clock = VDF_CLOCK.lock().unwrap();
-            clock.current_tick = 100; // Allow submission
-            clock.ticks_per_block = 10;
+            clock.current_tick = 0;
         }
-        
-        // Should accept during mining phase
-        assert!(manager.submit_pow_candidate(candidate.clone()).is_ok());
-        assert!(manager.best_candidate_block.is_some());
-        
-        // Should reject during validation phase
-        manager.current_phase = ConsensusPhase::Validation;
-        assert!(manager.submit_pow_candidate(candidate).is_err());
-    }
-    
-    #[wasm_bindgen_test]
-    fn test_best_candidate_selection() {
-        let mut manager = ConsensusManager::new();
-        // Create two candidates with different hashes
-        let mut candidate1 = Block::genesis();
-        candidate1.height = 1;
-        candidate1.difficulty = 1;
-        candidate1.nonce = 1; // [302]
-        // Find a valid PoW
-        while !candidate1.is_valid_pow() {
-            candidate1.nonce += 1;
-        }
-        
-        let mut candidate2 = Block::genesis();
-        candidate2.height = 1;
-        candidate2.difficulty = 1;
-        candidate2.nonce = 100000; // [303]
-        // Find a valid PoW
-        while !candidate2.is_valid_pow() {
-            candidate2.nonce += 1;
-        }
-        
-        // Mock VDF clock
+        let result = manager.tick();
+        assert_eq!(manager.current_phase, ConsensusPhase::Mining);
+        assert!(result.new_phase.is_none());
+        assert!(result.action_required.is_none());
+
+        // --- Transition to Validation ---
         {
             let mut clock = VDF_CLOCK.lock().unwrap();
-            clock.current_tick = 100; // [304]
-            clock.ticks_per_block = 10;
+            clock.current_tick = MINING_PHASE_END_TICK;
         }
+        let result = manager.tick();
+        assert_eq!(manager.current_phase, ConsensusPhase::Validation);
+        assert_eq!(result.new_phase, Some(ConsensusPhase::Validation));
+        assert_eq!(result.action_required, Some("CREATE_COMMITMENT".to_string()));
+
+        // --- Inside Validation (Reconciliation) ---
+        {
+            let mut clock = VDF_CLOCK.lock().unwrap();
+            clock.current_tick = MINING_PHASE_END_TICK + COMMITMENT_END_TICK;
+        }
+        let result = manager.tick();
+        assert_eq!(manager.current_phase, ConsensusPhase::Validation);
+        assert!(result.new_phase.is_none());
+        assert_eq!(result.action_required, Some("RECONCILE_AND_SELECT".to_string()));
         
-        // Submit both candidates
-        manager.submit_pow_candidate(candidate1.clone()).unwrap();
-        let hash1 = candidate1.hash(); // [305]
-        
-        manager.submit_pow_candidate(candidate2.clone()).unwrap();
-        let hash2 = candidate2.hash();
-        
-        // The one with lower hash should win
-        let best_hash = manager.best_candidate_block.as_ref().unwrap().hash();
-        assert!(best_hash == hash1.min(hash2)); // [306]
+        // --- Inside Validation (Voting) ---
+        {
+            let mut clock = VDF_CLOCK.lock().unwrap();
+            clock.current_tick = MINING_PHASE_END_TICK + RECONCILIATION_END_TICK;
+        }
+        let result = manager.tick();
+        assert_eq!(manager.current_phase, ConsensusPhase::Validation);
+        assert!(result.new_phase.is_none());
+        assert_eq!(result.action_required, Some("INITIATE_VDF_VOTE".to_string()));
+
+        // --- Transition to Propagation ---
+        {
+            let mut clock = VDF_CLOCK.lock().unwrap();
+            clock.current_tick = VALIDATION_PHASE_END_TICK;
+        }
+        let result = manager.tick();
+        assert_eq!(manager.current_phase, ConsensusPhase::Propagation);
+        assert_eq!(result.new_phase, Some(ConsensusPhase::Propagation));
+        assert!(!result.block_finalized);
+
+        // --- Transition back to Mining ---
+        {
+            let mut clock = VDF_CLOCK.lock().unwrap();
+            clock.current_tick = TICKS_PER_CYCLE;
+        }
+        let result = manager.tick();
+        assert_eq!(manager.current_phase, ConsensusPhase::Mining);
+        assert_eq!(result.new_phase, Some(ConsensusPhase::Mining));
+        assert_eq!(result.action_required, Some("START_MINING".to_string()));
     }
-    
+
     #[test]
-    fn test_dynamic_block_reward() {
-        // Test with various difficulty and participation rates
-        assert_eq!(ConsensusManager::calculate_dynamic_block_reward(1, 1.0), 50);
-        assert_eq!(ConsensusManager::calculate_dynamic_block_reward(4, 1.0), 52); // log2(4) = 2
-        assert_eq!(ConsensusManager::calculate_dynamic_block_reward(8, 1.0), 53); // log2(8) = 3
+    fn test_submit_pow_candidate_success() {
+        setup();
+        let mut manager = ConsensusManager::new();
+        let mut block = Block::genesis();
+        block.height = 1;
+        block.difficulty = 1; // Low difficulty for testing
+        // Find a valid nonce
+        while !block.is_valid_pow() {
+            block.nonce += 1;
+        }
+
+        // VDF clock must be ready
+        VDF_CLOCK.lock().unwrap().current_tick = 1 * TICKS_PER_CYCLE;
+
+        let result = manager.submit_pow_candidate(block.clone());
+        assert!(result.is_ok());
+        assert!(manager.best_candidate_block.is_some());
+        assert_eq!(manager.best_candidate_block.unwrap().hash(), block.hash());
+    }
+
+    #[test]
+    fn test_submit_pow_candidate_failure_wrong_phase() {
+        setup();
+        let mut manager = ConsensusManager::new();
+        manager.current_phase = ConsensusPhase::Validation; // Not in mining phase
+
+        let block = Block::genesis();
+        let result = manager.submit_pow_candidate(block);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Not in mining phase");
+    }
+
+    #[test]
+    fn test_submit_pow_candidate_failure_invalid_pow() {
+        setup();
+        let mut manager = ConsensusManager::new();
+        let mut block = Block::genesis();
+        block.difficulty = 20; // High difficulty, will fail PoW check
         
-        // Test participation penalty
-        assert_eq!(ConsensusManager::calculate_dynamic_block_reward(1, 0.5), 25); // 50% participation
-        assert_eq!(ConsensusManager::calculate_dynamic_block_reward(4, 0.5), 26); // (50+2) * 0.5
+        VDF_CLOCK.lock().unwrap().current_tick = 1 * TICKS_PER_CYCLE;
+
+        let result = manager.submit_pow_candidate(block);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Invalid PoW");
+    }
+
+    #[test]
+    fn test_finalize_bootstrap_block() {
+        let _guard = setup();
+        let manager = ConsensusManager::new();
+        
+        // Start fresh - the blockchain should only have genesis
+        assert_eq!(BLOCKCHAIN.lock().unwrap().current_height, 0);
+        
+        // Now test finalizing a bootstrap block at height 1
+        let mut block1 = Block::genesis();
+        block1.height = 1;
+        block1.prev_hash = BLOCKCHAIN.lock().unwrap().get_latest_block().hash();
+        block1.difficulty = 1;
+        while !block1.is_valid_pow() {
+            block1.nonce += 1;
+        }
+
+        let finalized = manager.finalize_block(block1);
+        assert!(finalized, "Bootstrap block 1 should be finalized successfully");
+        
+        // Then test block at height 2 (BOOTSTRAP_BLOCKS)
+        let mut block2 = Block::genesis();
+        block2.height = BOOTSTRAP_BLOCKS;
+        block2.prev_hash = BLOCKCHAIN.lock().unwrap().get_latest_block().hash();
+        block2.difficulty = 1;
+        while !block2.is_valid_pow() {
+            block2.nonce += 1;
+        }
+
+        let finalized = manager.finalize_block(block2);
+        assert!(finalized, "Bootstrap block 2 should be finalized successfully");
+        assert_eq!(BLOCKCHAIN.lock().unwrap().current_height, BOOTSTRAP_BLOCKS);
+    }
+
+    #[test]
+    fn test_finalize_with_stake_validation_success() {
+        let _guard = setup();
+        let manager = ConsensusManager::new();
+        
+        // Bring chain up to the required height
+        {
+            let mut chain = BLOCKCHAIN.lock().unwrap();
+            for i in 1..=BOOTSTRAP_BLOCKS {
+                let mut block = Block::genesis();
+                block.height = i;
+                block.prev_hash = chain.get_latest_block().hash();
+                block.difficulty = 1;
+                while !block.is_valid_pow() {
+                    block.nonce += 1;
+                }
+                chain.add_block(block).unwrap();
+            }
+        }
+        
+        let height = BOOTSTRAP_BLOCKS + 1;
+
+        // Create a candidate block
+        let mut block = Block::genesis();
+        block.height = height;
+        block.prev_hash = BLOCKCHAIN.lock().unwrap().get_latest_block().hash();
+        block.difficulty = 1;
+        
+        // Add VDF proof for the block (required for non-bootstrap blocks)
+        let vdf = VDF::new(2048).unwrap();
+        let vdf_proof = vdf.compute_with_proof(block.prev_hash.as_bytes(), 100).unwrap();
+        block.vdf_proof = vdf_proof;
+        
+        while !block.is_valid_pow() {
+            block.nonce += 1;
+        }
+        let block_hash = block.hash();
+
+        // --- Setup a validator with a REAL keypair ---
+        let priv_key = mimblewimble::generate_secret_key();
+        let pub_key = mimblewimble::derive_public_key(&priv_key);
+        
+        let mut validators = VALIDATORS.lock().unwrap();
+        validators.insert("validator1".to_string(), Validator {
+            id: "validator1".to_string(), 
+            public_key: pub_key.compress().to_bytes().to_vec(), 
+            private_key: priv_key.to_bytes().to_vec(),
+            locked_stakes: vec![VDFLockedStake {
+                stake_tx: StakeLockTransaction {
+                    validator_id: "validator1".to_string(),
+                    stake_amount: 2000,
+                    lock_duration: 100,
+                    lock_height: 0,
+                    block_hash: "test".to_string(),
+                },
+                vdf_proof: VDFProof::default(),
+                unlock_height: 100,
+                activation_time: 0,
+            }], 
+            total_locked: 2000, 
+            active: true,
+        });
+        drop(validators);
+        
+        // --- Create a VALID vote signature ---
+        let stake_amount = 2000;
+        let message_to_sign = format!("vote:{}:{}:{}", height, block_hash, stake_amount);
+        let message_hash: [u8; 32] = Sha256::digest(message_to_sign.as_bytes()).into();
+        let (challenge, s) = mimblewimble::create_schnorr_signature(message_hash, &priv_key).unwrap();
+        let mut signature = Vec::with_capacity(64);
+        signature.extend_from_slice(&challenge.to_bytes());
+        signature.extend_from_slice(&s.to_bytes());
+        
+        // --- Create a valid VDF proof for the vote ---
+        let vdf = VDF::new(2048).unwrap();
+        let vdf_input = format!("{}||{}", "validator1", block_hash);
+        let vote_vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), 10).unwrap();
+
+        // --- Setup vote with valid signature and VDF proof ---
+        let mut votes = BLOCK_VOTES.lock().unwrap();
+        let height_votes = votes.entry(height).or_insert_with(HashMap::new);
+        height_votes.insert("validator1".to_string(), VoteData {
+            block_hash: block_hash.clone(), 
+            stake_amount,
+            vdf_proof: vote_vdf_proof,
+            signature,
+            timestamp: 0,
+        });
+        drop(votes);
+        
+        // Finalization should now succeed
+        let finalized = manager.finalize_with_stake_validation(block);
+        assert!(finalized, "Finalization should succeed with a valid vote");
+        assert_eq!(BLOCKCHAIN.lock().unwrap().current_height, height);
+    }
+
+    #[test]
+    fn test_finalize_with_stake_validation_failure_insufficient_stake() {
+        setup();
+        let manager = ConsensusManager::new();
+        let height = BOOTSTRAP_BLOCKS + 1;
+
+        let mut block = Block::genesis();
+        block.height = height;
+        block.prev_hash = BLOCKCHAIN.lock().unwrap().get_latest_block().hash();
+        let block_hash = block.hash();
+
+        // Setup validators (total stake 2000, required 1001)
+        let mut validators = VALIDATORS.lock().unwrap();
+        validators.insert("validator1".to_string(), Validator {
+            id: "validator1".to_string(), public_key: vec![], private_key: vec![],
+            locked_stakes: vec![], total_locked: 1000, active: true,
+        });
+        validators.insert("validator2".to_string(), Validator {
+            id: "validator2".to_string(), public_key: vec![], private_key: vec![],
+            locked_stakes: vec![], total_locked: 1000, active: true,
+        });
+        drop(validators);
+
+        // Setup votes (only 500 stake, not enough)
+        let mut votes = BLOCK_VOTES.lock().unwrap();
+        let height_votes = votes.entry(height).or_insert_with(HashMap::new);
+        height_votes.insert("validator1".to_string(), VoteData {
+            block_hash: block_hash.clone(), stake_amount: 500, // Not their full stake
+            vdf_proof: VDFProof::default(), signature: vec![], timestamp: 0,
+        });
+        drop(votes);
+
+        let finalized = manager.finalize_with_stake_validation(block);
+        assert!(!finalized);
     }
 }

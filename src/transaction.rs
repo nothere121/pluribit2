@@ -7,7 +7,6 @@ use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use sha2::{Digest, Sha256};
 use crate::mimblewimble;
-use crate::blockchain::UTXO_SET;
 use curve25519_dalek::traits::Identity;
 use crate::log;
 // Removed unused import: use crate::log;

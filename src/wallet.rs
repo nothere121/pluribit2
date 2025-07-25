@@ -6,7 +6,6 @@ use curve25519_dalek::ristretto::{RistrettoPoint, CompressedRistretto};
 use rand::rngs::OsRng;
 use serde::{Serialize, Deserialize};
 use crate::merkle;
-use crate::blockchain::UTXO_SET;
 use crate::HashSet;
 use crate::{
     block::Block,
