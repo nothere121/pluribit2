@@ -20,6 +20,7 @@ pub struct VDFProof {
     pub pi: Vec<u8>,    // Proof π = x^q mod N
     pub l: Vec<u8>,     // Prime l (serialized as bytes)
     pub r: Vec<u8>,     // Remainder r = 2^t mod l (serialized as bytes)
+    pub iterations: u64,
 }
 
 // A single tick from the VDF clock
@@ -46,6 +47,7 @@ impl Default for VDFClockTick {
                 pi: Vec::new(),
                 l: Vec::new(),
                 r: Vec::new(),
+                iterations: 0, 
             },
             sequence_number: 0,
             prev_output_hash: String::new(),
@@ -172,6 +174,7 @@ impl VDF {
             pi: pi.to_bytes_be(),
             l: l.to_bytes_be(),
             r: r.to_bytes_be(),
+            iterations,
         })
     }
 
@@ -302,6 +305,7 @@ impl Default for VDFProof {
             pi: vec![],
             l: vec![],
             r: vec![],
+            iterations: 0, 
         }
     }
 }
@@ -363,6 +367,7 @@ pub fn compute_vdf_proof(input: &[u8], iterations: u64, modulus: &BigUint) -> Re
         pi: pi.to_bytes_be(),
         l: l.to_bytes_be(),
         r: r.to_bytes_be(),
+        iterations,
     })
 }
 #[cfg(test)]

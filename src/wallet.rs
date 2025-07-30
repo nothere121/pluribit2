@@ -19,7 +19,8 @@ pub struct WalletUtxo {
     pub value: u64,
     pub blinding: Scalar,
     pub commitment: CompressedRistretto,
-    pub block_height: u64, 
+    pub block_height: u64,
+    pub merkle_proof: Option<merkle::MerkleProof>, // Added field
 }
 
 /// The main Wallet struct, holding keys and owned funds.
@@ -75,32 +76,38 @@ impl Wallet {
 
     /// Scans a block for outputs belonging to this wallet using the stealth protocol.
     pub fn scan_block(&mut self, block: &Block) {
+        // Collect all outputs from this block to generate proofs against
+        let block_utxos: Vec<(Vec<u8>, TransactionOutput)> = block
+            .transactions
+            .iter()
+            .flat_map(|tx| tx.outputs.clone())
+            .map(|output| (output.commitment.clone(), output))
+            .collect();
+
         for tx in &block.transactions {
             for output in &tx.outputs {
-                // Check if the output has the necessary data for a stealth payment.
                 if let (Some(r_bytes), Some(payload)) = (&output.ephemeral_key, &output.stealth_payload) {
                     if let Ok(compressed_point) = CompressedRistretto::from_slice(r_bytes) {
                         if let Some(r_point) = compressed_point.decompress() {
-                        
-                            // 1. Attempt to decrypt the payload with our private scan key.
                             if let Some((value, blinding)) = stealth::decrypt_stealth_output(&self.scan_priv, &r_point, payload) {
-                                
-                                // 2. If successful, verify the commitment matches the on-chain one.
                                 let commitment = mimblewimble::commit(value, &blinding).unwrap();
                                 if commitment.compress().to_bytes().to_vec() == output.commitment {
-                                    
-                                    // 3. We own this output. Add it to our UTXO set.
                                     println!("[WALLET] Found incoming UTXO! Value: {}", value);
+
+                                    // Generate and store the proof right here
+                                    let proof = merkle::generate_utxo_proof(&output.commitment, &block_utxos).ok();
+
                                     self.owned_utxos.push(WalletUtxo {
                                         value,
                                         blinding,
                                         commitment: commitment.compress(),
-                                        block_height: block.height, 
+                                        block_height: block.height,
+                                        merkle_proof: proof, // Store the proof
                                     });
                                 }
                             }
                         }
-                    }/////
+                    }
                 }
             }
         }
@@ -114,35 +121,22 @@ impl Wallet {
         recipient_scan_pub: &RistrettoPoint,
     ) -> Result<Transaction, String> {
         let total_needed = amount + fee;
-        let current_height = crate::BLOCKCHAIN.lock().unwrap().current_height;
-
-        
-        // Get current UTXO set for proof generation
-        let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap();
-
-        let utxo_vec: Vec<(Vec<u8>, crate::transaction::TransactionOutput)> = 
-            utxo_set.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
         // 1. Coin Selection: Find UTXOs to fund the transaction
         let mut inputs_to_spend = Vec::new();
         let mut input_utxos = Vec::new();
         let mut total_available = 0;
         let mut blinding_sum_in = Scalar::default();
-
-        // Simple greedy selection
+        
         self.owned_utxos.retain(|utxo| {
             if total_available < total_needed {
                 total_available += utxo.value;
                 blinding_sum_in += utxo.blinding;
                 
-                // Generate merkle proof for this input
-                let commitment_bytes = utxo.commitment.to_bytes().to_vec();
-                let merkle_proof = merkle::generate_utxo_proof(&commitment_bytes, &utxo_vec).ok();
-                
                 inputs_to_spend.push(TransactionInput {
-                    commitment: commitment_bytes,
-                    merkle_proof,
-                    source_height: current_height, 
+                    commitment: utxo.commitment.to_bytes().to_vec(),
+                    merkle_proof: utxo.merkle_proof.clone(), // Use the stored proof
+                    source_height: utxo.block_height,
                 });
                 input_utxos.push(utxo.clone());
                 false // Remove from available UTXOs
@@ -168,6 +162,8 @@ impl Wallet {
 
         // b. Create change output back to ourselves, if necessary
         let change = total_available - total_needed;
+        let current_height = crate::BLOCKCHAIN.lock().unwrap().current_height;
+
         if change > 0 {
             // Send change back to our own stealth address
             let (change_output, change_blinding) = create_stealth_output(change, &self.scan_pub)?;
@@ -176,17 +172,17 @@ impl Wallet {
                 blinding: change_blinding,
                 commitment: CompressedRistretto::from_slice(&change_output.commitment).unwrap(),
                 block_height: current_height + 1, // Change UTXO will be in the next block
+                merkle_proof: None, // This proof will be generated when the block is mined and scanned
             };
             outputs.push(change_output);
             blinding_sum_out += change_blinding;
             // Immediately add change UTXO back to our owned set
-            self.owned_utxos.push(change_utxo); 
+            self.owned_utxos.push(change_utxo);
         }
 
         // 3. Create the Transaction Kernel
-        // The kernel excess is the difference between input and output blinding factors
-        let kernel_blinding = blinding_sum_in - blinding_sum_out; 
-        let kernel = TransactionKernel::new(kernel_blinding, fee)?;
+        let kernel_blinding = blinding_sum_in - blinding_sum_out;
+        let kernel = TransactionKernel::new(kernel_blinding, fee, current_height)?;
 
         // 4. Assemble the final transaction
         Ok(Transaction {
@@ -225,9 +221,9 @@ pub fn create_stealth_output(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transaction::Transaction;
-    use crate::mimblewimble;
     use crate::block::Block;
+    use crate::mimblewimble;
+    use crate::transaction::Transaction;
     use curve25519_dalek::scalar::Scalar;
     use rand::rngs::OsRng;
 
@@ -239,25 +235,20 @@ mod tests {
         let value = 1000;
         let r = Scalar::random(&mut OsRng);
         let blinding = Scalar::random(&mut OsRng);
-
-        // Corrected: encrypt_stealth_out returns a tuple, not a Result
         let (ephemeral_key, payload) = stealth::encrypt_stealth_out(
             &r,
             &recipient_wallet.scan_pub,
             value,
             &blinding,
         );
-        
         let commitment = mimblewimble::commit(value, &blinding).unwrap();
         let (range_proof, _) = mimblewimble::create_range_proof(value, &blinding).unwrap();
-
         let output = TransactionOutput {
             commitment: commitment.compress().to_bytes().to_vec(),
             range_proof: range_proof.to_bytes(),
             ephemeral_key: Some(ephemeral_key.compress().to_bytes().to_vec()),
             stealth_payload: Some(payload),
         };
-
         let tx = Transaction {
             inputs: vec![],
             outputs: vec![output],
@@ -265,6 +256,7 @@ mod tests {
                 excess: vec![0; 32],
                 signature: vec![0; 64],
                 fee: 0,
+                min_height: 0, // Added missing field
             },
         };
         let mut block = Block::genesis();
@@ -276,51 +268,67 @@ mod tests {
         assert_eq!(recipient_wallet.owned_utxos.len(), 1);
         assert_eq!(recipient_wallet.owned_utxos[0].value, value);
     }
-    #[test]
+#[test]
 fn test_wallet_create_transaction() {
+    // Add proper test isolation
+    use lazy_static::lazy_static;
+    use std::sync::Mutex;
+    
+    lazy_static! {
+        static ref WALLET_TEST_MUTEX: Mutex<()> = Mutex::new(());
+    }
+    
+    let _guard = WALLET_TEST_MUTEX.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    
+    // Reset any global state that might be accessed
+    {
+        let mut chain = crate::BLOCKCHAIN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        *chain = crate::blockchain::Blockchain::new();
+    }
+    
     let mut sender = Wallet::new();
     let recipient = Wallet::new();
-    
     // Give sender some UTXOs
     sender.owned_utxos.push(WalletUtxo {
         value: 1000,
         blinding: Scalar::from(1u64),
-        commitment: mimblewimble::commit(1000, &Scalar::from(1u64)).unwrap().compress(),
+        commitment: mimblewimble::commit(1000, &Scalar::from(1u64))
+            .unwrap()
+            .compress(),
         block_height: 0,
+        merkle_proof: None,
     });
-    
     // Create transaction
     let tx = sender.create_transaction(600, 50, &recipient.scan_pub);
     assert!(tx.is_ok());
-    
+
     let tx = tx.unwrap();
     assert_eq!(tx.inputs.len(), 1);
     assert_eq!(tx.outputs.len(), 2); // Payment + change
     assert_eq!(tx.kernel.fee, 50);
-    
     // Sender should have change UTXO
     assert_eq!(sender.balance(), 350); // 1000 - 600 - 50
 }
 
-#[test]
-fn test_wallet_insufficient_funds() {
-    let mut sender = Wallet::new();
-    let recipient = Wallet::new();
-    
-    // Give sender insufficient funds
-    sender.owned_utxos.push(WalletUtxo {
-        value: 100,
-        blinding: Scalar::from(1u64),
-        commitment: mimblewimble::commit(100, &Scalar::from(1u64)).unwrap().compress(),
-        block_height: 0,
-    });
-    
-    // Try to send more than available
-    let result = sender.create_transaction(150, 10, &recipient.scan_pub);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Insufficient funds"));
-    
-    // Wallet should still have original UTXO
-    assert_eq!(sender.balance(), 100);
-}
+    #[test]
+    fn test_wallet_insufficient_funds() {
+        let mut sender = Wallet::new();
+        let recipient = Wallet::new();
+        // Give sender insufficient funds
+        sender.owned_utxos.push(WalletUtxo {
+            value: 100,
+            blinding: Scalar::from(1u64),
+            commitment: mimblewimble::commit(100, &Scalar::from(1u64))
+                .unwrap()
+                .compress(),
+            block_height: 0,
+            merkle_proof: None, // Added missing field
+        });
+        // Try to send more than available
+        let result = sender.create_transaction(150, 10, &recipient.scan_pub);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Insufficient funds"));
+        // Wallet should still have original UTXO
+        assert_eq!(sender.balance(), 100);
+    }
 }

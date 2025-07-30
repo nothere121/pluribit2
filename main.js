@@ -102,19 +102,22 @@ async function handleCommand(command, args) {
             console.log('  create <wallet_name>   - Create a new wallet');
             console.log('  load <wallet_name>     - Load an existing wallet');
             console.log('  send <to> <amount>     - Send a transaction');
-            console.log('  mine                   - Toggle mining on/off');
-            console.log('  stake <amount>         - Create a stake lock transaction');
-            console.log('  activate_stake         - Activate a pending stake with a VDF');
+            console.log('  mine                   - Toggle PoW+PoST mining on/off');
+            console.log('  status                 - Show current chain status');
+            console.log('  balance                - Show wallet balance');
             console.log('  exit                   - Shutdown the node\n');
             break;
+        
         case 'create':
             if (args[0]) worker.postMessage({ action: 'initWallet', walletId: args[0] });
             else console.log('Usage: create <wallet_name>');
             break;
+            
         case 'load':
             if (args[0]) worker.postMessage({ action: 'loadWallet', walletId: args[0] });
             else console.log('Usage: load <wallet_name>');
             break;
+            
         case 'send':
             if (args.length < 2) {
                 console.log('Usage: send <to_address> <amount>');
@@ -126,43 +129,23 @@ async function handleCommand(command, args) {
                     from: loadedWalletId,
                     to: args[0],
                     amount: Number(args[1]),
-                    fee: 1 // Default fee
+                    fee: 1
                 });
             }
             break;
+
         case 'mine':
-             if (!loadedWalletId) {
+            if (!loadedWalletId) {
                 console.log(chalk.red('Error: Load a wallet before mining.'));
             } else {
                 worker.postMessage({ action: 'setMinerActive', active: !isMining, minerId: loadedWalletId });
             }
             break;
-        case 'stake':
-            if (!loadedWalletId) {
-                console.log(chalk.red('Error: Load a wallet before staking.'));
-            } else if (!args[0] || isNaN(Number(args[0]))) {
-                console.log('Usage: stake <amount>');
-            } else {
-                worker.postMessage({ 
-                    action: 'createStake',
-                    walletId: loadedWalletId, 
-                    amount: Number(args[0]) 
-                });
-            }
+            
+        case 'status':
+            worker.postMessage({ action: 'getMiningParams' });
             break;
-        case 'activate_stake':
-            if (!loadedWalletId) {
-                console.log(chalk.red('Error: Load a wallet before activating a stake.'));
-            } else {
-                worker.postMessage({ action: 'activateStake', walletId: loadedWalletId });
-            }
-            break;
-        case 'validators':
-            worker.postMessage({ action: 'getValidators' });
-            break;
-        case 'exit':
-            rl.close();
-            break;
+            
         case 'balance':
             if (!loadedWalletId) {
                 console.log(chalk.red('Error: No wallet loaded.'));
@@ -170,20 +153,15 @@ async function handleCommand(command, args) {
                 worker.postMessage({ action: 'getBalance', walletId: loadedWalletId });
             }
             break;
-        case 'validator':
-            if (args[0] === 'on' && loadedWalletId) {
-                worker.postMessage({ action: 'setValidatorActive', active: true, validatorId: loadedWalletId });
-            } else if (args[0] === 'off') {
-                worker.postMessage({ action: 'setValidatorActive', active: false });
-            } else {
-                console.log('Usage: validator <on|off>');
-            }
+
+        case 'exit':
+            rl.close();
             break;
+
         default:
             if(command) console.log(`Unknown command: "${command}". Type "help".`);
             break;
     }
-    // Always redraw the prompt after a command
     rl.prompt();
 }
 

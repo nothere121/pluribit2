@@ -60,3 +60,6 @@ pub const MAX_VDF_ITERATIONS: u64 = 100_000_000;
 
 /// The default number of iterations for a VDF tick.
 pub const INITIAL_VDF_ITERATIONS: u64 = 1000;
+
+/// The maximum number of transactions allowed in the mempool to prevent memory exhaustion.
+pub const MAX_TX_POOL_SIZE: usize = 10_000;

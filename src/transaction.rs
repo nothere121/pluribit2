@@ -29,9 +29,10 @@ pub struct TransactionOutput {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct TransactionKernel {
-    pub excess: Vec<u8>,       // Compressed Ristretto public key
-    pub signature: Vec<u8>,    // Schnorr signature bytes (challenge || s)
+    pub excess: Vec<u8>,
+    pub signature: Vec<u8>,
     pub fee: u64,
+    pub min_height: u64, // Added field
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -58,23 +59,20 @@ impl TransactionInput {
 
 impl TransactionKernel {
     
-pub fn new(blinding: Scalar, fee: u64) -> Result<Self, String> {
-
+pub fn new(blinding: Scalar, fee: u64, min_height: u64) -> Result<Self, String> {
     log("=== TRANSACTION_KERNEL::NEW DEBUG ===");
     log(&format!("[KERNEL_NEW] Input blinding={}", hex::encode(blinding.to_bytes())));
     log(&format!("[KERNEL_NEW] Fee={}", fee));
     
-    // The kernel excess IS a commitment to the fee, blinded by the kernel's secret.
-    // P = fee*H + blinding*G
     let excess_point = mimblewimble::PC_GENS.commit(Scalar::from(fee), blinding);
 
     log(&format!("[KERNEL_NEW] Derived excess_point={}", hex::encode(excess_point.compress().to_bytes())));
-    
     let mut hasher = Sha256::new();
     hasher.update(&fee.to_le_bytes());
+    hasher.update(&min_height.to_le_bytes()); // Include min_height in signature hash
     let message_hash: [u8; 32] = hasher.finalize().into();
     log(&format!("[KERNEL_NEW] Message hash={}", hex::encode(message_hash)));
-
+    
     let (challenge, s) = mimblewimble::create_schnorr_signature(message_hash, &blinding)
         .map_err(|e| e.to_string())?;
 
@@ -86,35 +84,35 @@ pub fn new(blinding: Scalar, fee: u64) -> Result<Self, String> {
         excess: excess_point.compress().to_bytes().to_vec(),
         signature,
         fee,
+        min_height,
     })
 }
     
     /// Properly aggregate multiple kernels with signature aggregation
     pub fn aggregate(kernels: &[TransactionKernel]) -> PluribitResult<TransactionKernel> {
-        
-        
         if kernels.is_empty() {
             return Err(PluribitError::InvalidInput("No kernels to aggregate".to_string()));
         }
-        
+
         if kernels.len() == 1 {
             return Ok(kernels[0].clone());
         }
-        
+
         let mut total_fee = 0u64;
+        let mut max_min_height = 0u64; // <-- Add this
         let mut signatures = Vec::new();
         let mut public_keys = Vec::new();
-        
+
         for kernel in kernels {
             total_fee += kernel.fee;
-            
+            max_min_height = max_min_height.max(kernel.min_height); 
             let pubkey = mimblewimble::kernel_excess_to_pubkey(&kernel.excess)?;
             public_keys.push(pubkey);
-            
+
             if kernel.signature.len() != 64 {
                 return Err(PluribitError::InvalidKernelSignature);
             }
-            
+
             let challenge = Scalar::from_bytes_mod_order(
                 kernel.signature[0..32].try_into()
                     .map_err(|_| PluribitError::InvalidKernelSignature)?
@@ -123,30 +121,30 @@ pub fn new(blinding: Scalar, fee: u64) -> Result<Self, String> {
                 kernel.signature[32..64].try_into()
                     .map_err(|_| PluribitError::InvalidKernelSignature)?
             );
-            
             signatures.push((challenge, s));
         }
-        
+
         let aggregate_pubkey: RistrettoPoint = public_keys.iter().sum();
-        
+
         let mut hasher = Sha256::new();
         hasher.update(&total_fee.to_le_bytes());
+        hasher.update(&max_min_height.to_le_bytes()); 
         let message_hash: [u8; 32] = hasher.finalize().into();
-        
+
         let (agg_challenge, agg_s) = mimblewimble::aggregate_schnorr_signatures(
             &signatures,
             &public_keys,
             message_hash
         )?;
-        
         let mut signature_bytes = Vec::with_capacity(64);
         signature_bytes.extend_from_slice(&agg_challenge.to_bytes());
         signature_bytes.extend_from_slice(&agg_s.to_bytes());
-        
+
         Ok(TransactionKernel {
             excess: aggregate_pubkey.compress().to_bytes().to_vec(),
             signature: signature_bytes,
             fee: total_fee,
+            min_height: max_min_height,
         })
     }
 }
@@ -293,9 +291,10 @@ impl Transaction {
     log(&format!("[CREATE_COINBASE] Total reward value={}", total_reward_value));
     
     let fee = 0u64;
-    let kernel = TransactionKernel::new(blinding_sum, fee)
+    let min_height = 0u64; // Coinbase has no minimum height
+    let kernel = TransactionKernel::new(blinding_sum, fee, min_height) 
         .map_err(|e| PluribitError::ComputationError(e.to_string()))?;
-    
+        
     log(&format!("[CREATE_COINBASE] Kernel excess={}", hex::encode(&kernel.excess)));
     
     Ok(Transaction {
@@ -312,15 +311,16 @@ impl Transaction {
             .map_err(|_| PluribitError::InvalidKernelExcess)?
             .decompress()
             .ok_or(PluribitError::InvalidKernelExcess)?;
-
+            
         // Reconstruct the public key (blinding*G) used for the signature.
         // This is done by subtracting the commitment to the fee (fee*H) from the excess.
         let fee_commitment = mimblewimble::PC_GENS.commit(Scalar::from(self.kernel.fee), Scalar::from(0u64));
         let public_key = P - fee_commitment;
 
-        // The message that was signed is the hash of the fee.
+        // The message that was signed is the hash of the fee and min_height.
         let mut hasher = sha2::Sha256::new();
         hasher.update(&self.kernel.fee.to_le_bytes());
+        hasher.update(&self.kernel.min_height.to_le_bytes());
         let msg_hash: [u8; 32] = hasher.finalize().into();
         
         // Parse the signature from the kernel.
@@ -330,7 +330,6 @@ impl Transaction {
         let mut challenge_bytes = [0u8; 32];
         challenge_bytes.copy_from_slice(&self.kernel.signature[0..32]);
         let challenge = Scalar::from_bytes_mod_order(challenge_bytes);
-
         let mut s_bytes = [0u8; 32];
         s_bytes.copy_from_slice(&self.kernel.signature[32..64]);
         let s = Scalar::from_bytes_mod_order(s_bytes);
@@ -355,287 +354,246 @@ impl Transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wallet::Wallet; // Added for coinbase test
-    use curve25519_dalek::scalar::Scalar; // Added for regular tx test
+    use crate::wallet::Wallet;
+    use curve25519_dalek::constants::RISTRETTO_BASEPOINT_TABLE;
+    use curve25519_dalek::scalar::Scalar;
     use crate::mimblewimble::kernel_excess_to_pubkey;
-    use lazy_static::lazy_static; 
-    use std::sync::Mutex;      
+    use lazy_static::lazy_static;
+    use std::sync::Mutex;
+    use crate::{BLOCKCHAIN, TX_POOL};
+    use crate::blockchain;
 
-    lazy_static! {               
+    lazy_static! {
         static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
-    }                            
-    // New Test for Coinbase Logic
+    }
+
+
+    // Helper to reset global state for tests
+fn reset_global_state() {
+    // Handle poisoned mutexes gracefully
+    {
+        let mut chain = BLOCKCHAIN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        *chain = blockchain::Blockchain::new();
+        // Set easy test parameters
+        chain.current_pow_difficulty = 1;
+        chain.current_vrf_threshold = [0xFF; 32]; // Easy threshold
+        chain.current_vdf_iterations = 1000; // Increase from 100-1000 for valid proofs
+    }
+
+    {
+        let mut utxo_set = blockchain::UTXO_SET.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        utxo_set.clear();
+    }
+
+    {
+        let mut tx_pool = TX_POOL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        tx_pool.pending.clear();
+        tx_pool.fee_total = 0;
+    }
+}
+    
+    // This test is already passing but included for completeness of the module
     #[test]
     fn test_coinbase_creation_and_verification() {
-        // 1. Define the context for the coinbase transaction.
         let reward_amount = 50_000_000;
         let wrong_reward = 100;
-        
-        // Create a dummy recipient (the miner's wallet).
         let miner_wallet = Wallet::new();
         let miner_pubkey_bytes = miner_wallet.scan_pub.compress().to_bytes().to_vec();
         let rewards = vec![(miner_pubkey_bytes, reward_amount)];
-
-        // 2. Create the coinbase transaction.
         let coinbase_tx = Transaction::create_coinbase(rewards).unwrap();
-
-        // 3. Verify the transaction with the CORRECT reward context. This should succeed.
-        assert!(
-            coinbase_tx.verify(Some(reward_amount), None).is_ok(),
-            "Coinbase verification should succeed with the correct reward"
-        );
-
-        // 4. Verify the transaction with the WRONG reward context. This must fail.
-        assert!(
-            coinbase_tx.verify(Some(wrong_reward), None).is_err(),
-            "Coinbase verification should fail with an incorrect reward"
-        );
-
-        // 5. Verify the transaction as if it were a regular transaction. This must fail.
-        assert!(
-            coinbase_tx.verify(None, None).is_err(),
-            "Coinbase verification should fail when treated as a regular transaction"
-        );
+        assert!(coinbase_tx.verify(Some(reward_amount), None).is_ok());
+        assert!(coinbase_tx.verify(Some(wrong_reward), None).is_err());
+        assert!(coinbase_tx.verify(None, None).is_err());
     }
 
     #[test]
     fn test_transaction_roundtrip() {
-        let _guard = TEST_MUTEX.lock().unwrap();
-        // 0. Setup a clean environment for this test.
-        crate::blockchain::UTXO_SET.lock().unwrap().clear();
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        reset_global_state();
 
-        let mut chain = crate::blockchain::Blockchain::new();
+        let miner_sk = crate::mimblewimble::generate_secret_key();
+        let miner_pk = &miner_sk * &*RISTRETTO_BASEPOINT_TABLE;
         let sender_wallet = Wallet::new();
         let recipient_wallet = Wallet::new();
+        
+        // Add a block to the GLOBAL chain to fund the sender wallet
+        let block1 = {
+            let mut chain = BLOCKCHAIN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            chain.current_pow_difficulty = 1;
+            // Set very easy VRF threshold for testing
+            chain.current_vrf_threshold = [0xFF; 32]; // Maximum threshold (always passes)
 
-        // 1. Fund an initial UTXO by mining a block.
-        let reward = crate::blockchain::get_current_base_reward(1);
-        let coinbase_tx = Transaction::create_coinbase(vec![(sender_wallet.scan_pub.compress().to_bytes().to_vec(), reward)]).unwrap();
-        
-        let mut block1 = crate::block::Block::genesis();
-        block1.height = 1;
-        block1.prev_hash = chain.get_latest_block().hash();
-        block1.transactions.push(coinbase_tx.clone());
-        
-        let vdf = crate::vdf::VDF::new(2048).unwrap();
-        block1.vdf_proof = vdf.compute_with_proof(block1.prev_hash.as_bytes(), 100).unwrap();
-        for _ in 0..100000 {
-            if block1.is_valid_pow() {
-                break;
+            let reward = crate::blockchain::get_current_base_reward(1);
+            let coinbase_tx = Transaction::create_coinbase(vec![(sender_wallet.scan_pub.compress().to_bytes().to_vec(), reward)]).unwrap();
+            
+            let mut block = crate::block::Block::genesis();
+            block.height = 1;
+            block.prev_hash = chain.get_latest_block().hash();
+            block.transactions.push(coinbase_tx);
+            block.miner_pubkey = miner_pk.compress().to_bytes();
+            block.vrf_proof = crate::vrf::create_vrf(&miner_sk, block.prev_hash.as_bytes());
+            let vdf = crate::vdf::VDF::new(2048).unwrap();
+            let vdf_input = format!("{}{}", block.prev_hash, hex::encode(&block.vrf_proof.output));
+            block.vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), chain.current_vdf_iterations).unwrap();
+            block.tx_merkle_root = block.calculate_tx_merkle_root();
+
+            loop {
+                if block.is_valid_pow_ticket(chain.current_pow_difficulty) { break; }
+                block.pow_nonce += 1;
             }
-            block1.nonce += 1;
-        }
-        assert!(block1.is_valid_pow(), "Failed to find valid PoW in reasonable time");
-        chain.add_block(block1.clone()).unwrap();
-
-        // 2. Scan the block to get the details of the UTXO we want to spend.
-        let mut temp_wallet = sender_wallet;
-        temp_wallet.scan_block(&block1);
-        let input_utxo = temp_wallet.owned_utxos[0].clone();
-        
-        // 3. Manually construct every part of the spending transaction.
-        let amount_to_send = 900;
-        let fee = 10;
-
-        // a. Create the recipient's and sender's (change) outputs.
-        let (recipient_output, recipient_blinding) = crate::wallet::create_stealth_output(amount_to_send, &recipient_wallet.scan_pub).unwrap();
-        let change_amount = input_utxo.value - amount_to_send - fee;
-        let (change_output, change_blinding) = crate::wallet::create_stealth_output(change_amount, &temp_wallet.scan_pub).unwrap();
-
-        // b. Create the transaction kernel using the difference in blinding factors.
-        let kernel_blinding = input_utxo.blinding - (recipient_blinding + change_blinding);
-        let kernel = TransactionKernel::new(kernel_blinding, fee).unwrap();
-
-        // c. Generate the Merkle proof for the input UTXO against the correct blockchain state.
-        let proof = {
-            let utxo_set_map = crate::blockchain::UTXO_SET.lock().unwrap();
-            let utxo_vec: Vec<(Vec<u8>, TransactionOutput)> = utxo_set_map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            crate::merkle::generate_utxo_proof(&input_utxo.commitment.to_bytes(), &utxo_vec).unwrap()
-        }; // Lock is released here
-
-        // d. Assemble the final, valid transaction.
-        let spending_tx = Transaction {
-            inputs: vec![TransactionInput {
-                commitment: input_utxo.commitment.to_bytes().to_vec(),
-                merkle_proof: Some(proof),
-                source_height: input_utxo.block_height,
-            }],
-            outputs: vec![recipient_output, change_output],
-            kernel,
+            chain.add_block(block.clone()).unwrap();
+            block
         };
 
-        // 4. Verify that this correctly constructed transaction is valid.
+        // Rest of the test...
+        let spending_tx = {
+            let mut temp_wallet = sender_wallet;
+            temp_wallet.scan_block(&block1);
+            assert_eq!(temp_wallet.balance(), crate::blockchain::get_current_base_reward(1));
+            temp_wallet.create_transaction(900, 10, &recipient_wallet.scan_pub).unwrap()
+        };
+        
         {
-            //let utxo_set = UTXO_SET.lock().unwrap();
-            let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap();
-
+            let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             assert!(spending_tx.verify(None, Some(&utxo_set)).is_ok(), "Manually constructed transaction should be valid");
-        } // Lock is released here
-
+        }
     }
-    
-    #[test]
-fn test_transaction_kernel_aggregate() {
-    // Create multiple kernels
-    let kernels = vec![
-        TransactionKernel::new(Scalar::from(1u64), 10).unwrap(),
-        TransactionKernel::new(Scalar::from(2u64), 20).unwrap(),
-        TransactionKernel::new(Scalar::from(3u64), 30).unwrap(),
-    ];
-    
-    // Aggregate
-    let agg_kernel = TransactionKernel::aggregate(&kernels).unwrap();
-    
-    // Check fee aggregation
-    assert_eq!(agg_kernel.fee, 60);
-    
-    // Check excess is valid point
-    let excess_point = kernel_excess_to_pubkey(&agg_kernel.excess);
-    assert!(excess_point.is_ok());
-}
-
-
-
-#[test]
-fn test_transaction_hash() {
-    let tx1 = Transaction {
-        inputs: vec![],
-        outputs: vec![],
-        kernel: TransactionKernel {
-            excess: vec![1, 2, 3],
-            signature: vec![4, 5, 6],
-            fee: 10,
-        },
-    };
-    
-    let tx2 = Transaction {
-        inputs: vec![],
-        outputs: vec![],
-        kernel: TransactionKernel {
-            excess: vec![1, 2, 3],
-            signature: vec![4, 5, 6],
-            fee: 10,
-        },
-    };
-    
-    // Same transaction should have same hash
-    assert_eq!(tx1.hash(), tx2.hash());
-    
-    // Different fee should give different hash
-    let mut tx3 = tx1.clone();
-    tx3.kernel.fee = 20;
-    assert_ne!(tx1.hash(), tx3.hash());
-}
 
     #[test]
     fn test_verify_with_valid_merkle_proof() {
-        // Helper function to clear globals if you have one, otherwise clear manually.
-        // This is good practice even for single test runs.
-        crate::blockchain::UTXO_SET.lock().unwrap().clear();
-        crate::blockchain::UTXO_ROOTS.lock().unwrap().clear();
-        *crate::BLOCKCHAIN.lock().unwrap() = crate::blockchain::Blockchain::new();
-
-        let _guard = TEST_MUTEX.lock().unwrap();
-
-        // 1. Lock the GLOBAL blockchain instance. Do not create a new local one.
-        let mut chain = crate::BLOCKCHAIN.lock().unwrap();
-
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    reset_global_state();
+    
+        let miner_sk = crate::mimblewimble::generate_secret_key();
+        let miner_pk = &miner_sk * &*RISTRETTO_BASEPOINT_TABLE;
         let recipient_wallet = Wallet::new();
-        let recipient_pubkey_bytes = recipient_wallet.scan_pub.compress().to_bytes().to_vec();
+    let block1 = {
+            let mut chain = BLOCKCHAIN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            chain.current_pow_difficulty = 1;
+    chain.current_vrf_threshold = [0xFF; 32]; // Easy threshold
+    
+            let recipient_pubkey_bytes = recipient_wallet.scan_pub.compress().to_bytes().to_vec();
+    let correct_reward = crate::blockchain::get_current_base_reward(1);
+            
+            // FIX: Create two outputs so the merkle proof has siblings
+            let rewards = vec![
+                (recipient_pubkey_bytes.clone(), correct_reward / 2),
+                (recipient_pubkey_bytes, correct_reward - (correct_reward / 2)),
+            ];
+            let coinbase_tx = Transaction::create_coinbase(rewards).unwrap();
+            
+            let mut block = crate::block::Block::genesis();
+            block.height = 1;
+            block.prev_hash = chain.get_latest_block().hash();
+    block.transactions.push(coinbase_tx);
+            block.miner_pubkey = miner_pk.compress().to_bytes();
+            block.vrf_proof = crate::vrf::create_vrf(&miner_sk, block.prev_hash.as_bytes());
+            let vdf = crate::vdf::VDF::new(2048).unwrap();
+            
+            let vdf_input = format!("{}{}", block.prev_hash, hex::encode(&block.vrf_proof.output));
+            block.vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), chain.current_vdf_iterations).unwrap();
 
-        // Create the coinbase transaction
-        let correct_reward = crate::blockchain::get_current_base_reward(1);
-        let coinbase_tx = Transaction::create_coinbase(vec![(recipient_pubkey_bytes, correct_reward)]).unwrap();
+            block.tx_merkle_root = block.calculate_tx_merkle_root();
+    loop {
+                if block.is_valid_pow_ticket(chain.current_pow_difficulty) { break;
+    }
+                block.pow_nonce += 1;
+    }
+            chain.add_block(block.clone()).unwrap();
+            block
+        };
+    
+        let mut utxo_wallet = recipient_wallet;
+        utxo_wallet.scan_block(&block1);
+    assert_eq!(utxo_wallet.balance(), crate::blockchain::get_current_base_reward(1));
+        
+        let spending_tx = utxo_wallet.create_transaction(utxo_wallet.balance() - 100, 10, &Wallet::new().scan_pub).unwrap();
+        
+        let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert!(spending_tx.verify(None, Some(&utxo_set)).is_ok(), "Transaction with a valid merkle proof should be verified");
+    }
+    
+    #[test]
+    fn test_verify_fails_with_invalid_merkle_proof() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        reset_global_state();
+    
+        let miner_sk = crate::mimblewimble::generate_secret_key();
+    let miner_pk = &miner_sk * &*RISTRETTO_BASEPOINT_TABLE;
+        let recipient_wallet = Wallet::new();
+    let block1 = {
+            let mut chain = BLOCKCHAIN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            chain.current_pow_difficulty = 1;
+    chain.current_vrf_threshold = [0xFF; 32]; // Easy threshold
+    
+            let recipient_pubkey_bytes = recipient_wallet.scan_pub.compress().to_bytes().to_vec();
+    let correct_reward = crate::blockchain::get_current_base_reward(1);
 
-        let mut block1 = crate::block::Block::genesis();
-        block1.height = 1;
-        // 2. Use the global chain's tip to get the previous hash
-        block1.prev_hash = chain.get_latest_block().hash();
-        block1.transactions.push(coinbase_tx.clone());
-
-        // --- Mining logic ---
-        let vdf = crate::vdf::VDF::new(2048).unwrap();
-        block1.vdf_proof = vdf.compute_with_proof(block1.prev_hash.as_bytes(), 10).unwrap();
-        for _ in 0..100000 {
-            if block1.is_valid_pow() { break; }
-            block1.nonce += 1;
+            // FIX: Create two outputs so the merkle proof has siblings to tamper with
+            let rewards = vec![
+                (recipient_pubkey_bytes.clone(), correct_reward / 2),
+                (recipient_pubkey_bytes, correct_reward - (correct_reward / 2)),
+            ];
+            let coinbase_tx = Transaction::create_coinbase(rewards).unwrap();
+            
+            let mut block = crate::block::Block::genesis();
+            block.height = 1;
+            block.prev_hash = chain.get_latest_block().hash();
+    block.transactions.push(coinbase_tx);
+            block.miner_pubkey = miner_pk.compress().to_bytes();
+            block.vrf_proof = crate::vrf::create_vrf(&miner_sk, block.prev_hash.as_bytes());
+            let vdf = crate::vdf::VDF::new(2048).unwrap();
+            
+            let vdf_input = format!("{}{}", block.prev_hash, hex::encode(&block.vrf_proof.output));
+            block.vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), chain.current_vdf_iterations).unwrap();
+            
+            block.tx_merkle_root = block.calculate_tx_merkle_root();
+    loop {
+                if block.is_valid_pow_ticket(chain.current_pow_difficulty) { break;
+    }
+                block.pow_nonce += 1;
+    }
+            chain.add_block(block.clone()).unwrap();
+            block
+        };
+    
+        let mut utxo_wallet = recipient_wallet;
+        utxo_wallet.scan_block(&block1);
+    let mut spending_tx = utxo_wallet.create_transaction(100, 10, &Wallet::new().scan_pub).unwrap();
+    
+        // Manually tamper with the proof to make it invalid.
+    if let Some(proof) = &mut spending_tx.inputs[0].merkle_proof {
+            if !proof.siblings.is_empty() {
+                proof.siblings[0][0] ^= 0xFF;
+    // Flip a byte in a sibling hash
+            }
         }
-        assert!(block1.is_valid_pow(), "Failed to find valid PoW in reasonable time");
-        // --- End Mining ---
-
-        // 3. Add the block to the GLOBAL chain instance. Its height will now be 1.
-        chain.add_block(block1.clone()).unwrap();
-
-        // 4. Setup the wallet and scan the blocks from the GLOBAL chain
-        let mut utxo_wallet = Wallet::new();
-        utxo_wallet.scan_priv = recipient_wallet.scan_priv;
-        utxo_wallet.spend_priv = recipient_wallet.spend_priv;
-        utxo_wallet.scan_pub = recipient_wallet.scan_pub;
-        utxo_wallet.spend_pub = recipient_wallet.spend_pub;
-        for block in &chain.blocks {
-            utxo_wallet.scan_block(block);
-        }
-        assert_eq!(utxo_wallet.balance(), correct_reward);
-
-        // 5. Release the lock on the global chain before creating the next transaction
-        drop(chain);
-
-        // 6. This call will now correctly read current_height=1 from the global chain
-        let spending_tx = utxo_wallet.create_transaction(correct_reward - 100, 10, &Wallet::new().scan_pub).unwrap();
-
-        // 7. Verification should now succeed
-        let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap();
-        assert!(spending_tx.verify(None, Some(&utxo_set)).is_ok(), "Transaction with a valid merkle proof should be verified");
+        
+        let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert!(spending_tx.verify(None, Some(&utxo_set)).is_err(), "Transaction with an invalid merkle proof should fail verification");
+    }
+    
+    // These tests are already passing but included for completeness of the module
+    #[test]
+    fn test_transaction_kernel_aggregate() {
+        let kernels = vec![
+            TransactionKernel::new(Scalar::from(1u64), 10, 0).unwrap(),
+            TransactionKernel::new(Scalar::from(2u64), 20, 1).unwrap(),
+            TransactionKernel::new(Scalar::from(3u64), 30, 2).unwrap(),
+        ];
+        let agg_kernel = TransactionKernel::aggregate(&kernels).unwrap();
+        assert_eq!(agg_kernel.fee, 60);
+        assert_eq!(agg_kernel.min_height, 2);
+        assert!(kernel_excess_to_pubkey(&agg_kernel.excess).is_ok());
     }
 
     #[test]
-    fn test_verify_fails_with_invalid_merkle_proof() {
-        let _guard = TEST_MUTEX.lock().unwrap(); 
-        // Setup is the same as the valid test.
-        let mut chain = crate::blockchain::Blockchain::new();
-        let recipient_wallet = Wallet::new();
-        let recipient_pubkey_bytes = recipient_wallet.scan_pub.compress().to_bytes().to_vec();
-        let correct_reward = crate::blockchain::get_current_base_reward(1);
-        let coinbase_tx = Transaction::create_coinbase(vec![(recipient_pubkey_bytes, correct_reward)]).unwrap();
-        let mut block1 = crate::block::Block::genesis();
-        block1.height = 1;
-        block1.difficulty = 1; 
-        block1.prev_hash = chain.get_latest_block().hash();
-        block1.transactions.push(coinbase_tx.clone());
-        let vdf = crate::vdf::VDF::new(2048).unwrap();
-        block1.vdf_proof = vdf.compute_with_proof(block1.prev_hash.as_bytes(), 100).unwrap();
-        for _ in 0..100000 {
-            if block1.is_valid_pow() {
-                break;
-            }
-            block1.nonce += 1;
-        }
-        assert!(block1.is_valid_pow(), "Failed to find valid PoW in reasonable time");
-        chain.add_block(block1).unwrap();
-
-        let mut utxo_wallet = Wallet::new();
-        utxo_wallet.scan_priv = recipient_wallet.scan_priv;
-        utxo_wallet.scan_pub = recipient_wallet.scan_pub;
-        utxo_wallet.spend_priv = recipient_wallet.spend_priv;
-        utxo_wallet.spend_pub = recipient_wallet.spend_pub;
-        for block in &chain.blocks {
-            utxo_wallet.scan_block(block);
-        }
-
-        // Create the transaction, which generates a valid proof.
-        let mut spending_tx = utxo_wallet.create_transaction(900, 10, &Wallet::new().scan_pub).unwrap();
-
-        // Manually tamper with the proof to make it invalid.
-        if let Some(proof) = &mut spending_tx.inputs[0].merkle_proof {
-            if !proof.siblings.is_empty() {
-                proof.siblings[0][0] ^= 0xFF; // Flip a byte in a sibling hash
-            }
-        }
-
-        // Verification should now fail.
-        //let utxo_set = UTXO_SET.lock().unwrap();
-        let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap();
-        assert!(spending_tx.verify(None, Some(&utxo_set)).is_err(), "Transaction with an invalid merkle proof should fail verification");
-        
+    fn test_transaction_hash() {
+        let tx1 = Transaction { inputs: vec![], outputs: vec![], kernel: TransactionKernel { excess: vec![1, 2, 3], signature: vec![4, 5, 6], fee: 10, min_height: 0 } };
+        let tx2 = Transaction { inputs: vec![], outputs: vec![], kernel: TransactionKernel { excess: vec![1, 2, 3], signature: vec![4, 5, 6], fee: 10, min_height: 0 } };
+        assert_eq!(tx1.hash(), tx2.hash());
+        let mut tx3 = tx1.clone();
+        tx3.kernel.fee = 20;
+        assert_ne!(tx1.hash(), tx3.hash());
     }
 }
