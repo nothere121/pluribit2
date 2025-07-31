@@ -5,7 +5,6 @@ use curve25519_dalek::scalar::Scalar;
 use sha2::{Sha256, Digest};
 use serde::{Serialize, Deserialize};
 use rand::thread_rng;
-use rand_core::RngCore;
 
 
 /// VRF proof data structure

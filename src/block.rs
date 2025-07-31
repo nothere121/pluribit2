@@ -20,7 +20,7 @@ pub struct Block {
    pub timestamp: u64,
    pub transactions: Vec<Transaction>,
    
-   // NEW PoW + PoST fields
+   //  PoW + PoST fields
    pub pow_nonce: u64,
    pub vrf_proof: VrfProof,
    pub vdf_proof: VDFProof,
@@ -28,6 +28,10 @@ pub struct Block {
    
    // Merkle root
    pub tx_merkle_root: [u8; 32],
+   
+   //  hash as a computed field during serialization
+   #[serde(skip_deserializing)]
+   pub hash: String,
 }
 
 impl Block {
@@ -38,22 +42,24 @@ impl Block {
        hasher.update(GENESIS_BITCOIN_HASH.as_bytes());
        let genesis_prev_hash = hex::encode(hasher.finalize());
 
-       Block {
+       let mut block = Block {
            height: 0,
-           prev_hash: genesis_prev_hash, // <-- Use the hash of the anchor
+           prev_hash: genesis_prev_hash,
            timestamp: GENESIS_TIMESTAMP_MS, 
            transactions: vec![],
            pow_nonce: 0,
            vrf_proof: VrfProof::default(),
-          
            vdf_proof: VDFProof::default(),
            miner_pubkey: [0u8; 32],
            tx_merkle_root: Sha256::digest(&[]).into(),
-       }
+           hash: String::new(), // Will be computed below
+       };
+       block.hash = block.compute_hash();
+       block
    }
    
    /// Calculates the hash of the block header.
-   pub fn hash(&self) -> String {
+   pub fn compute_hash(&self) -> String {
        let mut hasher = Sha256::new();
        hasher.update(b"pluribit_block_v2");
        hasher.update(&self.height.to_le_bytes());
@@ -65,7 +71,14 @@ impl Block {
        hasher.update(&self.miner_pubkey);
        hex::encode(hasher.finalize())
    }
-
+   /// just returns the stored hash - i.e. not recomputing
+   pub fn hash(&self) -> String {
+       if self.hash.is_empty() {
+           self.compute_hash()
+       } else {
+           self.hash.clone()
+       }
+   }
    /// Calculates the hash for the PoW ticket lottery.
    pub fn pow_ticket_hash(&self) -> [u8; 32] {
        let mut hasher = Sha256::new();

@@ -45,6 +45,16 @@ worker.on('message', (event) => {
             rl.prompt();
             break;
             
+         case 'peerList':
+            console.log(chalk.cyan.bold('\nConnected Peers:'));
+            if (payload.length === 0) {
+                console.log('  (None)');
+            } else {
+                payload.forEach(peer => console.log(`  - ${peer.id}`));
+            }
+            rl.prompt(true);
+            break;        
+               
         case 'walletLoaded':
             loadedWalletId = payload.walletId;
             console.log(chalk.green(`\nWallet '${payload.walletId}' loaded successfully.`));
@@ -105,6 +115,7 @@ async function handleCommand(command, args) {
             console.log('  mine                   - Toggle PoW+PoST mining on/off');
             console.log('  status                 - Show current chain status');
             console.log('  balance                - Show wallet balance');
+            console.log('  peers                  - List connected P2P peers');
             console.log('  exit                   - Shutdown the node\n');
             break;
         
@@ -117,7 +128,15 @@ async function handleCommand(command, args) {
             if (args[0]) worker.postMessage({ action: 'loadWallet', walletId: args[0] });
             else console.log('Usage: load <wallet_name>');
             break;
-            
+
+        case 'connect':
+            if (args[0]) {
+                worker.postMessage({ action: 'connectPeer', address: args[0] });
+            } else {
+                console.log('Usage: connect <multiaddr>');
+            }
+            break;
+
         case 'send':
             if (args.length < 2) {
                 console.log('Usage: send <to_address> <amount>');
@@ -152,6 +171,10 @@ async function handleCommand(command, args) {
             } else {
                 worker.postMessage({ action: 'getBalance', walletId: loadedWalletId });
             }
+            break;
+            
+        case 'peers':
+            worker.postMessage({ action: 'getPeers' });
             break;
 
         case 'exit':

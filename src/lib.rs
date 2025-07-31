@@ -416,7 +416,24 @@ pub fn get_latest_block_hash() -> Result<String, JsValue> {
 }
 
 
-
+#[wasm_bindgen]
+pub fn get_block_by_hash(hash: String) -> Result<JsValue, JsValue> {
+    let chain = BLOCKCHAIN.lock().unwrap();
+    
+    // Check all blocks including genesis
+    for block in &chain.blocks {
+        if block.hash() == hash {
+            return serde_wasm_bindgen::to_value(&block).map_err(|e| e.into());
+        }
+    }
+    
+    // Also check the hash map
+    if let Some(block) = chain.block_by_hash.get(&hash).cloned() {
+        serde_wasm_bindgen::to_value(&block).map_err(|e| e.into())
+    } else {
+        Ok(JsValue::NULL)
+    }
+}
 
 
 #[wasm_bindgen]
@@ -516,6 +533,7 @@ pub fn get_tx_pool() -> Result<JsValue, JsValue> {
 pub fn mine_post_block(
     height: u64,
     miner_secret_key_bytes: Vec<u8>,
+    miner_scan_pubkey_bytes: Vec<u8>, 
     prev_hash: String,
     transactions_js: JsValue,
 ) -> Result<JsValue, JsValue> {
@@ -563,7 +581,10 @@ pub fn mine_post_block(
                     let chain = BLOCKCHAIN.lock().unwrap();
                     chain.calculate_block_reward(height, pow_difficulty) + total_fees
                 };
-                let coinbase_tx = Transaction::create_coinbase(vec![(miner_pubkey.to_vec(), reward)]).map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+                let coinbase_tx = Transaction::create_coinbase(vec![(miner_scan_pubkey_bytes, reward)])
+                    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                
                 transactions.insert(0, coinbase_tx);
 
                 let mut block = Block {
@@ -576,19 +597,21 @@ pub fn mine_post_block(
                     vdf_proof,
                     miner_pubkey,
                     tx_merkle_root: [0u8; 32], // Placeholder
+                    hash: String::new(), 
                 };
 
                 // *** APPLY CUT-THROUGH HERE ***
                 block.apply_cut_through().map_err(|e| JsValue::from_str(&e.to_string()))?;
                 
                 block.tx_merkle_root = block.calculate_tx_merkle_root();
+                block.hash = block.compute_hash(); 
 
                 return serde_wasm_bindgen::to_value(&block).map_err(|e| e.into());
             }
         }
         pow_nonce += 1;
         if pow_nonce > MAX_POW_ATTEMPTS {
-            log("[MINING] Exceeded max PoW attempts, yielding to other miners");
+            log(&format!("[MINING] Exceeded max PoW attempts at height {}, yielding to other miners", height));
             return Ok(JsValue::NULL);
         }
     }
@@ -983,7 +1006,10 @@ pub fn sign_message(message: String, private_key_bytes: Vec<u8>) -> Result<Vec<u
     Ok(signature)
 }
 
-
+#[wasm_bindgen]
+pub fn get_genesis_block_hash() -> String {
+    block::Block::genesis().hash()
+}
 
 
 #[wasm_bindgen]
@@ -1145,11 +1171,6 @@ pub fn wallet_unscan_block(wallet_json: &str, block_js: JsValue) -> Result<Strin
 
 
 
-
-
-
-
-
 #[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use wasm_bindgen_test::*;
@@ -1177,6 +1198,8 @@ mod tests {
         let wallet_json = wallet_create().unwrap();
         let wallet: Wallet = serde_json::from_str(&wallet_json).unwrap();
         let miner_sk_bytes = wallet.spend_priv.to_bytes().to_vec();
+        // FIX: Get the scan public key to pass to the miner
+        let miner_scan_pk_bytes = wallet.scan_pub.compress().to_bytes().to_vec();
         let prev_hash = get_latest_block_hash().unwrap();
 
         // 2. Make mining parameters very easy for a fast test
@@ -1191,6 +1214,7 @@ mod tests {
         let block_js = mine_post_block(
             1,
             miner_sk_bytes,
+            miner_scan_pk_bytes, // <-- Add the new argument here
             prev_hash,
             serde_wasm_bindgen::to_value(&Vec::<Transaction>::new()).unwrap()
         ).unwrap();

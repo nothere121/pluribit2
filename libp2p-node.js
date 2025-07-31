@@ -4,13 +4,22 @@ import { webSockets } from '@libp2p/websockets';
 import { webRTC } from '@libp2p/webrtc';
 import { noise } from '@chainsafe/libp2p-noise';
 import { yamux } from '@chainsafe/libp2p-yamux';
+import { circuitRelayTransport, circuitRelayServer } from '@libp2p/circuit-relay-v2';
+import { mdns } from '@libp2p/mdns' 
+
+import { multiaddr } from '@multiformats/multiaddr';
+import { CONFIG } from './config.js';
+
+
 import { kadDHT } from '@libp2p/kad-dht';
 import { gossipsub } from '@chainsafe/libp2p-gossipsub';
 import { bootstrap } from '@libp2p/bootstrap';
 import { identify } from '@libp2p/identify';
+import { ping } from '@libp2p/ping'; 
 import { createEd25519PeerId } from '@libp2p/peer-id-factory';
 import { fromString as uint8ArrayFromString } from 'uint8arrays/from-string';
 import { toString as uint8ArrayToString } from 'uint8arrays/to-string';
+import { JSONStringifyWithBigInt, JSONParseWithBigInt } from './utils.js';
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
@@ -23,111 +32,151 @@ export const TOPICS = {
 };
 
 export class PluribitP2P {
-  constructor(log) {
+constructor(log, options = {}) {
     this.log = log;
     this.node = null;
     this.handlers = new Map();
+    this.isBootstrap = options.isBootstrap || false;
     this.config = {
       listen: {
-        tcp: 26658,
-        ws: 26659
+        tcp: options.tcpPort || 26658,
+        ws: options.wsPort || 26659
       },
-      bootstrap: [
-        // Add bootstrap nodes here when deployed
-        // '/dns4/bootstrap1.pluribit.org/tcp/26658/p2p/QmPeerId...'
+      bootstrap: this.isBootstrap ? [] : [
+        // This will be populated dynamically or via config
+        '/ip4/127.0.0.1/tcp/26658/p2p/12D3KooWASE5Jgor9P6ztHakyEBQ5ouaLSoqjFMgiqPkb9A9vNvQ'
       ]
     };
-  }
+}
 
-  async initialize() {
+async initialize() {
     this.log('[P2P] Initializing libp2p node...');
-    // Load or create peer ID
+    
+    // Try to load bootstrap addresses from config
+    if (!this.isBootstrap) {
+        try {
+            const fs = await import('fs/promises');
+            const configData = await fs.readFile('./bootstrap-config.json', 'utf-8');
+            const config = JSON.parse(configData);
+            if (config.bootstrapNodes && config.bootstrapNodes.length > 0) {
+                this.config.bootstrap = config.bootstrapNodes;
+                this.log('[P2P] Loaded bootstrap addresses from config');
+            }
+        } catch (err) {
+            this.log('[P2P] No bootstrap config found, using defaults', 'warn');
+        }
+    }
     const peerId = await this.loadOrCreatePeerId();
+
     // Create libp2p node
     this.node = await createLibp2p({
-      peerId,
-      addresses: {
-        listen: [
-          `/ip4/0.0.0.0/tcp/${this.config.listen.tcp}`,
-          `/ip4/0.0.0.0/tcp/${this.config.listen.ws}/ws`
-        ]
-      },
-      transports: [tcp(), webSockets(), webRTC()],
-      connectionEncryption: [noise()],
-      streamMuxers: [yamux()],
-      services: {
-        identify: identify(),
-        dht: kadDHT({
-          clientMode: false,
-          validators: {
-            pluribit: {
-              func: (key, value) => {
-                try {
-                  const data = JSON.parse(uint8ArrayToString(value));
-                  return data.type === 'pluribit' && data.timestamp;
-                } catch {
-                  return false;
+        peerId,
+        addresses: {
+            listen: [
+                `/ip4/0.0.0.0/tcp/${this.config.listen.tcp}`,
+                `/ip4/0.0.0.0/tcp/${this.config.listen.ws}/ws`
+            ]
+        },
+        transports: [
+            tcp(),
+            webSockets(),
+            webRTC(),
+            // Conditionally configure relay client
+            circuitRelayTransport({
+                discoverRelays: this.isBootstrap ? 0 : 1
+            })
+        ],
+        connectionEncrypters: [noise()],
+        streamMuxers: [yamux()],
+        services: {
+            // 👇 THIS IS THE KEY FIX 👇
+            // Conditionally enable the relay server for bootstrap nodes
+            ...(this.isBootstrap && { relay: circuitRelayServer() }),
+
+            identify: identify(),
+            dht: kadDHT({
+                // Regular nodes should be DHT clients, bootstrap nodes are servers.
+                clientMode: !this.isBootstrap,
+                
+                validators: {
+                    pluribit: {
+                        func: (key, value) => {
+                            try {
+                                const data = JSON.parse(uint8ArrayToString(value));
+                                return data.type === 'pluribit' && data.timestamp;
+                            } catch {
+                                return false;
+                            }
+                        }
+                    }
                 }
-              }
-            }
-          }
-        }),
-        pubsub: gossipsub({
-          emitSelf: false,
-          gossipIncoming: true,
-          fallbackToFloodsub: false,
-          floodPublish: false,
-          doPX: true,
-          msgIdFn: (msg) => {
-            const hash = crypto.createHash('sha256');
-            hash.update(msg.data);
-            return hash.digest('hex').substring(0, 20);
-          },
-          // Message validation
-          globalSignaturePolicy: 'StrictSign',
-          scoreParams: {
-            topics: {
-              [TOPICS.BLOCKS]: {
-                topicWeight: 1.0,
-                timeInMeshWeight: 0.5,
-                timeInMeshQuantum: 12000,
-                timeInMeshCap: 300,
-                firstMessageDeliveriesWeight: 1.0,
-                firstMessageDeliveriesDecay: 0.5,
-                firstMessageDeliveriesCap: 100,
-                meshMessageDeliveriesWeight: -1.0,
-                meshMessageDeliveriesDecay: 0.5,
-                meshMessageDeliveriesThreshold: 5,
-                meshMessageDeliveriesCap: 10,
-                meshMessageDeliveriesActivation: 30000,
-                meshMessageDeliveriesWindow: 5000,
-                invalidMessageDeliveriesWeight: -10.0,
-                invalidMessageDeliveriesDecay: 0.5
-              },
-              [TOPICS.TRANSACTIONS]: {
-                topicWeight: 0.5,
-                timeInMeshWeight: 0.5,
-                timeInMeshQuantum: 12000,
-                timeInMeshCap: 300,
-                firstMessageDeliveriesWeight: 0.5,
-                firstMessageDeliveriesDecay: 0.5,
-                firstMessageDeliveriesCap: 1000
-              }
-            }
-          }
-        })
-      },
-      peerDiscovery: this.config.bootstrap.length > 0 ?
-      [
-        bootstrap({ list: this.config.bootstrap })
-      ] : [],
-      connectionManager: {
-        minConnections: 10,
-        maxConnections: 50,
-        autoDial: true,
-        autoDialInterval: 10000,
-        maxParallelDials: 10
-      }
+            }),
+            pubsub: gossipsub({
+                allowPublishToZeroPeers: true,
+                seenTTL: 120 * 1000,
+                emitSelf: false,
+                gossipIncoming: true,
+                fallbackToFloodsub: false,
+                floodPublish: false,
+                doPX: true,
+                msgIdFn: (msg) => {
+                    const hash = crypto.createHash('sha256');
+                    hash.update(msg.data);
+                    return hash.digest();
+                },
+                globalSignaturePolicy: 'StrictSign',
+                scoreParams: {
+                    topics: {
+                        [TOPICS.BLOCKS]: {
+                            topicWeight: 1.0,
+                            timeInMeshWeight: 0.5,
+                            timeInMeshQuantum: 12000,
+                            timeInMeshCap: 300,
+                            firstMessageDeliveriesWeight: 1.0,
+                            firstMessageDeliveriesDecay: 0.5,
+                            firstMessageDeliveriesCap: 100,
+                            meshMessageDeliveriesWeight: -1.0,
+                            meshMessageDeliveriesDecay: 0.5,
+                            meshMessageDeliveriesThreshold: 5,
+                            meshMessageDeliveriesCap: 10,
+                            meshMessageDeliveriesActivation: 30000,
+                            meshMessageDeliveriesWindow: 5000,
+                            invalidMessageDeliveriesWeight: -10.0,
+                            invalidMessageDeliveriesDecay: 0.5
+                        },
+                        [TOPICS.TRANSACTIONS]: {
+                            topicWeight: 0.5,
+                            timeInMeshWeight: 0.5,
+                            timeInMeshQuantum: 12000,
+                            timeInMeshCap: 300,
+                            firstMessageDeliveriesWeight: 0.5,
+                            firstMessageDeliveriesDecay: 0.5,
+                            firstMessageDeliveriesCap: 1000
+                        }
+                    }
+                }
+            }),
+            ping: ping()
+        },
+        peerDiscovery: this.config.bootstrap.length > 0 
+            ?
+            [
+                bootstrap({
+                    list: this.config.bootstrap,
+                    interval: 2000,
+                    timeout: 30000
+                }),
+                mdns() 
+            ]
+            : [mdns()],
+       connectionManager: {
+            minConnections: this.isBootstrap ? 0 : CONFIG.P2P.MIN_CONNECTIONS, 
+            maxConnections: CONFIG.P2P.MAX_CONNECTIONS, 
+            autoDial: true,
+            autoDialInterval: 2000, 
+            maxParallelDials: 10,
+            dialTimeout: 30000      
+        }
     });
 
     // Setup event handlers
@@ -139,12 +188,14 @@ export class PluribitP2P {
     
     const addrs = this.node.getMultiaddrs();
     addrs.forEach(addr => this.log(`[P2P] Listening on ${addr.toString()}`));
-
+    
     // Start DHT
     await this.node.services.dht.start();
     
+
+    
     return this.node;
-  }
+}
 
   async loadOrCreatePeerId() {
     const peerIdPath = './pluribit-data/peer-id.json';
@@ -152,8 +203,8 @@ export class PluribitP2P {
       await fs.mkdir('./pluribit-data', { recursive: true });
       const data = await fs.readFile(peerIdPath, 'utf-8');
       const stored = JSON.parse(data);
-      return await createEd25519PeerId({ 
-        privateKey: uint8ArrayFromString(stored.privKey, 'base64') 
+      return await createEd25519PeerId({
+        privateKey: uint8ArrayFromString(stored.privKey, 'base64')
       });
     } catch {
       // Create new
@@ -169,26 +220,44 @@ export class PluribitP2P {
     }
   }
 
-  setupEventHandlers() {
-    this.node.addEventListener('peer:connect', (evt) => {
-      const peerId = evt.detail;
-      this.log(`[P2P] Connected to ${peerId.toString()}`);
-    });
-
+setupEventHandlers() {
+this.node.addEventListener('peer:connect', (evt) => {
+    const peerId = evt.detail;
+    this.log(`[P2P] ✅ Connected to ${peerId.toString()}`);
+});
+    
     this.node.addEventListener('peer:disconnect', (evt) => {
-      const peerId = evt.detail;
-      this.log(`[P2P] Disconnected from ${peerId.toString()}`);
+        const peerId = evt.detail;
+        this.log(`[P2P] Disconnected from ${peerId.toString()}`);
     });
-
+    
+    // Add discovery events with auto-dial
+this.node.addEventListener('peer:discovery', (evt) => {
+    const peerInfo = evt.detail;
+    this.log(`[P2P] 📣 Discovered peer: ${peerInfo.id.toString()}`);
+    // The Connection Manager with autoDial will now handle the connection automatically.
+});
+    
+    // Add connection events for debugging
+this.node.addEventListener('connection:open', (evt) => {
+    const connection = evt.detail;
+    this.log(`[P2P] ✅ Connection opened to ${connection.remotePeer.toString()}`);
+});
+    
+    this.node.addEventListener('connection:close', (evt) => {
+        const connection = evt.detail;
+        this.log(`[P2P] Connection closed to ${connection.remotePeer.toString()}`);
+    });
+    
     // GossipSub message handler
     this.node.services.pubsub.addEventListener('message', (evt) => {
-      this.handleGossipMessage(evt.detail);
+        this.handleGossipMessage(evt.detail);
     });
-  }
+}
 
   async handleGossipMessage(msg) {
     try {
-      const data = JSON.parse(uint8ArrayToString(msg.data));
+      const data = JSONParseWithBigInt(uint8ArrayToString(msg.data));
       const handlers = this.handlers.get(msg.topic) || [];
       
       for (const handler of handlers) {
@@ -225,7 +294,7 @@ export class PluribitP2P {
     };
     await this.node.services.pubsub.publish(
       topic,
-      uint8ArrayFromString(JSON.stringify(message))
+      uint8ArrayFromString(JSONStringifyWithBigInt(message))
     );
   }
 
@@ -252,10 +321,22 @@ export class PluribitP2P {
   }
 
   getConnectedPeers() {
-    return this.node.getPeers().map(peer => ({
-      id: peer.toString(),
-      protocols: this.node.peerStore.protoBook.get(peer) || []
-    }));
+    // Get all connected peer IDs
+    const peerIds = this.node.getPeers();
+
+    // Map over the peer IDs to get their details
+    return peerIds.map(peerId => {
+      // CORRECTED: First, get the full peer object from the peerStore
+      const peer = this.node.peerStore.get(peerId);
+      
+      // If the peer exists, get its protocols, otherwise return an empty array
+      const protocols = peer ? peer.protocols : [];
+      
+      return {
+        id: peerId.toString(),
+        protocols: protocols
+      };
+    });
   }
 
   async stop() {

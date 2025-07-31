@@ -50,9 +50,10 @@ impl Blockchain {
             block_by_hash,
             current_height: 0,
             total_work: 0,
-            current_pow_difficulty: 10,
-            current_vrf_threshold: [0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
-            current_vdf_iterations: 1_000_000,
+            current_pow_difficulty: 2,
+            //current_vrf_threshold: [0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+            current_vrf_threshold: [0xFF; 32],
+            current_vdf_iterations: 10000,
         }
     }
     
@@ -68,7 +69,11 @@ impl Blockchain {
         self.blocks.last().expect("blockchain always has genesis")
     }
 
-    pub fn add_block(&mut self, block: Block) -> PluribitResult<()> {
+    pub fn add_block(&mut self, mut block: Block) -> PluribitResult<()> {
+        // Ensure hash is computed
+        if block.hash.is_empty() {
+            block.hash = block.compute_hash();
+        }
         // === 1. Basic Validation ===
         if block.height != self.current_height + 1 {
             return Err(PluribitError::InvalidBlock(format!("Expected height {}, got {}", self.current_height + 1, block.height)));
@@ -310,8 +315,9 @@ impl Blockchain {
             vdf_proof: VDFProof::default(),
             miner_pubkey: [0u8; 32],
             tx_merkle_root: [0u8; 32],
+            hash: String::new(), 
         };
-        
+                
         self.blocks = vec![self.blocks[0].clone(), snapshot_block];
         self.current_height = snapshot.height;
         

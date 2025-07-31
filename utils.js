@@ -1,3 +1,5 @@
+import { toString as uint8ArrayToString } from 'uint8arrays/to-string';
+import { fromString as uint8ArrayFromString } from 'uint8arrays/from-string';
 import { webcrypto as crypto } from 'crypto';
 
 export const generateId = () => {
@@ -113,29 +115,35 @@ export function hexToUint8Array (hex) {
 }
 
 export const JSONStringifyWithBigInt = (obj) => {
-    return JSON.stringify(obj, (key, value) => {
+    function replacer(key, value) {
+        // Handle BigInts by tagging them
         if (typeof value === 'bigint') {
-            return value.toString() + 'n'; // Add 'n' suffix to identify BigInts
+            return { __type: 'BigInt', value: value.toString() }; 
+        }
+        // CORRECTED: Handle Uint8Arrays by tagging them and encoding to Base64 using the library
+        if (value instanceof Uint8Array) {
+            return { __type: 'Uint8Array', value: uint8ArrayToString(value, 'base64') };
         }
         return value;
-    });
+    }
+    return JSON.stringify(obj, replacer);
 };
 
 export const JSONParseWithBigInt = (str) => {
-    return JSON.parse(str, (key, value) => {
-        // More strict check for BigInt format
-        if (typeof value === 'string' && /^\d+n$/.test(value)) {
-            // Additional validation: check if the number part is valid
-            const numPart = value.slice(0, -1);
-            if (/^\d+$/.test(numPart) && numPart.length < 100) { // Limit BigInt size
-                try {
-                    return BigInt(numPart);
-                } catch (e) {
-                    // If BigInt creation fails, return original string
-                    return value;
-                }
+    function reviver(key, value) {
+        // Check for our tagged objects
+        if (value && typeof value === 'object' && value.__type) {
+            // Reconstruct BigInts
+            if (value.__type === 'BigInt') {
+                return BigInt(value.value); 
+            }
+            // CORRECTED: Reconstruct Uint8Arrays from Base64 using the library
+            if (value.__type === 'Uint8Array') {
+                return uint8ArrayFromString(value.value, 'base64');
             }
         }
-        return value;
-    });
+        return value; 
+    }
+    return JSON.parse(str, reviver);
 };
+

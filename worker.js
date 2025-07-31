@@ -1,9 +1,32 @@
 // worker.js
+if (typeof CustomEvent === 'undefined') {
+  class CustomEvent extends Event {
+    constructor(type, options) {
+      super(type, options);
+      this.detail = options?.detail || null;
+    }
+  }
+  global.CustomEvent = CustomEvent;
+}
+if (typeof Promise.withResolvers !== 'function') {
+  Promise.withResolvers = function withResolvers() {
+    let resolve, reject;
+    const promise = new Promise((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
 
 import { parentPort, Worker } from 'worker_threads';
+import { Worker as ThreadWorker } from 'worker_threads';
+
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { base64ToArrayBuffer } from './utils.js'; 
+import { multiaddr } from '@multiformats/multiaddr';
+
 
 // --- MODULE IMPORTS ---
 const __filename = fileURLToPath(import.meta.url);
@@ -38,6 +61,7 @@ export const workerState = {
     minerId: null,
     p2p: null,
     wallets: new Map(),
+    miningWorker: null, 
 };
 
 // --- LOGGING ---
@@ -63,11 +87,15 @@ export async function main() {
                 case 'setMinerActive':
                     workerState.minerActive = params.active;
                     workerState.minerId = params.active ? params.minerId : null;
-                    log(`PoW+PoST Miner ${params.active ? `activated for ${params.minerId}` : 'deactivated'}.`);
+                    log(`PoWrPoST Miner ${params.active ? `activated for ${params.minerId}` : 'deactivated'}.`);
                     parentPort.postMessage({ type: 'minerStatus', payload: { active: params.active } });
                     
                     if (workerState.minerActive) {
                         startPoSTMining();
+                    } else if (workerState.miningWorker) {
+                        // Stop mining worker
+                        workerState.miningWorker.terminate();
+                        workerState.miningWorker = null;
                     }
                     break;
                 case 'getBalance':
@@ -88,6 +116,23 @@ export async function main() {
                         log(`Could not get params: ${e}`, 'error');
                     }
                     break;
+                case 'getPeers':
+                    if (workerState.p2p) {
+                        const peers = workerState.p2p.getConnectedPeers().map(p => ({ id: p.id.toString() }));
+                        parentPort.postMessage({ type: 'peerList', payload: peers });
+                    }
+                    break;
+                case 'connectPeer':
+                    if (workerState.p2p) {
+                        try {
+                            const addr = multiaddr(params.address);
+                            await workerState.p2p.node.dial(addr);
+                            log(`Manually connected to ${params.address}`, 'success');
+                        } catch (e) {
+                            log(`Failed to connect: ${e.message}`, 'error');
+                        }
+                    }
+                    break;
             }
         } catch (error) {
             log(`Error handling action '${action}': ${error.message}`, 'error');
@@ -96,14 +141,14 @@ export async function main() {
     });
 }
 
-// NEW Mining Loop
+//  Mining Loop
 async function startPoSTMining() {
     if (!workerState.minerActive || !workerState.minerId) {
         log('Mining stopped.');
         return;
     }
 
-    log(`[MINING] Starting PoW+PoST mining for wallet: ${workerState.minerId}...`);
+    log(`[MINING] Starting PoWrPoST mining for wallet: ${workerState.minerId}...`);
 
     const minerWalletJson = workerState.wallets.get(workerState.minerId);
     if (!minerWalletJson) {
@@ -111,10 +156,65 @@ async function startPoSTMining() {
         return;
     }
     const walletData = JSON.parse(minerWalletJson);
-    const minerSecretKey = new Uint8Array(Object.values(walletData.spend_priv));
+    // This is the private spend key, used for VRF and block identity
+    const minerSecretKey = new Uint8Array(Object.values(walletData.spend_priv)); 
+    // Extract the public scan key, which receives the reward
+    const minerScanPubkey = new Uint8Array(Object.values(walletData.scan_pub));
 
-    // Continuous mining loop
-    while (workerState.minerActive) {
+
+    // Create mining worker thread
+    const miningWorkerPath = path.join(__dirname, 'mining-worker.js');
+    workerState.miningWorker = new ThreadWorker(miningWorkerPath);
+    
+    // Handle mining results
+    workerState.miningWorker.on('message', async (msg) => {
+        if (msg.type === 'BLOCK_MINED' && msg.block) {
+            log(`[MINING] Block #${msg.block.height} MINED! Including ${msg.block.transactions.length - 1} transactions.`, 'success');
+            
+            try {
+                // Process the block locally first
+                await handleRemoteBlockDownloaded({ block: msg.block });
+
+                await workerState.p2p.publish(TOPICS.BLOCKS, {
+                    type: 'NEW_BLOCK',
+                    payload: msg.block
+                });
+            } catch (e) {
+                log(`Error processing mined block: ${e.message}`, 'error');
+            }
+            
+            // Wait before mining next block
+            setTimeout(() => {
+                if (workerState.minerActive) {
+                    scheduleMiningJob();
+                }
+            }, 5000);
+        } else if (msg.type === 'MINING_ERROR') {
+            log(`Mining error: ${msg.error}`, 'error');
+            // Retry after error
+            setTimeout(() => {
+                if (workerState.minerActive) {
+                    scheduleMiningJob();
+                }
+            }, 5000);
+        }
+    });
+
+    workerState.miningWorker.on('error', (err) => {
+        log(`Mining worker error: ${err.message}`, 'error');
+    });
+
+    workerState.miningWorker.on('exit', (code) => {
+        if (code !== 0 && workerState.minerActive) {
+            log(`Mining worker stopped unexpectedly with code ${code}, restarting...`, 'error');
+            setTimeout(() => startPoSTMining(), 1000);
+        }
+    });
+
+    // Function to schedule mining jobs
+    const scheduleMiningJob = async () => {
+        if (!workerState.minerActive || !workerState.miningWorker) return;
+
         try {
             const chainState = await pluribit.get_blockchain_state();
             const nextHeight = Number(chainState.current_height) + 1;
@@ -152,76 +252,197 @@ async function startPoSTMining() {
                 }
                 transactionsToMine = selectedTxs;
             }
-            
-            const blockResult = await pluribit.mine_post_block(
-                BigInt(nextHeight),
-                minerSecretKey,
+
+            // Send mining job to worker thread
+            workerState.miningWorker.postMessage({
+                type: 'MINE_BLOCK',
+                height: nextHeight,
+                minerSecretKey: Array.from(minerSecretKey),
+                minerScanPubkey: Array.from(minerScanPubkey), 
                 prevHash,
-                transactionsToMine
-            );
-
-            if (blockResult) {
-                log(`[MINING] Block #${blockResult.height} MINED! Including ${blockResult.transactions.length - 1} transactions.`, 'success');
-                await workerState.p2p.publish(TOPICS.BLOCKS, {
-                    type: 'NEW_BLOCK',
-                    payload: blockResult
-                });
-            }
-            await new Promise(r => setTimeout(r, 100));
-
+                transactions: transactionsToMine
+            });
+            
         } catch (e) {
-            log(`Mining error: ${e.message}`, 'error');
-            await new Promise(r => setTimeout(r, 5000));
+            log(`Error preparing mining job: ${e.message}`, 'error');
+            setTimeout(() => scheduleMiningJob(), 5000);
         }
-    }
-    log('Mining loop has exited.');
+    };
+
+    // Start first mining job
+    scheduleMiningJob();
 }
 
-// FULLY REPLACED Block Handler with Fork Logic
 async function handleRemoteBlockDownloaded({ block }) {
     try {
         await acquireLock();
-        const chainState = await pluribit.get_blockchain_state();
+        // Special handling for genesis block
+        if (block.height === 0) {
+            log(`Ignoring genesis block broadcast`);
+            releaseLock();
+            return;
+        }
+
+        // --- START: NEW FORK RESOLUTION LOGIC ---
+        // Check if this block was requested to resolve a fork.
+        if (reorgState.requestedBlocks.has(block.hash)) {
+            log(`Received requested block #${block.height} for fork resolution.`, 'info');
+
+            // Add the block to our map of pending fork blocks.
+            if (!reorgState.pendingForks.has(block.height)) {
+                reorgState.pendingForks.set(block.height, new Map());
+            }
+            reorgState.pendingForks.get(block.height).set(block.hash, block);
+
+            // Mark the block as received.
+            reorgState.requestedBlocks.delete(block.hash);
+
+            // Now that we have the missing piece, find any fork that was waiting for
+            // this block and try to continue building its chain history.
+            let waitingForkTip = null;
+            for (const forksAtHeight of reorgState.pendingForks.values()) {
+                for (const forkBlock of forksAtHeight.values()) {
+                    if (forkBlock.prev_hash === block.hash) {
+                        waitingForkTip = forkBlock;
+                        break;
+                    }
+                }
+                if (waitingForkTip) break;
+            }
+            
+            if (waitingForkTip) {
+                log(`Continuing fork resolution for tip ${waitingForkTip.hash.substring(0,12)}...`, 'info');
+                await requestForkChain(waitingForkTip);
+            }
+
+            // End processing for this block here since it's part of a reorg.
+            releaseLock();
+            return;
+        }
+        // --- END: NEW FORK RESOLUTION LOGIC ---
+
+        // Get the blockchain state and handle it properly
+        const chainStateRaw = await pluribit.get_blockchain_state();
+        
+        // Parse the chain state if it's a string or ensure it has the right structure
+        let chainState;
+        try {
+            if (typeof chainStateRaw === 'string') {
+                chainState = JSON.parse(chainStateRaw);
+            } else if (chainStateRaw && typeof chainStateRaw === 'object') {
+                // It might be a JsValue that needs to be converted
+                chainState = chainStateRaw;
+            } else {
+                throw new Error('Invalid chain state format');
+            }
+        } catch (parseError) {
+            log(`Failed to parse chain state: ${parseError.message}`, 'error');
+            releaseLock();
+            return;
+        }
+
+        // Validate the chain state structure
+        if (!chainState || !chainState.blocks || !Array.isArray(chainState.blocks) || chainState.blocks.length === 0) {
+            log('Invalid or empty blockchain state', 'error');
+            releaseLock();
+            return;
+        }
 
         const currentTip = chainState.blocks[chainState.blocks.length - 1];
+
+        // Check if we already have this block
+        const existingBlock = await pluribit.get_block_by_hash(block.hash);
+        if (existingBlock) {
+            log(`Already have block #${block.height}, ignoring duplicate`);
+            releaseLock();
+            return;
+        }
+
         const isFork = block.height > 0 && block.prev_hash !== currentTip.hash;
+        const isNextBlock = block.prev_hash === currentTip.hash && block.height === currentTip.height + 1;
 
         if (isFork) {
             await handlePotentialReorg(block);
-        } else {
+        } else if (isNextBlock) {
             log(`Processing block #${block.height} from network.`);
             await pluribit.add_block_to_chain(block);
+
             await db.saveBlock(block);
 
-            const newChainState = await pluribit.get_blockchain_state();
+            const newChainStateRaw = await pluribit.get_blockchain_state();
+            let newChainState;
+            try {
+                if (typeof newChainStateRaw === 'string') {
+                    newChainState = JSON.parse(newChainStateRaw);
+                } else {
+                    newChainState = newChainStateRaw;
+                }
+            } catch (e) {
+                newChainState = { current_height: block.height }; // Fallback
+            }
+            
             log(`Block #${block.height} added to chain. New height: ${newChainState.current_height}`, 'success');
 
+            // Rescan wallets with the new block
             for (const [walletId, walletJson] of workerState.wallets.entries()) {
-                const updatedWalletJson = await pluribit.wallet_scan_block(walletJson, block);
-                if (updatedWalletJson !== walletJson) {
-                    workerState.wallets.set(walletId, updatedWalletJson);
-                    const newBalance = await pluribit.wallet_get_balance(updatedWalletJson);
-                    parentPort.postMessage({ type: 'walletBalance', payload: { wallet_id: walletId, balance: newBalance }});
+                try {
+                    const updatedWalletJson = await pluribit.wallet_scan_block(walletJson, block);
+                    if (updatedWalletJson !== walletJson) {
+                        workerState.wallets.set(walletId, updatedWalletJson);
+                        const updatedWalletData = JSON.parse(updatedWalletJson);
+                        await db.saveWallet(walletId, updatedWalletData); // Add this line to persist
+                        
+                        const newBalance = await pluribit.wallet_get_balance(updatedWalletJson);
+                        log(`Wallet ${walletId} balance updated to: ${newBalance}`);
+                        parentPort.postMessage({ type: 'walletBalance', payload: { wallet_id: walletId, balance: newBalance }});
+                    }
+                } catch (e) {
+                    log(`Failed to scan block for wallet ${walletId}: ${e.message}`, 'error');
                 }
+            }
+        } else {
+            // Added more specific logging for ignored blocks
+            if (block.height <= currentTip.height && block.height > 0) {
+                 log(`Ignoring stale block #${block.height} (our height is ${currentTip.height}).`, 'warn');
+            } else if (block.height > 0) {
+                 log(`Ignoring block #${block.height} as it is not the next block and not a fork. Our tip is #${currentTip.height}.`, 'warn');
             }
         }
     } catch (e) {
-        log(`Failed to process downloaded block: ${e}`, 'error');
+        log(`Failed to process downloaded block: ${e.message}`, 'error');
+        console.error(e); // Add stack trace for debugging
     } finally {
         releaseLock();
     }
 }
 
 async function handlePotentialReorg(newBlock) {
-    const chainState = await pluribit.get_blockchain_state();
-    log(`Fork detected at height ${newBlock.height}. Our height: ${chainState.current_height}.`, 'warn');
+    try {
+        const chainStateRaw = await pluribit.get_blockchain_state();
+        let chainState;
+        
+        if (typeof chainStateRaw === 'string') {
+            chainState = JSON.parse(chainStateRaw);
+        } else {
+            chainState = chainStateRaw;
+        }
+        
+        if (!chainState || typeof chainState.current_height === 'undefined') {
+            log('Invalid chain state during reorg handling', 'error');
+            return;
+        }
+        
+        log(`Fork detected at height ${newBlock.height}. Our height: ${chainState.current_height}.`, 'warn');
 
-    if (!reorgState.pendingForks.has(newBlock.height)) {
-        reorgState.pendingForks.set(newBlock.height, new Map());
+        if (!reorgState.pendingForks.has(newBlock.height)) {
+            reorgState.pendingForks.set(newBlock.height, new Map());
+        }
+        reorgState.pendingForks.get(newBlock.height).set(newBlock.hash, newBlock);
+
+        await requestForkChain(newBlock);
+    } catch (e) {
+        log(`Error in handlePotentialReorg: ${e.message}`, 'error');
     }
-    reorgState.pendingForks.get(newBlock.height).set(newBlock.hash, newBlock);
-
-    await requestForkChain(newBlock);
 }
 
 async function requestForkChain(tipBlock) {
@@ -339,8 +560,24 @@ function cleanupForkCache(keepAboveHeight) {
 
 // SIMPLIFIED Network Initialization
 async function initializeNetwork() {
-    log('Initializing PoW+PoST network...');
-    
+    log('Initializing PoWrPoST network...');
+
+    // --- START: Genesis Hash Verification ---
+    // DO NOT CHANGE!
+    const CANONICAL_GENESIS_HASH = "dc9cbb5eff2c08015f48762c884167334c57d5fac989cdff8f903618ce5552f1";
+
+    // STEP 2: Get the hash from the Wasm module.
+    const generatedHash = await pluribit.get_genesis_block_hash();
+    // STEP 3: Compare and exit if they don't match.
+    if (generatedHash !== CANONICAL_GENESIS_HASH) {
+        const errorMsg = `CRITICAL: Genesis hash mismatch! Expected ${CANONICAL_GENESIS_HASH}, but got ${generatedHash}. Exiting to prevent network fork.`;
+        log(errorMsg, 'error');
+        // A critical error like this should stop the worker immediately.
+        return process.exit(1);
+    }
+    log('Genesis block hash verified successfully.', 'success');
+    // --- END: Genesis Hash Verification ---
+
     const blocks = await db.getAllBlocks();
     if (blocks.length > 0) {
         blocks.sort((a, b) => a.height - b.height);
@@ -359,7 +596,16 @@ async function initializeNetwork() {
     }
     
     log('Initializing P2P stack...');
-    workerState.p2p = new PluribitP2P(log);
+    const tcpPort = process.env.TCP_PORT || 26660;
+    const wsPort = process.env.WS_PORT || 26661;
+
+    log(`Attempting to start P2P node on TCP:${tcpPort} and WS:${wsPort}`);
+
+    workerState.p2p = new PluribitP2P(log, { 
+      tcpPort: parseInt(tcpPort), 
+      wsPort: parseInt(wsPort) 
+    });
+
     await workerState.p2p.initialize();
 
     await setupMessageHandlers();
@@ -391,6 +637,7 @@ async function setupMessageHandlers() {
     
     await p2p.subscribe(TOPICS.BLOCK_REQUEST, async (message) => {
         if (message.hash) {
+            // First try to get from Rust
             const block = await pluribit.get_block_by_hash(message.hash);
             if (block) {
                 await p2p.publish(TOPICS.BLOCKS, {
@@ -398,6 +645,16 @@ async function setupMessageHandlers() {
                     payload: block,
                     requestId: message.requestId
                 });
+            } else {
+                // If not found, check if it's genesis
+                const chainState = await pluribit.get_blockchain_state();
+                if (chainState.blocks.length > 0 && chainState.blocks[0].hash === message.hash) {
+                    await p2p.publish(TOPICS.BLOCKS, {
+                        type: 'BLOCK_RESPONSE',
+                        payload: chainState.blocks[0],
+                        requestId: message.requestId
+                    });
+                }
             }
         }
     });

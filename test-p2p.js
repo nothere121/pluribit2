@@ -1,3 +1,22 @@
+if (typeof CustomEvent === 'undefined') {
+  class CustomEvent extends Event {
+    constructor(type, options) {
+      super(type, options);
+      this.detail = options?.detail || null;
+    }
+  }
+  global.CustomEvent = CustomEvent;
+}
+if (typeof Promise.withResolvers !== 'function') {
+  Promise.withResolvers = function withResolvers() {
+    let resolve, reject;
+    const promise = new Promise((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
 import { PluribitP2P, TOPICS } from './libp2p-node.js';
 
 async function test() {
