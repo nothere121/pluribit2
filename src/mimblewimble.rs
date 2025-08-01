@@ -191,22 +191,26 @@ pub fn derive_kernel_pubkey(secret_key: &SecretKey) -> PublicKey {
 pub fn aggregate_schnorr_signatures(
     signatures: &[(Scalar, Scalar)],
     public_keys: &[RistrettoPoint],
-    _message_hash: [u8; 32],
+    message_hash: [u8; 32], // <-- FIX: Remove the underscore to use the parameter
 ) -> PluribitResult<(Scalar, Scalar)> {
-    if signatures.is_empty() || signatures.len() != public_keys.len() {
+    if signatures.is_empty() ||
+        signatures.len() != public_keys.len() {
         return Err(PluribitError::InvalidInput(
             "Signature and public key count mismatch".to_string()
         ));
     }
     
-    // Sum the s values
+    // Sum the s values (this part is correct)
     let mut aggregate_s = Scalar::default();
     for (_, s) in signatures {
         aggregate_s += s;
     }
 
-    // Since the challenge H(m) is the same for all, we can just take the first one.
-    let aggregate_challenge = signatures[0].0;
+    // FIX: The challenge for the aggregate signature is the hash of the aggregate message.
+    // It was already computed and passed in as message_hash. We just need to convert it to a scalar.
+    let mut challenge_array = [0u8; 32];
+    challenge_array.copy_from_slice(&message_hash);
+    let aggregate_challenge = Scalar::from_bytes_mod_order(challenge_array);
     
     Ok((aggregate_challenge, aggregate_s))
 }

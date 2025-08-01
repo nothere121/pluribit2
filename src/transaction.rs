@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use crate::mimblewimble;
 use curve25519_dalek::traits::Identity;
 use crate::log;
-// Removed unused import: use crate::log;
+use crate::blockchain::UTXO_SET;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -406,58 +406,58 @@ fn reset_global_state() {
         assert!(coinbase_tx.verify(None, None).is_err());
     }
 
-    #[test]
-    fn test_transaction_roundtrip() {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        reset_global_state();
+#[test]
+fn test_transaction_roundtrip() {
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    reset_global_state();
 
-        let miner_sk = crate::mimblewimble::generate_secret_key();
-        let miner_pk = &miner_sk * &*RISTRETTO_BASEPOINT_TABLE;
-        let sender_wallet = Wallet::new();
-        let recipient_wallet = Wallet::new();
+    let miner_sk = crate::mimblewimble::generate_secret_key();
+    let miner_pk = &miner_sk * &*RISTRETTO_BASEPOINT_TABLE;
+    let sender_wallet = Wallet::new();
+    let recipient_wallet = Wallet::new();
+    
+    // Add a block to the GLOBAL chain to fund the sender wallet
+    let block1 = {
+        let mut chain = BLOCKCHAIN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        chain.current_pow_difficulty = 1;
+        // Set very easy VRF threshold for testing
+        chain.current_vrf_threshold = [0xFF; 32]; // Maximum threshold (always passes)
+
+        let reward = crate::blockchain::get_current_base_reward(1);
+        let coinbase_tx = Transaction::create_coinbase(vec![(sender_wallet.scan_pub.compress().to_bytes().to_vec(), reward)]).unwrap();
         
-        // Add a block to the GLOBAL chain to fund the sender wallet
-        let block1 = {
-            let mut chain = BLOCKCHAIN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-            chain.current_pow_difficulty = 1;
-            // Set very easy VRF threshold for testing
-            chain.current_vrf_threshold = [0xFF; 32]; // Maximum threshold (always passes)
+        let mut block = crate::block::Block::genesis();
+        block.height = 1;
+        block.prev_hash = chain.get_latest_block().hash();
+        block.transactions.push(coinbase_tx);
+        block.miner_pubkey = miner_pk.compress().to_bytes();
+        block.vrf_proof = crate::vrf::create_vrf(&miner_sk, block.prev_hash.as_bytes());
+        let vdf = crate::vdf::VDF::new(2048).unwrap();
+        let vdf_input = format!("{}{}", block.prev_hash, hex::encode(&block.vrf_proof.output));
+        block.vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), chain.current_vdf_iterations).unwrap();
+        block.tx_merkle_root = block.calculate_tx_merkle_root();
 
-            let reward = crate::blockchain::get_current_base_reward(1);
-            let coinbase_tx = Transaction::create_coinbase(vec![(sender_wallet.scan_pub.compress().to_bytes().to_vec(), reward)]).unwrap();
-            
-            let mut block = crate::block::Block::genesis();
-            block.height = 1;
-            block.prev_hash = chain.get_latest_block().hash();
-            block.transactions.push(coinbase_tx);
-            block.miner_pubkey = miner_pk.compress().to_bytes();
-            block.vrf_proof = crate::vrf::create_vrf(&miner_sk, block.prev_hash.as_bytes());
-            let vdf = crate::vdf::VDF::new(2048).unwrap();
-            let vdf_input = format!("{}{}", block.prev_hash, hex::encode(&block.vrf_proof.output));
-            block.vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), chain.current_vdf_iterations).unwrap();
-            block.tx_merkle_root = block.calculate_tx_merkle_root();
-
-            loop {
-                if block.is_valid_pow_ticket(chain.current_pow_difficulty) { break; }
-                block.pow_nonce += 1;
-            }
-            chain.add_block(block.clone()).unwrap();
-            block
-        };
-
-        // Rest of the test...
-        let spending_tx = {
-            let mut temp_wallet = sender_wallet;
-            temp_wallet.scan_block(&block1);
-            assert_eq!(temp_wallet.balance(), crate::blockchain::get_current_base_reward(1));
-            temp_wallet.create_transaction(900, 10, &recipient_wallet.scan_pub).unwrap()
-        };
-        
-        {
-            let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-            assert!(spending_tx.verify(None, Some(&utxo_set)).is_ok(), "Manually constructed transaction should be valid");
+        loop {
+            if block.is_valid_pow_ticket(chain.current_pow_difficulty) { break; }
+            block.pow_nonce += 1;
         }
+        chain.add_block(block.clone()).unwrap();
+        block  // Return the block from the scope
+    };
+
+    // Rest of the test...
+    let spending_tx = {
+        let mut temp_wallet = sender_wallet;
+        temp_wallet.scan_block(&block1);
+        assert_eq!(temp_wallet.balance(), crate::blockchain::get_current_base_reward(1));
+        temp_wallet.create_transaction(900, 10, &recipient_wallet.scan_pub).unwrap()
+    };
+    
+    {
+        let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert!(spending_tx.verify(None, Some(&utxo_set)).is_ok(), "Manually constructed transaction should be valid");
     }
+}
 
     #[test]
     fn test_verify_with_valid_merkle_proof() {
@@ -609,7 +609,32 @@ fn test_transaction_excess_with_fee() {
     let recipient_wallet = Wallet::new();
 
     // Add funding block
-    let block1 = { /* same as in test_transaction_roundtrip, with reward to sender */ };
+    let block1 = {
+        let mut chain = BLOCKCHAIN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        chain.current_pow_difficulty = 1;
+        chain.current_vrf_threshold = [0xFF; 32];
+
+        let reward = crate::blockchain::get_current_base_reward(1);
+        let coinbase_tx = Transaction::create_coinbase(vec![(sender_wallet.scan_pub.compress().to_bytes().to_vec(), reward)]).unwrap();
+        
+        let mut block = crate::block::Block::genesis();
+        block.height = 1;
+        block.prev_hash = chain.get_latest_block().hash();
+        block.transactions.push(coinbase_tx);
+        block.miner_pubkey = miner_pk.compress().to_bytes();
+        block.vrf_proof = crate::vrf::create_vrf(&miner_sk, block.prev_hash.as_bytes());
+        let vdf = crate::vdf::VDF::new(2048).unwrap();
+        let vdf_input = format!("{}{}", block.prev_hash, hex::encode(&block.vrf_proof.output));
+        block.vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), chain.current_vdf_iterations).unwrap();
+        block.tx_merkle_root = block.calculate_tx_merkle_root();
+
+        loop {
+            if block.is_valid_pow_ticket(chain.current_pow_difficulty) { break; }
+            block.pow_nonce += 1;
+        }
+        chain.add_block(block.clone()).unwrap();
+        block
+    };
 
     // Create tx with fee
     let mut temp_wallet = sender_wallet.clone();
@@ -617,7 +642,7 @@ fn test_transaction_excess_with_fee() {
     let spending_tx = temp_wallet.create_transaction(900, 10, &recipient_wallet.scan_pub).unwrap();
 
     // Verify with UTXO set
-    let utxo_set = UTXO_SET.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let utxo_set = blockchain::UTXO_SET.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     assert!(spending_tx.verify(None, Some(&utxo_set)).is_ok(), "Transaction with fee should verify after fix");
 }
 
@@ -626,14 +651,53 @@ fn test_transaction_serialization_with_fee() {
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     reset_global_state();
 
-    // Same setup as above, create spending_tx
+    // Setup similar to test_transaction_roundtrip
+    let miner_sk = mimblewimble::generate_secret_key();
+    let miner_pk = &miner_sk * &*RISTRETTO_BASEPOINT_TABLE;
+    let sender_wallet = Wallet::new();
+    let recipient_wallet = Wallet::new();
+
+    // Add funding block
+    let block1 = {
+        let mut chain = BLOCKCHAIN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        chain.current_pow_difficulty = 1;
+        chain.current_vrf_threshold = [0xFF; 32];
+
+        let reward = crate::blockchain::get_current_base_reward(1);
+        let coinbase_tx = Transaction::create_coinbase(vec![(sender_wallet.scan_pub.compress().to_bytes().to_vec(), reward)]).unwrap();
+        
+        let mut block = crate::block::Block::genesis();
+        block.height = 1;
+        block.prev_hash = chain.get_latest_block().hash();
+        block.transactions.push(coinbase_tx);
+        block.miner_pubkey = miner_pk.compress().to_bytes();
+        block.vrf_proof = crate::vrf::create_vrf(&miner_sk, block.prev_hash.as_bytes());
+        let vdf = crate::vdf::VDF::new(2048).unwrap();
+        let vdf_input = format!("{}{}", block.prev_hash, hex::encode(&block.vrf_proof.output));
+        block.vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), chain.current_vdf_iterations).unwrap();
+        block.tx_merkle_root = block.calculate_tx_merkle_root();
+
+        loop {
+            if block.is_valid_pow_ticket(chain.current_pow_difficulty) { break; }
+            block.pow_nonce += 1;
+        }
+        chain.add_block(block.clone()).unwrap();
+        block
+    };
+
+    // Create spending_tx
+    let spending_tx = {
+        let mut temp_wallet = sender_wallet;
+        temp_wallet.scan_block(&block1);
+        temp_wallet.create_transaction(900, 10, &recipient_wallet.scan_pub).unwrap()
+    };
 
     // Serialize and deserialize
     let tx_json = serde_json::to_string(&spending_tx).unwrap();
     let deserialized_tx: Transaction = serde_json::from_str(&tx_json).unwrap();
 
     // Verify deserialized
-    let utxo_set = UTXO_SET.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let utxo_set = blockchain::UTXO_SET.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     assert!(deserialized_tx.verify(None, Some(&utxo_set)).is_ok(), "Serialized transaction with fee should verify");
 }
 

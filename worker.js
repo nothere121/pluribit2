@@ -215,6 +215,10 @@ async function startNextMiningJob() {
         const minerWalletJson = workerState.wallets.get(workerState.minerId);
         const walletData = JSON.parse(minerWalletJson);
         
+        // Get current mempool transactions
+        const poolInfo = await pluribit.get_tx_pool();
+        const pool = typeof poolInfo === 'string' ? JSON.parse(poolInfo) : poolInfo;
+        
         workerState.miningWorker.postMessage({
             type: 'MINE_BLOCK',
             height,
@@ -223,10 +227,11 @@ async function startNextMiningJob() {
             prevHash,
             powDifficulty: chain.current_pow_difficulty,
             vrfThreshold: Array.from(chain.current_vrf_threshold),
-            vdfIterations: chain.current_vdf_iterations
+            vdfIterations: chain.current_vdf_iterations,
+            mempoolTransactions: pool.transactions || [] // Pass mempool transactions
         });
         
-        log(`[MINING] Started mining block #${height}`);
+        log(`[MINING] Started mining block #${height} with ${pool.transactions?.length || 0} transactions in mempool`);
     } catch (e) {
         log(`Error starting mining job: ${e.message}`, 'error');
         setTimeout(() => startNextMiningJob(), 5000);
@@ -680,6 +685,9 @@ async function handleCreateTransaction({ from, to, amount, fee }) {
         await db.saveWallet(from, updatedWalletData);
         workerState.wallets.set(from, result.updated_wallet_json);
         
+        // adds your own transaction to the mempool
+        await pluribit.add_transaction_to_pool(result.transaction);
+
         if (workerState.p2p) {
             await workerState.p2p.publish(TOPICS.TRANSACTIONS, {
                 type: 'new_transaction',

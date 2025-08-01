@@ -607,6 +607,7 @@ pub fn complete_block_with_transactions(
     vrf_proof_js: JsValue,
     vdf_iterations: u64,
     pow_difficulty: u8,
+    mempool_transactions_js: JsValue,  
 ) -> Result<JsValue, JsValue> {
     // Deserialize VRF proof
     let vrf_proof: VrfProof = serde_wasm_bindgen::from_value(vrf_proof_js)?;
@@ -618,10 +619,14 @@ pub fn complete_block_with_transactions(
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     
     // NOW get current mempool transactions
-    let pool = TX_POOL.lock().unwrap();
-    let mut transactions: Vec<Transaction> = pool.pending.clone();
+    // Get transactions from parameter if provided, otherwise from local pool
+    let mut transactions: Vec<Transaction> = if mempool_transactions_js.is_null() || mempool_transactions_js.is_undefined() {
+        let pool = TX_POOL.lock().unwrap();
+        pool.pending.clone()
+    } else {
+        serde_wasm_bindgen::from_value(mempool_transactions_js)?
+    };
     let total_fees: u64 = transactions.iter().map(|tx| tx.kernel.fee).sum();
-    drop(pool);
     
     // Calculate reward
     let chain = BLOCKCHAIN.lock().unwrap();
@@ -666,94 +671,6 @@ pub fn complete_block_with_transactions(
 
 
 
-///////////old method. did not correctly pull in transactions from the mempool
-#[wasm_bindgen]
-pub fn mine_post_block(
-    height: u64,
-    miner_secret_key_bytes: Vec<u8>,
-    miner_scan_pubkey_bytes: Vec<u8>, 
-    prev_hash: String,
-    transactions_js: JsValue,
-) -> Result<JsValue, JsValue> {
-    use curve25519_dalek::scalar::Scalar;
-    use curve25519_dalek::constants::RISTRETTO_BASEPOINT_TABLE;
-    
-    if miner_secret_key_bytes.len() != 32 {
-        return Err(JsValue::from_str("Invalid secret key length"));
-    }
-    let mut sk_bytes = [0u8; 32];
-    sk_bytes.copy_from_slice(&miner_secret_key_bytes);
-    let secret_key = Scalar::from_bytes_mod_order(sk_bytes);
-    let public_key = &secret_key * &*RISTRETTO_BASEPOINT_TABLE;
-    let miner_pubkey = public_key.compress().to_bytes();
-
-    let (pow_difficulty, vrf_threshold, vdf_iterations) = {
-        let chain = BLOCKCHAIN.lock().unwrap();
-        (chain.current_pow_difficulty, chain.current_vrf_threshold, chain.current_vdf_iterations)
-    };
-
-    // 1. PoW Ticket Loop
-    const MAX_POW_ATTEMPTS: u64 = 100_000_000;
-    let mut pow_nonce = 0;
-    loop {
-        let mut temp_block = Block::genesis();
-        temp_block.prev_hash = prev_hash.clone();
-        temp_block.miner_pubkey = miner_pubkey;
-        temp_block.pow_nonce = pow_nonce;
-
-        if temp_block.is_valid_pow_ticket(pow_difficulty) {
-            // 2. Won PoW ticket, now try VRF lottery
-            let vrf_proof = crate::vrf::create_vrf(&secret_key, prev_hash.as_bytes());
-            if vrf_proof.output < vrf_threshold {
-                // 3. Won VRF lottery! Proceed to VDF.
-                log(&format!("[MINING] Won lottery! PoW Nonce: {}, VRF Output: {}", pow_nonce, hex::encode(&vrf_proof.output[..8])));
-                // 4. Start VDF computation
-                log(&format!("[MINING] Starting VDF with {} iterations", vdf_iterations));
-                let vdf = crate::vdf::VDF::new(2048).map_err(|e| JsValue::from_str(&e.to_string()))?;
-                let vdf_input = format!("{}{}", prev_hash, hex::encode(&vrf_proof.output));
-                let vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), vdf_iterations).map_err(|e| JsValue::from_str(&e.to_string()))?;
-                // 5. Assemble Block
-                let mut transactions: Vec<Transaction> = serde_wasm_bindgen::from_value(transactions_js)?;
-                let total_fees = transactions.iter().map(|tx| tx.kernel.fee).sum::<u64>();
-                let reward = {
-                    let chain = BLOCKCHAIN.lock().unwrap();
-                    chain.calculate_block_reward(height, pow_difficulty) + total_fees
-                };
-
-                let coinbase_tx = Transaction::create_coinbase(vec![(miner_scan_pubkey_bytes, reward)])
-                    .map_err(|e| JsValue::from_str(&e.to_string()))?;
-                
-                transactions.insert(0, coinbase_tx);
-
-                let mut block = Block {
-                    height,
-                    prev_hash,
-                    timestamp: js_sys::Date::now() as u64,
-                    transactions,
-                    pow_nonce,
-                    vrf_proof,
-                    vdf_proof,
-                    miner_pubkey,
-                    tx_merkle_root: [0u8; 32], // Placeholder
-                    hash: String::new(), 
-                };
-
-                // *** APPLY CUT-THROUGH HERE ***
-                block.apply_cut_through().map_err(|e| JsValue::from_str(&e.to_string()))?;
-                
-                block.tx_merkle_root = block.calculate_tx_merkle_root();
-                block.hash = block.compute_hash(); 
-
-                return serde_wasm_bindgen::to_value(&block).map_err(|e| e.into());
-            }
-        }
-        pow_nonce += 1;
-        if pow_nonce > MAX_POW_ATTEMPTS {
-            log(&format!("[MINING] Exceeded max PoW attempts at height {}, yielding to other miners", height));
-            return Ok(JsValue::NULL);
-        }
-    }
-}
 
 #[wasm_bindgen]
 pub fn get_current_mining_params() -> Result<JsValue, JsValue> {
@@ -1332,43 +1249,6 @@ mod tests {
         tx_pool.fee_total = 0;
     }
 
-    #[wasm_bindgen_test]
-    fn test_full_post_mining_cycle() {
-        // 1. Setup
-        reset_globals();
-        let wallet_json = wallet_create().unwrap();
-        let wallet: Wallet = serde_json::from_str(&wallet_json).unwrap();
-        let miner_sk_bytes = wallet.spend_priv.to_bytes().to_vec();
-        // FIX: Get the scan public key to pass to the miner
-        let miner_scan_pk_bytes = wallet.scan_pub.compress().to_bytes().to_vec();
-        let prev_hash = get_latest_block_hash().unwrap();
-
-        // 2. Make mining parameters very easy for a fast test
-        {
-            let mut chain = BLOCKCHAIN.lock().unwrap();
-            chain.current_pow_difficulty = 1;
-            chain.current_vrf_threshold = [0xFF; 32];
-            chain.current_vdf_iterations = 100;
-        } // Lock released here
-
-        // 3. Mine a block
-        let block_js = mine_post_block(
-            1,
-            miner_sk_bytes,
-            miner_scan_pk_bytes, // <-- Add the new argument here
-            prev_hash,
-            serde_wasm_bindgen::to_value(&Vec::<Transaction>::new()).unwrap()
-        ).unwrap();
-
-        // 4. Verify the block is valid and can be added to the chain
-        assert!(!block_js.is_null(), "Mining should produce a valid block");
-        let result = add_block_to_chain(block_js);
-        assert!(result.is_ok(), "A validly mined block should be added to the chain. Error: {:?}", result.err());
-
-        let state = get_blockchain_state().unwrap();
-        let chain: blockchain::Blockchain = serde_wasm_bindgen::from_value(state).unwrap();
-        assert_eq!(chain.current_height, 1);
-    }
 }
 
 
