@@ -1,14 +1,17 @@
 // src/blockchain.rs
 use crate::block::Block;
-use crate::transaction::TransactionOutput;
+use crate::transaction::{TransactionOutput, TransactionKernel}; // Added TransactionKernel
 use crate::error::{PluribitError, PluribitResult};
 use crate::vrf;
 use crate::constants;
 use crate::vdf::VDFProof;
 use crate::vrf::VrfProof;
-
+use crate::mimblewimble;
 use crate::log;
-use curve25519_dalek::ristretto::CompressedRistretto;
+use bulletproofs::RangeProof; // Added for range proof verification
+use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
+use curve25519_dalek::scalar::Scalar; // Added for creating commitments
+use curve25519_dalek::traits::Identity; // Added for RistrettoPoint::identity()
 use std::collections::HashMap;
 use num_bigint::BigUint;
 use std::sync::Mutex;
@@ -51,8 +54,7 @@ impl Blockchain {
             current_height: 0,
             total_work: 0,
             current_pow_difficulty: 1,
-            //current_vrf_threshold: [0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
-            current_vrf_threshold: [0xFF; 32],
+            current_vrf_threshold: [0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
             current_vdf_iterations: 40000,
         }
     }
@@ -110,33 +112,139 @@ impl Blockchain {
             return Err(PluribitError::InvalidBlock("Invalid VDF proof".into()));
         }
         
-        // === 3. Transaction and State Validation ===
-        {
-            let mut utxos = UTXO_SET.lock().unwrap();
-            let total_fees = block.transactions.iter().skip(1).map(|tx| tx.kernel.fee).sum::<u64>();
-            let coinbase_reward = self.calculate_block_reward(block.height, self.current_pow_difficulty) + total_fees;
 
-            for (i, tx) in block.transactions.iter().enumerate() {
-                if i == 0 {
-                    tx.verify(Some(coinbase_reward), None)?;
-                } else {
-                    tx.verify(None, Some(&utxos))?;
-                }
-            }
+        
+// === 3. Aggregate Transaction and State Validation ===
+{
+    // Lock the UTXO set once for all checks.
+    let mut utxos = UTXO_SET.lock().unwrap();
 
-            // Apply UTXO changes
-            for tx in &block.transactions {
-                for inp in &tx.inputs {
-                    if utxos.remove(&inp.commitment).is_none() {
-                        return Err(PluribitError::UnknownInput);
-                    }
-                }
-                for out in &tx.outputs {
-                    utxos.insert(out.commitment.clone(), out.clone());
-                }
-            }
+    // A. Sum all input and output commitments for the entire block.
+    let mut sum_in_pts = RistrettoPoint::identity();
+    let mut sum_out_pts = RistrettoPoint::identity();
+
+    // Split kernel excess: non-coinbase vs coinbase
+    let mut sum_kernel_non_cb = RistrettoPoint::identity();
+    let mut coinbase_kernel = RistrettoPoint::identity();
+
+    let mut total_fees = 0u64;
+
+    log(&format!("[BLOCK VALIDATION] Starting validation for block #{}", block.height));
+    log(&format!("[BLOCK VALIDATION] Number of transactions: {}", block.transactions.len()));
+
+
+    for (tx_idx, tx) in block.transactions.iter().enumerate() {
+        log(&format!("[BLOCK VALIDATION] Processing transaction #{}", tx_idx));
+        log(&format!("[BLOCK VALIDATION] TX#{}: Inputs: {}, Outputs: {}, Fee: {}", 
+            tx_idx, tx.inputs.len(), tx.outputs.len(), tx.kernel.fee));
+        
+        // Verify each kernel signature individually
+        if !tx.kernel.verify_signature()? {
+            log(&format!("[BLOCK VALIDATION] TX#{}: Kernel signature verification FAILED", tx_idx));
+            return Err(PluribitError::InvalidKernelSignature);
         }
+        log(&format!("[BLOCK VALIDATION] TX#{}: Kernel signature verified", tx_idx));
+        
+        // Add kernel excess, but split CB vs non-CB
+        let kernel_excess_pt = mimblewimble::kernel_excess_to_pubkey(&tx.kernel.excess)?;
+        let is_coinbase = tx.kernel.fee == 0 && tx.inputs.is_empty();
 
+        if is_coinbase {
+            coinbase_kernel += kernel_excess_pt;
+        } else {
+            sum_kernel_non_cb += kernel_excess_pt;
+            total_fees += tx.kernel.fee;
+        }
+        total_fees += tx.kernel.fee;
+        log(&format!("[BLOCK VALIDATION] TX#{}: Kernel excess: {}", 
+            tx_idx, hex::encode(&tx.kernel.excess)));
+        
+        // Process inputs
+        for (inp_idx, inp) in tx.inputs.iter().enumerate() {
+            // Check if input exists in the UTXO set.
+            if !utxos.contains_key(&inp.commitment) {
+                log(&format!("[BLOCK VALIDATION] TX#{} Input#{}: NOT FOUND in UTXO set: {}", 
+                    tx_idx, inp_idx, hex::encode(&inp.commitment)));
+                return Err(PluribitError::UnknownInput);
+            }
+            let C = CompressedRistretto::from_slice(&inp.commitment)
+                .map_err(|_| PluribitError::InvalidInputCommitment)?
+                .decompress()
+                .ok_or(PluribitError::InvalidInputCommitment)?;
+            sum_in_pts += C;
+            log(&format!("[BLOCK VALIDATION] TX#{} Input#{}: {}", 
+                tx_idx, inp_idx, hex::encode(&inp.commitment)));
+        }
+        
+        // Process outputs
+        for (out_idx, out) in tx.outputs.iter().enumerate() {
+            // Also verify each output's range proof here.
+            let commitment_pt = CompressedRistretto::from_slice(&out.commitment)
+                .map_err(|_| PluribitError::InvalidOutputCommitment)?;
+            let proof = RangeProof::from_bytes(&out.range_proof)
+                .map_err(|_| PluribitError::InvalidRangeProof)?;
+            if !mimblewimble::verify_range_proof(&proof, &commitment_pt) {
+                log(&format!("[BLOCK VALIDATION] TX#{} Output#{}: Range proof verification FAILED", 
+                    tx_idx, out_idx));
+                return Err(PluribitError::InvalidRangeProof);
+            }
+
+            let C = commitment_pt.decompress().ok_or(PluribitError::InvalidOutputCommitment)?;
+            sum_out_pts += C;
+            log(&format!("[BLOCK VALIDATION] TX#{} Output#{}: {} (verified range proof)", 
+                tx_idx, out_idx, hex::encode(&out.commitment)));
+        }
+        
+        log(&format!("[BLOCK VALIDATION] TX#{}: Processing complete", tx_idx));
+    }
+
+// Reward commitment MUST include total fees when kernel excess already carries fee*B
+let base_reward = self.calculate_block_reward(block.height, self.current_pow_difficulty);
+let total_reward = base_reward + total_fees;
+let reward_commitment = mimblewimble::commit(total_reward, &Scalar::from(0u64))?;
+
+// Balance with:  ΣOut + ΣK(non-CB) == ΣIn + K(CB) + Commit(base + fees, 0)
+let left_side  = sum_out_pts + sum_kernel_non_cb;
+let right_side = sum_in_pts  + coinbase_kernel + reward_commitment;
+
+log(&format!("[BLOCK VALIDATION] Final sum of inputs:           {}",
+    hex::encode(sum_in_pts.compress().to_bytes())));
+log(&format!("[BLOCK VALIDATION] Final sum of outputs:          {}",
+    hex::encode(sum_out_pts.compress().to_bytes())));
+log(&format!("[BLOCK VALIDATION] Sum kernel (non-CB):           {}",
+    hex::encode(sum_kernel_non_cb.compress().to_bytes())));
+log(&format!("[BLOCK VALIDATION] Kernel (coinbase only):        {}",
+    hex::encode(coinbase_kernel.compress().to_bytes())));
+log(&format!("[BLOCK VALIDATION] reward commitment (base+fees): {} (base={}, fees={})",
+    hex::encode(reward_commitment.compress().to_bytes()), base_reward, total_fees));
+log(&format!("[BLOCK VALIDATION] LHS (Out + K_nonCB):           {}",
+    hex::encode(left_side.compress().to_bytes())));
+log(&format!("[BLOCK VALIDATION] RHS (In + K_CB + Reward):      {}",
+    hex::encode(right_side.compress().to_bytes())));
+
+if left_side != right_side {
+    log(&format!("[BLOCK VALIDATION] BALANCE CHECK FAILED!"));
+    log(&format!("[BLOCK VALIDATION] Total fees in block: {}", total_fees));
+    log(&format!("[BLOCK VALIDATION] Base reward: {}", base_reward));
+    return Err(PluribitError::Imbalance);
+}
+
+log(&format!("[BLOCK VALIDATION] Balance check PASSED"));
+
+    // C. Apply UTXO changes (state transition).
+    for tx in &block.transactions {
+        for inp in &tx.inputs {
+            utxos.remove(&inp.commitment);
+        }
+        for out in &tx.outputs {
+            utxos.insert(out.commitment.clone(), out.clone());
+        }
+    }
+    
+    log(&format!("[BLOCK VALIDATION] UTXO set updated successfully"));
+} // Mutex lock on UTXO_SET is released here.
+        
+        
         // === 4. Update Chain State ===
         self.total_work += block.vdf_proof.iterations;
         self.blocks.push(block.clone());
@@ -368,3 +476,306 @@ pub fn get_current_base_reward(height: u64) -> u64 {
     let num_halvings = height_in_era / crate::constants::HALVING_INTERVAL;
     if num_halvings >= 64 { 0 } else { crate::constants::INITIAL_BASE_REWARD >> num_halvings }
 }
+
+
+
+   
+    
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wallet::Wallet;
+    use crate::transaction::{Transaction, TransactionInput, TransactionOutput, TransactionKernel};
+    use crate::mimblewimble;
+    use curve25519_dalek::scalar::Scalar;
+    use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
+    use curve25519_dalek::traits::Identity;
+    use rand::thread_rng;
+
+    #[test]
+    fn test_kernel_excess_with_fee() {
+        // Test that kernel excess correctly includes fee
+        let blinding = Scalar::from(123u64);
+        let fee = 100u64;
+        
+        let kernel = TransactionKernel::new(blinding, fee, 0).unwrap();
+        let excess_point = mimblewimble::kernel_excess_to_pubkey(&kernel.excess).unwrap();
+        
+        // The excess should be: blinding * B_blinding + fee * B
+        let expected = mimblewimble::PC_GENS.commit(Scalar::from(fee), blinding);
+        
+        assert_eq!(excess_point, expected, "Kernel excess should include fee commitment");
+    }
+
+    #[test]
+    fn test_simple_transaction_balance() {
+        // Test a simple transaction balances
+        let input_value = 1000u64;
+        let output_value = 900u64;
+        let fee = 100u64;
+        
+        let input_blinding = Scalar::from(111u64);
+        let output_blinding = Scalar::from(222u64);
+        
+        let input_commitment = mimblewimble::commit(input_value, &input_blinding).unwrap();
+        let output_commitment = mimblewimble::commit(output_value, &output_blinding).unwrap();
+        
+        let kernel_blinding = input_blinding - output_blinding;
+        let kernel_excess = mimblewimble::PC_GENS.commit(Scalar::from(fee), kernel_blinding);
+        
+        // Check: Input = Output + KernelExcess
+        assert_eq!(
+            input_commitment,
+            output_commitment + kernel_excess,
+            "Transaction should balance"
+        );
+    }
+
+    #[test]
+    fn test_coinbase_transaction_balance() {
+        // Test that coinbase transaction balances correctly
+        let reward = 50_000_000u64;
+        let coinbase_blinding = Scalar::from(999u64);
+        
+        let coinbase_output = mimblewimble::commit(reward, &coinbase_blinding).unwrap();
+        let coinbase_kernel_excess = mimblewimble::PC_GENS.commit(Scalar::from(0u64), coinbase_blinding);
+        let reward_commitment = mimblewimble::commit(reward, &Scalar::from(0u64)).unwrap();
+        
+        // Check: CoinbaseOutput = KernelExcess + Reward
+        assert_eq!(
+            coinbase_output,
+            coinbase_kernel_excess + reward_commitment,
+            "Coinbase should balance"
+        );
+    }
+
+    #[test]
+    fn test_block_with_single_coinbase() {
+        // Test block with only coinbase
+        let base_reward = 50_000_000u64;
+        let miner_wallet = Wallet::new();
+        
+        let coinbase_tx = Transaction::create_coinbase(vec![
+            (miner_wallet.scan_pub.compress().to_bytes().to_vec(), base_reward)
+        ]).unwrap();
+        
+        let mut sum_outputs = RistrettoPoint::identity();
+        for out in &coinbase_tx.outputs {
+            sum_outputs += CompressedRistretto::from_slice(&out.commitment).unwrap()
+                .decompress().unwrap();
+        }
+        
+        let kernel_excess = mimblewimble::kernel_excess_to_pubkey(&coinbase_tx.kernel.excess).unwrap();
+        let reward_commitment = mimblewimble::commit(base_reward, &Scalar::from(0u64)).unwrap();
+        
+        assert_eq!(
+            sum_outputs,
+            kernel_excess + reward_commitment,
+            "Coinbase-only block should balance"
+        );
+    }
+
+#[test]
+fn test_block_with_coinbase_and_transaction() {
+    // Simplified test with controlled values
+    let miner_wallet = Wallet::new();
+    
+    // Create a simple transaction
+    let tx_input_value = 1000u64;
+    let tx_output_value = 900u64;
+    let tx_fee = 100u64;
+    
+    let tx_input_blinding = Scalar::from(111u64);
+    let tx_output_blinding = Scalar::from(222u64);
+    let tx_kernel_blinding = tx_input_blinding - tx_output_blinding;
+    
+    let regular_tx = Transaction {
+        inputs: vec![TransactionInput {
+            commitment: mimblewimble::commit(tx_input_value, &tx_input_blinding).unwrap()
+                .compress().to_bytes().to_vec(),
+            merkle_proof: None,
+            source_height: 0,
+        }],
+        outputs: vec![TransactionOutput {
+            commitment: mimblewimble::commit(tx_output_value, &tx_output_blinding).unwrap()
+                .compress().to_bytes().to_vec(),
+            range_proof: vec![0; 675], // Dummy proof
+            ephemeral_key: None,
+            stealth_payload: None,
+        }],
+        kernel: TransactionKernel::new(tx_kernel_blinding, tx_fee, 0).unwrap(),
+    };
+    
+    // IMPORTANT: Coinbase gets base reward + all fees from the block!
+    let base_reward = 50_000_000u64;
+    let total_reward = base_reward + tx_fee; 
+    let coinbase_tx = Transaction::create_coinbase(vec![
+        (miner_wallet.scan_pub.compress().to_bytes().to_vec(), total_reward)
+    ]).unwrap();
+    
+    // Calculate sums
+    let mut sum_in  = RistrettoPoint::identity();
+    let mut sum_out = RistrettoPoint::identity();
+    let mut k_noncb = RistrettoPoint::identity();
+    let mut k_cb    = RistrettoPoint::identity();
+
+    for tx in &[coinbase_tx.clone(), regular_tx.clone()] {
+        let k = mimblewimble::kernel_excess_to_pubkey(&tx.kernel.excess).unwrap();
+        let is_coinbase = tx.kernel.fee == 0 && tx.inputs.is_empty();
+        if is_coinbase { k_cb += k } else { k_noncb += k }
+
+        for inp in &tx.inputs {
+            sum_in += CompressedRistretto::from_slice(&inp.commitment).unwrap()
+                .decompress().unwrap();
+        }
+        for out in &tx.outputs {
+            sum_out += CompressedRistretto::from_slice(&out.commitment).unwrap()
+                .decompress().unwrap();
+        }
+    }
+
+    // IMPORTANT: Reward commitment must be base + fees here
+    let base_reward = 50_000_000u64;
+    let total_reward = base_reward + tx_fee;
+    let reward_commitment = mimblewimble::commit(total_reward, &Scalar::from(0u64)).unwrap();
+
+    // Check the correct block equation for kernels that include fee*B:
+    assert_eq!(
+        sum_out + k_noncb,
+        sum_in + k_cb + reward_commitment,
+        "Block with transaction should balance"
+    );
+}
+
+#[test]
+fn test_manual_block_validation_logic() {
+    use rand::thread_rng;
+    
+    // Create wallets
+    let miner_wallet = Wallet::new();
+    
+    // Setup initial UTXO
+    let initial_value = 100_000;
+    let initial_blinding = Scalar::random(&mut thread_rng());
+    let initial_commitment = mimblewimble::commit(initial_value, &initial_blinding).unwrap();
+
+    // Create a transaction with fee
+    let send_amount = 600;
+    let fee = 100;
+    let change_amount = initial_value - send_amount - fee;
+    
+    let send_blinding = Scalar::random(&mut thread_rng());
+    let change_blinding = Scalar::random(&mut thread_rng());
+    
+    let send_commitment = mimblewimble::commit(send_amount, &send_blinding).unwrap();
+    let change_commitment = mimblewimble::commit(change_amount, &change_blinding).unwrap();
+    
+    let (send_proof, _) = mimblewimble::create_range_proof(send_amount, &send_blinding).unwrap();
+    let (change_proof, _) = mimblewimble::create_range_proof(change_amount, &change_blinding).unwrap();
+    
+    // Kernel blinding: inputs - outputs
+    let kernel_blinding = initial_blinding - send_blinding - change_blinding;
+    let kernel = TransactionKernel::new(kernel_blinding, fee, 0).unwrap();
+    
+    let regular_tx = Transaction {
+        inputs: vec![TransactionInput {
+            commitment: initial_commitment.compress().to_bytes().to_vec(),
+            merkle_proof: None,
+            source_height: 0,
+        }],
+        outputs: vec![
+            TransactionOutput {
+                commitment: send_commitment.compress().to_bytes().to_vec(),
+                range_proof: send_proof.to_bytes(),
+                ephemeral_key: None,
+                stealth_payload: None,
+            },
+            TransactionOutput {
+                commitment: change_commitment.compress().to_bytes().to_vec(),
+                range_proof: change_proof.to_bytes(),
+                ephemeral_key: None,
+                stealth_payload: None,
+            }
+        ],
+        kernel,
+    };
+    
+    // Coinbase gets base reward + all fees collected!
+    let base_reward = 50_000_000;
+    let total_coinbase_amount = base_reward + fee;  // include fees in the coinbase outputs
+    let coinbase_tx = Transaction::create_coinbase(vec![
+        (miner_wallet.scan_pub.compress().to_bytes().to_vec(), total_coinbase_amount)
+    ]).unwrap();
+    
+    // Validate (split kernel excess into non-coinbase vs coinbase)
+    let mut sum_in  = RistrettoPoint::identity();
+    let mut sum_out = RistrettoPoint::identity();
+    let mut k_noncb = RistrettoPoint::identity();
+    let mut k_cb    = RistrettoPoint::identity();
+    
+    for tx in &[coinbase_tx, regular_tx] {
+        let k = mimblewimble::kernel_excess_to_pubkey(&tx.kernel.excess).unwrap();
+        let is_coinbase = tx.kernel.fee == 0 && tx.inputs.is_empty();
+        if is_coinbase { k_cb += k } else { k_noncb += k }
+        
+        for inp in &tx.inputs {
+            sum_in += CompressedRistretto::from_slice(&inp.commitment).unwrap()
+                .decompress().unwrap();
+        }
+        
+        for out in &tx.outputs {
+            sum_out += CompressedRistretto::from_slice(&out.commitment).unwrap()
+                .decompress().unwrap();
+        }
+    }
+    
+    // Since kernel excess already includes fee*B for non-coinbase txs,
+    // the reward commitment must carry (base + fees).
+    let reward_commitment = mimblewimble::commit(total_coinbase_amount, &Scalar::from(0u64)).unwrap();
+    
+    // Block balance equation:
+    // ΣOut + ΣK(non-coinbase) == ΣIn + K(coinbase) + Commit(base + fees, 0)
+    assert_eq!(
+        sum_out + k_noncb,
+        sum_in + k_cb + reward_commitment,
+        "Block balance equation must hold"
+    );
+}
+
+
+    
+    #[test]
+fn debug_transaction_creation() {
+    let wallet = Wallet::new();
+    let base_reward = 50_000_000u64;
+    
+    let coinbase_tx = Transaction::create_coinbase(vec![
+        (wallet.scan_pub.compress().to_bytes().to_vec(), base_reward)
+    ]).unwrap();
+    
+    // Debug print the transaction details
+    println!("Coinbase transaction:");
+    println!("  Outputs: {}", coinbase_tx.outputs.len());
+    for (i, out) in coinbase_tx.outputs.iter().enumerate() {
+        println!("    Output {}: commitment = {}", i, hex::encode(&out.commitment));
+    }
+    println!("  Kernel excess: {}", hex::encode(&coinbase_tx.kernel.excess));
+    println!("  Kernel fee: {}", coinbase_tx.kernel.fee);
+    
+    // Manually verify the balance
+    let output_point = CompressedRistretto::from_slice(&coinbase_tx.outputs[0].commitment)
+        .unwrap().decompress().unwrap();
+    let kernel_point = mimblewimble::kernel_excess_to_pubkey(&coinbase_tx.kernel.excess).unwrap();
+    let reward_point = mimblewimble::commit(base_reward, &Scalar::from(0u64)).unwrap();
+    
+    println!("\nBalance check:");
+    println!("  Output point: {:?}", output_point.compress());
+    println!("  Kernel point: {:?}", kernel_point.compress());
+    println!("  Reward point: {:?}", reward_point.compress());
+    println!("  Kernel + Reward: {:?}", (kernel_point + reward_point).compress());
+    
+    assert_eq!(output_point, kernel_point + reward_point, "Should balance");
+}
+}
+
+

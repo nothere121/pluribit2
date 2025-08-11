@@ -630,7 +630,7 @@ pub fn complete_block_with_transactions(
     
     // Calculate reward
     let chain = BLOCKCHAIN.lock().unwrap();
-    let reward = chain.calculate_block_reward(height, pow_difficulty) + total_fees;
+    let reward = chain.calculate_block_reward(height, pow_difficulty) + total_fees; // Miner collects fees!
     drop(chain);
     
     // Create coinbase

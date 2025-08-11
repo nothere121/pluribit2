@@ -24,7 +24,7 @@ import { Worker as ThreadWorker } from 'worker_threads';
 
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { base64ToArrayBuffer } from './utils.js'; 
+import { base64ToArrayBuffer, JSONParseWithBigInt } from './utils.js'; 
 import { multiaddr } from '@multiformats/multiaddr';
 
 
@@ -205,7 +205,6 @@ async function startPoSTMining() {
 
 async function startNextMiningJob() {
     if (!workerState.minerActive || !workerState.miningWorker) return;
-    
     try {
         const chainState = await pluribit.get_blockchain_state();
         const chain = typeof chainState === 'string' ? JSON.parse(chainState) : chainState;
@@ -217,8 +216,10 @@ async function startNextMiningJob() {
         
         // Get current mempool transactions
         const poolInfo = await pluribit.get_tx_pool();
-        const pool = typeof poolInfo === 'string' ? JSON.parse(poolInfo) : poolInfo;
         
+        // FIX: Use the custom parser to correctly revive Uint8Array fields.
+        const pool = typeof poolInfo === 'string' ? JSONParseWithBigInt(poolInfo) : poolInfo;
+
         workerState.miningWorker.postMessage({
             type: 'MINE_BLOCK',
             height,
@@ -228,9 +229,8 @@ async function startNextMiningJob() {
             powDifficulty: chain.current_pow_difficulty,
             vrfThreshold: Array.from(chain.current_vrf_threshold),
             vdfIterations: chain.current_vdf_iterations,
-            mempoolTransactions: pool.transactions || [] // Pass mempool transactions
+            mempoolTransactions: pool.transactions || [] // Pass correctly parsed transactions
         });
-        
         log(`[MINING] Started mining block #${height} with ${pool.transactions?.length || 0} transactions in mempool`);
     } catch (e) {
         log(`Error starting mining job: ${e.message}`, 'error');

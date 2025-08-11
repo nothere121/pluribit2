@@ -9,7 +9,6 @@ use sha2::{Digest, Sha256};
 use crate::mimblewimble;
 use curve25519_dalek::traits::Identity;
 use crate::log;
-use crate::blockchain::UTXO_SET;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -58,7 +57,39 @@ impl TransactionInput {
 }
 
 impl TransactionKernel {
-    
+        pub fn verify_signature(&self) -> PluribitResult<bool> {
+        // Decompress the kernel excess point P = blinding*G + fee*H
+        let excess_point = CompressedRistretto::from_slice(&self.excess)
+            .map_err(|_| PluribitError::InvalidKernelExcess)?
+            .decompress()
+            .ok_or(PluribitError::InvalidKernelExcess)?;
+
+        // Reconstruct the public key (blinding*G) used for the signature.
+        // This is done by subtracting the commitment to the fee (fee*H) from the excess.
+        let fee_commitment = mimblewimble::PC_GENS.commit(Scalar::from(self.fee), Scalar::from(0u64));
+        let public_key = excess_point - fee_commitment;
+
+        // The message that was signed is the hash of the fee and min_height.
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&self.fee.to_be_bytes());
+        hasher.update(&self.min_height.to_be_bytes());
+        let msg_hash: [u8; 32] = hasher.finalize().into();
+        
+        // Parse the signature from the kernel.
+        if self.signature.len() != 64 {
+            return Ok(false);
+        }
+        let mut challenge_bytes = [0u8; 32];
+        challenge_bytes.copy_from_slice(&self.signature[0..32]);
+        let challenge = Scalar::from_bytes_mod_order(challenge_bytes);
+
+        let mut s_bytes = [0u8; 32];
+        s_bytes.copy_from_slice(&self.signature[32..64]);
+        let s = Scalar::from_bytes_mod_order(s_bytes);
+
+        // Verify the Schnorr signature.
+        Ok(mimblewimble::verify_schnorr_signature(&(challenge, s), msg_hash, &public_key))
+    }
 pub fn new(blinding: Scalar, fee: u64, min_height: u64) -> Result<Self, String> {
     log("=== TRANSACTION_KERNEL::NEW DEBUG ===");
     log(&format!("[KERNEL_NEW] Input blinding={}", hex::encode(blinding.to_bytes())));
@@ -362,7 +393,7 @@ mod tests {
     use std::sync::Mutex;
     use crate::{BLOCKCHAIN, TX_POOL};
     use crate::blockchain;
-
+use crate::blockchain::UTXO_SET;
     lazy_static! {
         static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
     }

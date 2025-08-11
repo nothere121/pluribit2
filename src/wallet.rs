@@ -13,6 +13,8 @@ use crate::{
     stealth,      // For stealth address primitives
     transaction::{Transaction, TransactionInput, TransactionOutput, TransactionKernel},
 };
+use crate::log;
+
 /// Represents a UTXO that the wallet owns and can spend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletUtxo {
@@ -131,6 +133,11 @@ impl Wallet {
         self.owned_utxos.retain(|utxo| {
             if total_available < total_needed {
                 total_available += utxo.value;
+                
+                //  LOGGING 
+                log(&format!("[WALLET] Selecting input: value={}, blinding={}", 
+                    utxo.value, hex::encode(utxo.blinding.to_bytes())));
+                
                 blinding_sum_in += utxo.blinding;
                 
                 inputs_to_spend.push(TransactionInput {
@@ -183,6 +190,12 @@ impl Wallet {
         // 3. Create the Transaction Kernel
         let kernel_blinding = blinding_sum_in - blinding_sum_out;
         let kernel = TransactionKernel::new(kernel_blinding, fee, current_height)?;
+
+        log(&format!("[WALLET] Transaction blinding factors:"));
+        log(&format!("  blinding_sum_in: {}", hex::encode(blinding_sum_in.to_bytes())));
+        log(&format!("  blinding_sum_out: {}", hex::encode(blinding_sum_out.to_bytes())));
+        log(&format!("  kernel_blinding: {}", hex::encode(kernel_blinding.to_bytes())));
+
 
         // 4. Assemble the final transaction
         Ok(Transaction {
