@@ -50,6 +50,31 @@ constructor(log, options = {}) {
     };
 }
 
+  // Simple per-peer token bucket
+  _buckets = new Map();
+  _allowMessage(from) {
+    const now = Date.now();
+    const windowMs = CONFIG.RATE_LIMIT_WINDOW;
+    const cap = CONFIG.RATE_LIMIT_MESSAGES;
+
+    let b = this._buckets.get(from);
+    if (!b) {
+      b = { tokens: cap, windowStart: now };
+      this._buckets.set(from, b);
+    }
+
+    // refill per window
+    if (now - b.windowStart >= windowMs) {
+      b.tokens = cap;
+      b.windowStart = now;
+    }
+
+    if (b.tokens <= 0) return false;
+    b.tokens -= 1;
+    return true;
+  }
+
+
 async initialize() {
     this.log('[P2P] Initializing libp2p node...');
     
@@ -189,7 +214,21 @@ async initialize() {
     
     const addrs = this.node.getMultiaddrs();
     addrs.forEach(addr => this.log(`[P2P] Listening on ${addr.toString()}`));
-    
+
+    // Proactively dial bootstrap peers once
+    if (!this.isBootstrap && Array.isArray(this.config.bootstrap) && this.config.bootstrap.length) {
+      const { multiaddr } = await import('@multiformats/multiaddr'); // already imported at top in your file
+      const tasks = this.config.bootstrap.map(async (addr) => {
+        try {
+          await this.node.dial(multiaddr(addr));
+          this.log(`[P2P] 🔌 Dialed bootstrap ${addr}`);
+        } catch (e) {
+          this.log(`[P2P] Could not dial bootstrap ${addr}: ${e.message}`, 'warn');
+        }
+      });
+      await Promise.allSettled(tasks);
+    }
+
     // Start DHT
     await this.node.services.dht.start();
     
@@ -232,12 +271,39 @@ this.node.addEventListener('peer:connect', (evt) => {
         this.log(`[P2P] Disconnected from ${peerId.toString()}`);
     });
     
-    // Add discovery events with auto-dial
-this.node.addEventListener('peer:discovery', (evt) => {
-    const peerInfo = evt.detail;
-    this.log(`[P2P] 📣 Discovered peer: ${peerInfo.id.toString()}`);
-    // The Connection Manager with autoDial will now handle the connection automatically.
+// Add discovery events with auto-dial
+this.node.addEventListener('peer:discovery', async (evt) => {
+  const { id, multiaddrs } = evt.detail;
+
+  // ignore self
+  if (id?.toString?.() === this.node.peerId.toString()) return;
+
+  // persist addresses so the conn mgr can use them
+  if (multiaddrs?.length) {
+    try {
+      await this.node.peerStore.addressBook.add(id, multiaddrs);
+    } catch (e) {
+      this.log(`[P2P] addressBook.add failed for ${id.toString()}: ${e.message}`, 'warn');
+    }
+  }
+
+  this.log(`[P2P] 📣 Discovered peer: ${id.toString()} (${multiaddrs?.length ?? 0} addrs)`);
+
+  // if we're under the target and not already connected, dial now
+  const already = this.node.getConnections(id).length > 0;
+  const total = this.node.getConnections().length;
+  const target = CONFIG.P2P.MIN_CONNECTIONS;
+
+  if (!already && total < target) {
+    try {
+      await this.node.dial(id);
+      this.log(`[P2P] 🔌 Auto-dialed discovered peer ${id.toString()}`);
+    } catch (e) {
+      this.log(`[P2P] Auto-dial to ${id.toString()} failed: ${e.message}`, 'warn');
+    }
+  }
 });
+
     
     // Add connection events for debugging
 this.node.addEventListener('connection:open', (evt) => {
@@ -256,25 +322,37 @@ this.node.addEventListener('connection:open', (evt) => {
     });
 }
 
-  async handleGossipMessage(msg) {
-    try {
-      const data = JSONParseWithBigInt(uint8ArrayToString(msg.data));
-      const handlers = this.handlers.get(msg.topic) || [];
-      
-      for (const handler of handlers) {
-        try {
-          await handler(data, {
-            from: msg.from.toString(),
-            topic: msg.topic
-          });
-        } catch (e) {
-          this.log(`[P2P] Handler error for ${msg.topic}: ${e.message}`, 'error');
+    async handleGossipMessage(msg) {
+      try {
+        // 1) Drop oversize payloads
+        const bytes = msg?.data;
+        if (bytes && bytes.byteLength > CONFIG.MAX_MESSAGE_SIZE) {
+          this.log(`[P2P] Dropping oversize message on ${msg.topic} from ${msg.from}`, 'warn');
+          return;
         }
+
+        // 2) Per-peer rate limit
+        const from = msg.from?.toString?.() ?? String(msg.from);
+        if (!this._allowMessage(from)) {
+          this.log(`[P2P] Rate-limited ${from} on ${msg.topic}`, 'warn');
+          return;
+        }
+
+        // 3) Parse and dispatch
+        const data = JSONParseWithBigInt(uint8ArrayToString(msg.data));
+        const handlers = this.handlers.get(msg.topic) || [];
+        for (const handler of handlers) {
+          try {
+            await handler(data, { from, topic: msg.topic });
+          } catch (e) {
+            this.log(`[P2P] Handler error for ${msg.topic}: ${e.message}`, 'error');
+          }
+        }
+      } catch (e) {
+        this.log(`[P2P] Failed to parse message: ${e.message}`, 'error');
       }
-    } catch (e) {
-      this.log(`[P2P] Failed to parse message: ${e.message}`, 'error');
     }
-  }
+
 
   // Public API
 
@@ -299,27 +377,26 @@ this.node.addEventListener('connection:open', (evt) => {
     );
   }
 
-  async store(key, value) {
-    const data = {
-      type: 'pluribit',
-      value,
-      timestamp: Date.now()
-    };
-    await this.node.services.dht.put(
-      uint8ArrayFromString(key),
-      uint8ArrayFromString(JSON.stringify(data))
-    );
-  }
-
-  async get(key) {
-    try {
-      const result = await this.node.services.dht.get(uint8ArrayFromString(key));
-      const data = JSON.parse(uint8ArrayToString(result));
-      return data.value;
-    } catch {
-      return null;
+    async store(key, value) {
+      const nsKey = `/pluribit/${key}`;
+      const data = { type: 'pluribit', value, timestamp: Date.now() };
+      await this.node.services.dht.put(
+        uint8ArrayFromString(nsKey),
+        uint8ArrayFromString(JSON.stringify(data))
+      );
     }
+
+
+async get(key) {
+  try {
+    const nsKey = `/pluribit/${key}`;
+    const result = await this.node.services.dht.get(uint8ArrayFromString(nsKey));
+    const data = JSON.parse(uint8ArrayToString(result));
+    return data.value;
+  } catch {
+    return null;
   }
+}
 
   getConnectedPeers() {
     // Get all connected peer IDs

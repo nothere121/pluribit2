@@ -307,7 +307,7 @@ async function handleRemoteBlockDownloaded({ block }) {
             log(`Received requested block #${block.height} for fork resolution.`, 'info');
 
             reorgState.requestedBlocks.delete(block.hash); 
-
+            syncState.outstandingTipRequests.delete(block.hash);
 
             // Add the block to our map of pending fork blocks.
             if (!reorgState.pendingForks.has(block.height)) {
@@ -662,7 +662,8 @@ async function evaluateFork(commonAncestorHeight, forkTip) {
 async function performReorganization(commonAncestorHeight, newChain) {
     try {
         log(`Reorganizing from height ${commonAncestorHeight}...`);
-        const chainState = await pluribit.get_blockchain_state();
+        const rawState = await pluribit.get_blockchain_state();
+        const chainState = (typeof rawState === 'string') ? JSON.parse(rawState) : rawState;
         
         for (let height = chainState.current_height; height > commonAncestorHeight; height--) {
             const blockToRewind = chainState.blocks[height];
@@ -851,13 +852,14 @@ async function setupMessageHandlers() {
                 });
             } else {
                 // If not found, check if it's genesis
-                const chainState = await pluribit.get_blockchain_state();
-                if (chainState.blocks.length > 0 && chainState.blocks[0].hash === message.hash) {
-                    await p2p.publish(TOPICS.BLOCKS, {
-                        type: 'BLOCK_RESPONSE',
-                        payload: chainState.blocks[0],
-                        requestId: message.requestId
-                    });
+                const stRaw = await pluribit.get_blockchain_state();
+                const st = (typeof stRaw === 'string') ? JSON.parse(stRaw) : stRaw;
+                if (st?.blocks?.length > 0 && st.blocks[0].hash === message.hash) {
+                  await p2p.publish(TOPICS.BLOCKS, {
+                    type: 'BLOCK_RESPONSE',
+                    payload: st.blocks[0],
+                    requestId: message.requestId
+                  });
                 }
             }
         }

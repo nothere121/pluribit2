@@ -15,74 +15,56 @@ export const generateId = () => {
 
 
 export function arrayBufferToBase64(buffer) {
-    if (!buffer) return null;
-    if (typeof buffer === 'string') return buffer; // Already base64
-    
-    // Handle various buffer-like objects
-    let bytes;
-    if (buffer instanceof Uint8Array) {
-        bytes = buffer;
-    } else if (buffer instanceof ArrayBuffer) {
-        bytes = new Uint8Array(buffer);
-    } else if (buffer.buffer instanceof ArrayBuffer) {
-        // Handle typed arrays
-        bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-    } else if (buffer.data) {
-        // Handle objects with data property
-        bytes = new Uint8Array(buffer.data);
-    } else {
-        console.error('Unknown buffer type:', typeof buffer, buffer);
-        return null;
-    }
-    
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
+  if (!buffer) return null;
+  if (typeof buffer === 'string') return buffer; // already base64
+
+  let bytes;
+  if (buffer instanceof Uint8Array) {
+    bytes = buffer;
+  } else if (buffer instanceof ArrayBuffer) {
+    bytes = new Uint8Array(buffer);
+  } else if (buffer?.buffer instanceof ArrayBuffer) {
+    bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  } else if (buffer?.data) {
+    bytes = new Uint8Array(buffer.data);
+  } else {
+    console.error('Unknown buffer type:', typeof buffer, buffer);
+    return null;
+  }
+  return Buffer.from(bytes).toString('base64');
 }
 
 export const base64ToArrayBuffer = (base64) => {
-    // Handle null/undefined
-    if (!base64) return null;
-    
-    // If it's already an ArrayBuffer or Uint8Array, return as is
-    if (base64 instanceof ArrayBuffer) return new Uint8Array(base64);
-    if (base64 instanceof Uint8Array) return base64;
-    
-    // If it's an object with data property (from JSON serialization)
-    if (typeof base64 === 'object' && base64.data) {
-        return new Uint8Array(base64.data);
+  if (!base64) return null;
+
+  if (base64 instanceof ArrayBuffer) return new Uint8Array(base64);
+  if (base64 instanceof Uint8Array) return base64;
+  if (typeof base64 === 'object' && base64.data) {
+    return new Uint8Array(base64.data);
+  }
+  if (Buffer.isBuffer(base64)) {
+    return new Uint8Array(base64);
+  }
+  if (typeof base64 !== 'string') {
+    console.error('Invalid input for base64 decoding:', typeof base64, base64);
+    return null;
+  }
+
+  try {
+    const cleaned = base64.trim();
+    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+    if (!base64Regex.test(cleaned)) {
+      console.error('Invalid base64 string format:', cleaned.substring(0, 50) + '...');
+      return null;
     }
-    
-    // Only process strings
-    if (typeof base64 !== 'string') {
-        console.error('Invalid input for base64 decoding:', typeof base64, base64);
-        return null;
-    }
-    
-    try {
-        // Remove any whitespace
-        const cleaned = base64.trim();
-        
-        // Validate base64 string
-        const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-        if (!base64Regex.test(cleaned)) {
-            console.error('Invalid base64 string format:', cleaned.substring(0, 50) + '...');
-            return null;
-        }
-        
-        const binary = atob(cleaned);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-        }
-        return bytes;
-    } catch (e) {
-        console.error('Failed to decode base64:', e.message, 'Input:', base64.substring(0, 50) + '...');
-        return null;
-    }
+    const buf = Buffer.from(cleaned, 'base64');
+    return new Uint8Array(buf);
+  } catch (e) {
+    console.error('Failed to decode base64:', e.message);
+    return null;
+  }
 };
+
 export function normalizePeerId(id) {
   if (!id) return null;
 
