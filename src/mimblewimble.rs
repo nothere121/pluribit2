@@ -198,7 +198,7 @@ pub fn derive_kernel_pubkey(secret_key: &SecretKey) -> PublicKey {
 pub fn aggregate_schnorr_signatures(
     signatures: &[(Scalar, Scalar)],
     public_keys: &[RistrettoPoint],
-    message_hash: [u8; 32],
+    _message_hash: [u8; 32],
 ) -> PluribitResult<(Scalar, Scalar)> {
     if signatures.is_empty() ||
         signatures.len() != public_keys.len() {

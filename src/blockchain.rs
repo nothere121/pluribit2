@@ -1,6 +1,6 @@
 // src/blockchain.rs
 use crate::block::Block;
-use crate::transaction::{TransactionOutput, TransactionKernel}; // Added TransactionKernel
+use crate::transaction::{Transaction, TransactionOutput}; 
 use crate::error::{PluribitError, PluribitResult};
 use crate::vrf;
 use crate::constants;
@@ -17,11 +17,24 @@ use num_bigint::BigUint;
 use std::sync::Mutex;
 use lazy_static::lazy_static;
 use serde::{Serialize, Deserialize};
+use crate::constants::{
+    INITIAL_POW_DIFFICULTY,
+    DEFAULT_VRF_THRESHOLD,
+    INITIAL_VDF_ITERATIONS,
+    VRF_MIN_THRESHOLD,
+    VRF_MAX_THRESHOLD,
+    COINBASE_MATURITY,
+    MTP_WINDOW,
+    MAX_FUTURE_DRIFT_MS,
+};
+use num_traits::{One, Zero, ToPrimitive};
+use std::ops::Shr;
 
-
-// Globals for UTXO set remain
 lazy_static! {
     pub static ref UTXO_SET: Mutex<HashMap<Vec<u8>, TransactionOutput>> =
+        Mutex::new(HashMap::new());
+    // commitment -> block_height (only for coinbase outputs)
+    pub static ref COINBASE_INDEX: Mutex<HashMap<Vec<u8>, u64>> =
         Mutex::new(HashMap::new());
 }
 
@@ -40,6 +53,19 @@ pub struct Blockchain {
 }
 
 impl Blockchain {
+
+    /// Median-Time-Past of the last `window` blocks (inclusive of tip).
+    fn median_time_past(&self, window: usize) -> u64 {
+        let n = self.blocks.len().min(window);
+        if n == 0 {
+            return 0;
+        }
+        let start = self.blocks.len() - n;
+        let mut ts: Vec<u64> = self.blocks[start..].iter().map(|b| b.timestamp).collect();
+        ts.sort_unstable();
+        ts[n / 2]
+    }
+
     pub fn new() -> Self {
         let genesis = Block::genesis();
         let genesis_hash = genesis.hash();
@@ -51,14 +77,54 @@ impl Blockchain {
             block_by_hash,
             current_height: 0,
             total_work: 0,
-            current_pow_difficulty: 1,
-            current_vrf_threshold: [0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
-            current_vdf_iterations: 40000,
+            current_pow_difficulty: INITIAL_POW_DIFFICULTY,
+            current_vrf_threshold:  DEFAULT_VRF_THRESHOLD,
+            current_vdf_iterations: INITIAL_VDF_ITERATIONS,
         }
     }
     
+    /// FORK CHOICE RULE: VRF+VDF weighted work
     pub fn get_chain_work(blocks: &[Block]) -> u64 {
-        blocks.iter().map(|block| block.vdf_proof.iterations).sum()
+        use num_bigint::BigUint;
+        use num_traits::{One, Zero, ToPrimitive};
+        use std::ops::Shr;
+
+        if blocks.is_empty() { return 0; }
+
+        let two256 = BigUint::one() << 256;
+        let mut total_u128: u128 = 0;
+
+        for b in blocks {
+            // 1) VRF component: higher work for lower thresholds
+            let t = BigUint::from_bytes_be(&b.vrf_threshold);
+            if t.is_zero() { continue; }
+            let vrf_w: BigUint = &two256 / &t;
+
+            // 2) VDF component: proportional to iterations committed in the header
+            let vdf_w = BigUint::from(b.vdf_iterations);
+
+            // 3) Combine (multiplicative) and downscale to <=64 bits, preserving order
+            let w = vrf_w * vdf_w;
+
+            // Compute bit length from the bytes to choose a safe shift
+            let bytes = w.to_bytes_be();
+            let bits = if bytes.is_empty() {
+                0usize
+            } else {
+                (bytes.len() - 1) * 8 + (8 - bytes[0].leading_zeros() as usize)
+            };
+
+            let w64 = if bits > 64 {
+                // Normalize by dropping the least significant bits until it fits
+                (&w >> (bits - 64)).to_u64().unwrap_or(u64::MAX)
+            } else {
+                w.to_u64().unwrap_or(0)
+            };
+
+            total_u128 = total_u128.saturating_add(w64 as u128);
+        }
+
+        total_u128.min(u128::from(u64::MAX)) as u64
     }
 
     pub fn get_total_work(&self) -> u64 {
@@ -69,11 +135,58 @@ impl Blockchain {
         self.blocks.last().expect("blockchain always has genesis")
     }
 
+    /// Very simple selector: verify signature + avoid input conflicts.
+    /// Returns (selected_txs, total_fees)
+    pub fn select_transactions_for_block(&self, pool: &Vec<Transaction>) -> (Vec<Transaction>, u64) {
+        fn to_hex(bytes: &[u8]) -> String {
+            let mut s = String::with_capacity(bytes.len() * 2);
+            for b in bytes { s.push_str(&format!("{:02x}", b)); }
+            s
+        }
+
+        let mut selected: Vec<Transaction> = Vec::new();
+        let mut used_inputs = std::collections::HashSet::<String>::new();
+        let mut total_fees: u64 = 0;
+
+        for tx in pool.iter() {
+            // 1) Basic sanity: kernel signature
+            if let Err(e) = tx.verify_signature() {     
+                println!("[SELECT] skip tx: bad signature ({e})");
+                continue;
+            }
+
+            // 2) Prevent double-spend inside the block
+            let mut conflicts = false;
+            for inp in &tx.inputs {
+                // No `commitment_hex()`, so hex-encode the input commitment directly
+                let key = to_hex(&inp.commitment);
+                if !used_inputs.insert(key) { // already seen → conflict
+                    conflicts = true;
+                    break;
+                }
+            }
+            if conflicts {
+                println!("[SELECT] skip tx: input conflict with already selected tx");
+                continue;
+            }
+
+            total_fees = total_fees.saturating_add(tx.kernel.fee);
+            selected.push(tx.clone());
+        }
+
+        println!("[SELECT] chose {} tx(s) (fees = {})", selected.len(), total_fees);
+        (selected, total_fees)
+    }
+
+
+
+
     pub fn add_block(&mut self, mut block: Block) -> PluribitResult<()> {
         // Ensure hash is computed
         if block.hash.is_empty() {
             block.hash = block.compute_hash();
         }
+        
         // === 1. Basic Validation ===
         if block.height != self.current_height + 1 {
             return Err(PluribitError::InvalidBlock(format!("Expected height {}, got {}", self.current_height + 1, block.height)));
@@ -82,169 +195,181 @@ impl Blockchain {
             return Err(PluribitError::InvalidBlock("Parent hash mismatch".into()));
         }
 
+        // Timestamp sanity: Median-Time-Past & future-drift checks
+        let mtp = self.median_time_past(MTP_WINDOW);
+        if block.timestamp < mtp {
+            return Err(PluribitError::InvalidBlock("Block timestamp < median-time-past".into()));
+        }
+        let now_ms = js_sys::Date::now() as u64;
+        if block.timestamp > now_ms.saturating_add(MAX_FUTURE_DRIFT_MS) {
+            return Err(PluribitError::InvalidBlock("Block timestamp too far in the future".into()));
+        }
+
        // === 2. Sequential-Lottery Validation ===
-         // a. Verify the VRF proof (input = VDF output bytes)
         let miner_pubkey = CompressedRistretto::from_slice(&block.miner_pubkey)
             .map_err(|_| PluribitError::InvalidBlock("Invalid miner public key format".into()))?
             .decompress()
             .ok_or_else(|| PluribitError::InvalidBlock("Invalid miner public key".into()))?;
-
+            
         let vrf_input = &block.vdf_proof.y;
         if !vrf::verify_vrf(&miner_pubkey, vrf_input, &block.vrf_proof) {
             return Err(PluribitError::InvalidBlock("Invalid VRF proof".into()));
         }
 
-        // b. Check the VRF output meets the lottery threshold
-        if block.vrf_proof.output >= self.current_vrf_threshold {
+        // UPDATED: Check VRF output against the block's *committed* threshold
+        if block.vrf_proof.output >= block.vrf_threshold {
             return Err(PluribitError::InvalidBlock("VRF output does not meet threshold".into()));
         }
 
-        // c. Verify the VDF proof binds (prev_hash, miner_pubkey, nonce)
-        let vdf = crate::vdf::VDF::new(2048)?;
+        let vdf = crate::vdf::VDF::new_with_default_modulus()?;
         let vdf_input = format!("{}{}{}", block.prev_hash, hex::encode(&block.miner_pubkey), block.pow_nonce);
         if !vdf.verify(vdf_input.as_bytes(), &block.vdf_proof)? {
             return Err(PluribitError::InvalidBlock("Invalid VDF proof".into()));
         }
-        
 
-        
-// === 3. Aggregate Transaction and State Validation ===
-{
-    // Lock the UTXO set once for all checks.
-    let mut utxos = UTXO_SET.lock().unwrap();
-
-    // A. Sum all input and output commitments for the entire block.
-    let mut sum_in_pts = RistrettoPoint::identity();
-    let mut sum_out_pts = RistrettoPoint::identity();
-
-    // Split kernel excess: non-coinbase vs coinbase
-    let mut sum_kernel_non_cb = RistrettoPoint::identity();
-    let mut coinbase_kernel = RistrettoPoint::identity();
-
-    let mut total_fees = 0u64;
-
-    log(&format!("[BLOCK VALIDATION] Starting validation for block #{}", block.height));
-    log(&format!("[BLOCK VALIDATION] Number of transactions: {}", block.transactions.len()));
-
-
-    for (tx_idx, tx) in block.transactions.iter().enumerate() {
-        log(&format!("[BLOCK VALIDATION] Processing transaction #{}", tx_idx));
-        log(&format!("[BLOCK VALIDATION] TX#{}: Inputs: {}, Outputs: {}, Fee: {}", 
-            tx_idx, tx.inputs.len(), tx.outputs.len(), tx.kernel.fee));
-        
-        // Verify each kernel signature individually
-        if !tx.kernel.verify_signature()? {
-            log(&format!("[BLOCK VALIDATION] TX#{}: Kernel signature verification FAILED", tx_idx));
-            return Err(PluribitError::InvalidKernelSignature);
+        // UPDATED: Enforce VDF iterations equal to the block's *committed* setting.
+        if block.vdf_proof.iterations != block.vdf_iterations {
+            return Err(PluribitError::InvalidBlock("Unexpected VDF iterations for this block".into()));
         }
-        log(&format!("[BLOCK VALIDATION] TX#{}: Kernel signature verified", tx_idx));
         
-        // Add kernel excess, but split CB vs non-CB
-        let kernel_excess_pt = mimblewimble::kernel_excess_to_pubkey(&tx.kernel.excess)?;
-        let is_coinbase = tx.kernel.fee == 0 && tx.inputs.is_empty();
+        // === 3. Aggregate Transaction and State Validation ===
+        {
+            // Lock the UTXO set once for all checks.
+            let mut utxos = UTXO_SET.lock().unwrap();
 
-        if is_coinbase {
-            coinbase_kernel += kernel_excess_pt;
-            debug_assert_eq!(tx.kernel.fee, 0);
-        } else {
-            sum_kernel_non_cb += kernel_excess_pt;
-            total_fees = total_fees
-                .checked_add(tx.kernel.fee)
-                .ok_or(PluribitError::InvalidBlock("fee overflow".into()))?;
-        }
+            let mut sum_in_pts = RistrettoPoint::identity();
+            let mut sum_out_pts = RistrettoPoint::identity();
+            let mut sum_kernel_non_cb = RistrettoPoint::identity();
+            let mut coinbase_kernel = RistrettoPoint::identity();
+            let mut total_fees = 0u64;
 
-        log(&format!("[BLOCK VALIDATION] TX#{}: Kernel excess: {}", 
-            tx_idx, hex::encode(&tx.kernel.excess)));
-        
-        // Process inputs
-        for (inp_idx, inp) in tx.inputs.iter().enumerate() {
-            // Check if input exists in the UTXO set.
-            if !utxos.contains_key(&inp.commitment) {
-                log(&format!("[BLOCK VALIDATION] TX#{} Input#{}: NOT FOUND in UTXO set: {}", 
-                    tx_idx, inp_idx, hex::encode(&inp.commitment)));
-                return Err(PluribitError::UnknownInput);
+            log(&format!("[BLOCK VALIDATION] Starting validation for block #{}", block.height));
+            log(&format!("[BLOCK VALIDATION] Number of transactions: {}", block.transactions.len()));
+
+            for (tx_idx, tx) in block.transactions.iter().enumerate() {
+                log(&format!("[BLOCK VALIDATION] Processing transaction #{}", tx_idx));
+                log(&format!("[BLOCK VALIDATION] TX#{}: Inputs: {}, Outputs: {}, Fee: {}", 
+                    tx_idx, tx.inputs.len(), tx.outputs.len(), tx.kernel.fee));
+                
+                if !tx.kernel.verify_signature()? {
+                    log(&format!("[BLOCK VALIDATION] TX#{}: Kernel signature verification FAILED", tx_idx));
+                    return Err(PluribitError::InvalidKernelSignature);
+                }
+                log(&format!("[BLOCK VALIDATION] TX#{}: Kernel signature verified", tx_idx));
+                
+                let kernel_excess_pt = mimblewimble::kernel_excess_to_pubkey(&tx.kernel.excess)?;
+                let is_coinbase = tx.kernel.fee == 0 && tx.inputs.is_empty();
+
+                if is_coinbase {
+                    coinbase_kernel += kernel_excess_pt;
+                    debug_assert_eq!(tx.kernel.fee, 0);
+                } else {
+                    sum_kernel_non_cb += kernel_excess_pt;
+                    total_fees = total_fees
+                        .checked_add(tx.kernel.fee)
+                        .ok_or(PluribitError::InvalidBlock("fee overflow".into()))?;
+                }
+
+                log(&format!("[BLOCK VALIDATION] TX#{}: Kernel excess: {}", 
+                    tx_idx, hex::encode(&tx.kernel.excess)));
+                
+                for (inp_idx, inp) in tx.inputs.iter().enumerate() {
+                    if !utxos.contains_key(&inp.commitment) {
+                        log(&format!("[BLOCK VALIDATION] TX#{} Input#{}: NOT FOUND in UTXO set: {}", 
+                            tx_idx, inp_idx, hex::encode(&inp.commitment)));
+                        return Err(PluribitError::UnknownInput);
+                    }
+                    
+                    {
+                        let cb = crate::blockchain::COINBASE_INDEX.lock().unwrap();
+                        if let Some(&born_at) = cb.get(&inp.commitment) {
+                            let spend_height = block.height;
+                            let need = born_at + COINBASE_MATURITY;
+                            if spend_height < need {
+                                return Err(PluribitError::InvalidBlock("Coinbase spend immature".into()));
+                            }
+                        }
+                    }
+                    
+                    let c = CompressedRistretto::from_slice(&inp.commitment)
+                        .map_err(|_| PluribitError::InvalidInputCommitment)?
+                        .decompress()
+                        .ok_or(PluribitError::InvalidInputCommitment)?;
+                    sum_in_pts += c;
+                    log(&format!("[BLOCK VALIDATION] TX#{} Input#{}: {}", 
+                        tx_idx, inp_idx, hex::encode(&inp.commitment)));
+                }
+                
+                for (out_idx, out) in tx.outputs.iter().enumerate() {
+                    let commitment_pt = CompressedRistretto::from_slice(&out.commitment)
+                        .map_err(|_| PluribitError::InvalidOutputCommitment)?;
+                    let proof = RangeProof::from_bytes(&out.range_proof)
+                        .map_err(|_| PluribitError::InvalidRangeProof)?;
+                    if !mimblewimble::verify_range_proof(&proof, &commitment_pt) {
+                        log(&format!("[BLOCK VALIDATION] TX#{} Output#{}: Range proof verification FAILED", 
+                            tx_idx, out_idx));
+                        return Err(PluribitError::InvalidRangeProof);
+                    }
+
+                    let c = commitment_pt.decompress().ok_or(PluribitError::InvalidOutputCommitment)?;
+                    sum_out_pts += c;
+                    log(&format!("[BLOCK VALIDATION] TX#{} Output#{}: {} (verified range proof)", 
+                        tx_idx, out_idx, hex::encode(&out.commitment)));
+                }
+                
+                log(&format!("[BLOCK VALIDATION] TX#{}: Processing complete", tx_idx));
             }
-            let C = CompressedRistretto::from_slice(&inp.commitment)
-                .map_err(|_| PluribitError::InvalidInputCommitment)?
-                .decompress()
-                .ok_or(PluribitError::InvalidInputCommitment)?;
-            sum_in_pts += C;
-            log(&format!("[BLOCK VALIDATION] TX#{} Input#{}: {}", 
-                tx_idx, inp_idx, hex::encode(&inp.commitment)));
-        }
-        
-        // Process outputs
-        for (out_idx, out) in tx.outputs.iter().enumerate() {
-            // Also verify each output's range proof here.
-            let commitment_pt = CompressedRistretto::from_slice(&out.commitment)
-                .map_err(|_| PluribitError::InvalidOutputCommitment)?;
-            let proof = RangeProof::from_bytes(&out.range_proof)
-                .map_err(|_| PluribitError::InvalidRangeProof)?;
-            if !mimblewimble::verify_range_proof(&proof, &commitment_pt) {
-                log(&format!("[BLOCK VALIDATION] TX#{} Output#{}: Range proof verification FAILED", 
-                    tx_idx, out_idx));
-                return Err(PluribitError::InvalidRangeProof);
+
+            let base_reward = self.calculate_block_reward(block.height, self.current_pow_difficulty);
+            let total_reward = base_reward + total_fees;
+            let reward_commitment = mimblewimble::commit(total_reward, &Scalar::from(0u64))?;
+            
+            let left_side  = sum_out_pts + sum_kernel_non_cb;
+            let right_side = sum_in_pts  + coinbase_kernel + reward_commitment;
+
+            log(&format!("[BLOCK VALIDATION] Final sum of inputs:           {}", hex::encode(sum_in_pts.compress().to_bytes())));
+            log(&format!("[BLOCK VALIDATION] Final sum of outputs:          {}", hex::encode(sum_out_pts.compress().to_bytes())));
+            log(&format!("[BLOCK VALIDATION] Sum kernel (non-CB):           {}", hex::encode(sum_kernel_non_cb.compress().to_bytes())));
+            log(&format!("[BLOCK VALIDATION] Kernel (coinbase only):        {}", hex::encode(coinbase_kernel.compress().to_bytes())));
+            log(&format!("[BLOCK VALIDATION] reward commitment (base+fees): {} (base={}, fees={})", hex::encode(reward_commitment.compress().to_bytes()), base_reward, total_fees));
+            log(&format!("[BLOCK VALIDATION] LHS (Out + K_nonCB):           {}", hex::encode(left_side.compress().to_bytes())));
+            log(&format!("[BLOCK VALIDATION] RHS (In + K_CB + Reward):      {}", hex::encode(right_side.compress().to_bytes())));
+
+            if left_side != right_side {
+                log("[BLOCK VALIDATION] BALANCE CHECK FAILED!");
+                log(&format!("[BLOCK VALIDATION] Total fees in block: {}", total_fees));
+                log(&format!("[BLOCK VALIDATION] Base reward: {}", base_reward));
+                return Err(PluribitError::Imbalance);
             }
 
-            let C = commitment_pt.decompress().ok_or(PluribitError::InvalidOutputCommitment)?;
-            sum_out_pts += C;
-            log(&format!("[BLOCK VALIDATION] TX#{} Output#{}: {} (verified range proof)", 
-                tx_idx, out_idx, hex::encode(&out.commitment)));
+            log("[BLOCK VALIDATION] Balance check PASSED");
+
+            for tx in &block.transactions {
+                for inp in &tx.inputs {
+                    utxos.remove(&inp.commitment);
+                    let mut cb = crate::blockchain::COINBASE_INDEX.lock().unwrap();
+                    cb.remove(&inp.commitment);
+                }
+
+                let is_coinbase_tx = tx.kernel.fee == 0 && tx.inputs.is_empty();
+                for out in &tx.outputs {
+                    utxos.insert(out.commitment.clone(), out.clone());
+                    if is_coinbase_tx {
+                        let mut cb = crate::blockchain::COINBASE_INDEX.lock().unwrap();
+                        cb.insert(out.commitment.clone(), block.height);
+                    }
+                }
+            }
+            
+            log("[BLOCK VALIDATION] UTXO set updated successfully");
         }
-        
-        log(&format!("[BLOCK VALIDATION] TX#{}: Processing complete", tx_idx));
-    }
-
-// Reward commitment MUST include total fees when kernel excess already carries fee*B
-let base_reward = self.calculate_block_reward(block.height, self.current_pow_difficulty);
-let total_reward = base_reward + total_fees;
-let reward_commitment = mimblewimble::commit(total_reward, &Scalar::from(0u64))?;
-
-// Balance with:  ΣOut + ΣK(non-CB) == ΣIn + K(CB) + Commit(base + fees, 0)
-let left_side  = sum_out_pts + sum_kernel_non_cb;
-let right_side = sum_in_pts  + coinbase_kernel + reward_commitment;
-
-log(&format!("[BLOCK VALIDATION] Final sum of inputs:           {}",
-    hex::encode(sum_in_pts.compress().to_bytes())));
-log(&format!("[BLOCK VALIDATION] Final sum of outputs:          {}",
-    hex::encode(sum_out_pts.compress().to_bytes())));
-log(&format!("[BLOCK VALIDATION] Sum kernel (non-CB):           {}",
-    hex::encode(sum_kernel_non_cb.compress().to_bytes())));
-log(&format!("[BLOCK VALIDATION] Kernel (coinbase only):        {}",
-    hex::encode(coinbase_kernel.compress().to_bytes())));
-log(&format!("[BLOCK VALIDATION] reward commitment (base+fees): {} (base={}, fees={})",
-    hex::encode(reward_commitment.compress().to_bytes()), base_reward, total_fees));
-log(&format!("[BLOCK VALIDATION] LHS (Out + K_nonCB):           {}",
-    hex::encode(left_side.compress().to_bytes())));
-log(&format!("[BLOCK VALIDATION] RHS (In + K_CB + Reward):      {}",
-    hex::encode(right_side.compress().to_bytes())));
-
-if left_side != right_side {
-    log(&format!("[BLOCK VALIDATION] BALANCE CHECK FAILED!"));
-    log(&format!("[BLOCK VALIDATION] Total fees in block: {}", total_fees));
-    log(&format!("[BLOCK VALIDATION] Base reward: {}", base_reward));
-    return Err(PluribitError::Imbalance);
-}
-
-log(&format!("[BLOCK VALIDATION] Balance check PASSED"));
-
-    // C. Apply UTXO changes (state transition).
-    for tx in &block.transactions {
-        for inp in &tx.inputs {
-            utxos.remove(&inp.commitment);
-        }
-        for out in &tx.outputs {
-            utxos.insert(out.commitment.clone(), out.clone());
-        }
-    }
-    
-    log(&format!("[BLOCK VALIDATION] UTXO set updated successfully"));
-} // Mutex lock on UTXO_SET is released here.
-        
         
         // === 4. Update Chain State ===
-        self.total_work += block.vdf_proof.iterations;
+        // Note: total_work is calculated using get_chain_work on a slice of blocks during fork choice,
+        // so we don't need to accumulate it here. We'll update the logic to re-calculate it if needed.
+        // For simplicity, we can set it based on the new chain.
         self.blocks.push(block.clone());
+        self.total_work = Self::get_chain_work(&self.blocks);
         self.block_by_hash.insert(block.hash(), block.clone());
         self.current_height += 1;
 
@@ -253,6 +378,25 @@ log(&format!("[BLOCK VALIDATION] Balance check PASSED"));
             self.adjust_difficulty();
         }
 
+        {
+            let mut pool = crate::TX_POOL.lock().unwrap_or_else(|p| p.into_inner());
+            let before = pool.pending.len();
+
+            pool.pending.retain(|p|
+                !block.transactions.iter().any(|t| t.kernel.excess == p.kernel.excess)
+            );
+            
+            let utxos = crate::blockchain::UTXO_SET.lock().unwrap_or_else(|p| p.into_inner());
+            pool.pending.retain(|p|
+                p.inputs.iter().all(|i| utxos.contains_key(&i.commitment))
+            );
+            
+            pool.fee_total = pool.pending.iter().map(|t| t.kernel.fee).sum();
+            crate::log(&format!(
+                "[RUST] Mempool: removed {} included/invalid txs ({} → {})",
+                before - pool.pending.len(), before, pool.pending.len()
+            ));
+        }
         Ok(())
     }
     
@@ -267,7 +411,6 @@ log(&format!("[BLOCK VALIDATION] Balance check PASSED"));
     
         let actual_time_ms = end_block.timestamp.saturating_sub(start_block.timestamp);
         let expected_time_ms = constants::DIFFICULTY_ADJUSTMENT_INTERVAL * constants::TARGET_BLOCK_TIME * 1000;
-    
         if actual_time_ms == 0 {
             return;
         }
@@ -277,7 +420,7 @@ log(&format!("[BLOCK VALIDATION] Balance check PASSED"));
     
         let new_vdf_iterations = ((self.current_vdf_iterations as f64) / ratio).round() as u64;
         let new_vdf_iterations = new_vdf_iterations.max(constants::MIN_VDF_ITERATIONS).min(constants::MAX_VDF_ITERATIONS);
-    
+        
         let new_pow_difficulty_f64 = (self.current_pow_difficulty as f64) / ratio;
         let new_pow_difficulty = (new_pow_difficulty_f64.round() as u8).max(1).min(64);
     
@@ -286,13 +429,12 @@ log(&format!("[BLOCK VALIDATION] Balance check PASSED"));
         let ratio_denominator = 1_000_000u128;
         threshold_bigint = (threshold_bigint * ratio_numerator) / ratio_denominator;
         
-        let max_threshold = BigUint::from_bytes_be(&[0xFF; 32]);
+        let max_threshold = BigUint::from_bytes_be(&VRF_MAX_THRESHOLD);
         if threshold_bigint > max_threshold {
             threshold_bigint = max_threshold;
         }
         
-        let min_threshold = BigUint::from_bytes_be(&[0x00, 0x28, 0xF5, 0xC2, 0x8F, 0x5C, 0x28, 0xF5, 0xC2, 0x8F, 0x5C, 0x28, 0xF5, 0xC2, 0x8F, 0x5C, 0x28, 0xF5, 0xC2, 0x8F, 0x5C, 0x28, 0xF5, 0xC2, 0x8F, 0x5C, 0x28, 0xF5, 0xC2, 0x8F, 0x5C, 0x29]);
-
+        let min_threshold = BigUint::from_bytes_be(&VRF_MIN_THRESHOLD);
         if threshold_bigint < min_threshold {
             threshold_bigint = min_threshold;
         }
@@ -301,7 +443,7 @@ log(&format!("[BLOCK VALIDATION] Balance check PASSED"));
         let mut new_vrf_threshold = [0u8; 32];
         let pad_len = 32_usize.saturating_sub(new_vrf_threshold_bytes.len());
         new_vrf_threshold[pad_len..].copy_from_slice(&new_vrf_threshold_bytes);
-    
+
         log(&format!(
             "[DIFFICULTY] Adjustment at height {}: Actual Time: {:.2}s, Expected: {:.2}s, Ratio: {:.2}",
             self.current_height,
@@ -321,7 +463,7 @@ log(&format!("[BLOCK VALIDATION] Balance check PASSED"));
             "[DIFFICULTY] VRF Threshold: {}... -> {}...",
             hex::encode(&self.current_vrf_threshold[..4]), hex::encode(&new_vrf_threshold[..4])
         ));
-    
+
         self.current_vdf_iterations = new_vdf_iterations;
         self.current_pow_difficulty = new_pow_difficulty;
         self.current_vrf_threshold = new_vrf_threshold;
@@ -329,11 +471,9 @@ log(&format!("[BLOCK VALIDATION] Balance check PASSED"));
 
     pub fn calculate_block_reward(&self, height: u64, pow_difficulty: u8) -> u64 {
         let base_reward = get_current_base_reward(height);
-        
         let pow_bonus = if pow_difficulty > 10 {
             (pow_difficulty as u64 - 10) * 100_000
         } else { 0 };
-        
         base_reward + pow_bonus
     }
     
@@ -410,7 +550,9 @@ log(&format!("[BLOCK VALIDATION] Balance check PASSED"));
             vdf_proof: VDFProof::default(),
             miner_pubkey: [0u8; 32],
             tx_merkle_root: [0u8; 32],
-            hash: String::new(), 
+            hash: String::new(),
+            vdf_iterations: constants::INITIAL_VDF_ITERATIONS,
+            vrf_threshold: constants::DEFAULT_VRF_THRESHOLD,
         };
                 
         self.blocks = vec![self.blocks[0].clone(), snapshot_block];

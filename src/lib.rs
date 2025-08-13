@@ -1,3 +1,4 @@
+// src/lib.rs
 use wasm_bindgen::prelude::*;
 use serde_wasm_bindgen;
 use lazy_static::lazy_static;
@@ -7,7 +8,7 @@ use serde_json;
 use sha2::{Sha256, Digest};
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::Identity;  
+use curve25519_dalek::traits::Identity;
 use bulletproofs::RangeProof;
 use serde::Serialize;
 use serde::Deserialize;
@@ -36,9 +37,6 @@ pub mod address;
 pub mod merkle;
 pub mod vrf;
 
-
-
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UTXO {
     pub commitment: Vec<u8>,
@@ -52,9 +50,6 @@ pub struct TransactionPool {
     pub pending: Vec<transaction::Transaction>,
     pub fee_total: u64,
 }
-
-
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UTXOSnapshot {
@@ -103,10 +98,8 @@ lazy_static! {
     });
     static ref POW_TICKET_CACHE: Mutex<HashMap<[u8; 32], Vec<PoWTicket>>> = 
         Mutex::new(HashMap::new());
-    
     static ref MINING_METRICS: Mutex<MiningMetrics> = 
         Mutex::new(MiningMetrics::default());
-        
     // Cache of recent UTXOs for fast recovery during reorgs
     // Maps commitment -> (height, TransactionOutput)
     static ref RECENT_UTXO_CACHE: Mutex<HashMap<Vec<u8>, (u64, TransactionOutput)>> = 
@@ -131,7 +124,6 @@ pub fn log(s: &str) {
     #[cfg(target_arch = "wasm32")]
     wasm_log(s);
 
-
     #[cfg(not(target_arch = "wasm32"))]
     native_log(s);
 }
@@ -141,10 +133,8 @@ pub fn wallet_scan_blockchain(wallet_json: &str) -> Result<String, JsValue> {
     // Deserialize the wallet
     let mut wallet: Wallet = serde_json::from_str(wallet_json)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    
     // Get the blockchain
     let chain = BLOCKCHAIN.lock().unwrap();
-    
     // Scan each block
     for block in &chain.blocks {
         wallet.scan_block(block);
@@ -159,10 +149,8 @@ pub fn wallet_scan_blockchain(wallet_json: &str) -> Result<String, JsValue> {
 pub fn wallet_get_address(wallet_json: &str) -> Result<String, JsValue> {
     let wallet: Wallet = serde_json::from_str(wallet_json)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    
     // The wallet's address is their scan public key in hex
     let address = hex::encode(wallet.scan_pub.compress().to_bytes());
-    
     Ok(address)
 }
 
@@ -171,7 +159,6 @@ pub fn validate_address(address_hex: &str) -> Result<bool, JsValue> {
     // Try to decode the hex
     let bytes = hex::decode(address_hex)
         .map_err(|_| JsValue::from_str("Invalid hex"))?;
-    
     // Check if it's a valid compressed Ristretto point
     if bytes.len() != 32 {
         return Ok(false);
@@ -196,18 +183,18 @@ pub fn scan_pending_transactions(wallet_json: &str) -> Result<JsValue, JsValue> 
 
     // Create a dummy block to pass to the scan_block function
     for tx in &pool.pending {
-        let mut temp_block = Block::genesis(); // A simple container
+        let mut temp_block = Block::genesis();
+        // A simple container
         temp_block.transactions.push(tx.clone());
 
         let mut temp_wallet = wallet.clone();
         temp_wallet.scan_block(&temp_block);
-        
         // Check if new UTXOs were found
         if temp_wallet.owned_utxos.len() > wallet.owned_utxos.len() {
              for utxo in temp_wallet.owned_utxos.iter().skip(wallet.owned_utxos.len()) {
                 // Here you can decide what info to return
                 found_outputs.push(utxo.value);
-             }
+            }
         }
     }
     
@@ -227,7 +214,6 @@ pub fn greet(name: &str) -> String {
 #[wasm_bindgen]
 pub fn perform_vdf_computation(input_str: String, iterations: u64) -> Result<JsValue, JsValue> {
     log(&format!("[RUST] Starting VDF computation. Input: '{}', Iterations: {}", input_str, iterations));
-
     // 1. Create a VDF instance.
     //    Your VDF::new() takes a dummy _bit_length.
     //    It returns PluribitResult<VDF>.
@@ -240,10 +226,8 @@ pub fn perform_vdf_computation(input_str: String, iterations: u64) -> Result<JsV
         }
     };
     log("[RUST] VDF instance created.");
-
     // 2. Prepare input bytes
     let input_bytes = input_str.as_bytes();
-
     // 3. Call compute_with_proof
     //    This is a method on your VDF struct.
     log(&format!("[RUST] Calling vdf_instance.compute_with_proof for {} iterations...", iterations));
@@ -277,7 +261,6 @@ pub fn perform_vdf_computation(input_str: String, iterations: u64) -> Result<JsV
 #[wasm_bindgen]
 pub fn verify_vdf_proof(input_str: String, proof_js: JsValue) -> Result<bool, JsValue> {
     log(&format!("[RUST] Starting VDF verification. Input: '{}'", input_str));
-
     // 1. Create a VDF instance
     let vdf_instance = match VDF::new(2048) {
         Ok(instance) => instance,
@@ -288,7 +271,6 @@ pub fn verify_vdf_proof(input_str: String, proof_js: JsValue) -> Result<bool, Js
         }
     };
     log("[RUST] VDF instance for verification created.");
-
     // 2. Deserialize VDFProof from JsValue
     let proof_data: VDFProof = match serde_wasm_bindgen::from_value(proof_js) {
         Ok(data) => data,
@@ -299,10 +281,8 @@ pub fn verify_vdf_proof(input_str: String, proof_js: JsValue) -> Result<bool, Js
         }
     };
     log("[RUST] VDFProof deserialized from JsValue successfully.");
-
     // 3. Prepare input bytes
     let input_bytes = input_str.as_bytes();
-
     // 4. Call verify
     log("[RUST] Calling vdf_instance.verify...");
     match vdf_instance.verify(input_bytes, &proof_data) {
@@ -318,9 +298,6 @@ pub fn verify_vdf_proof(input_str: String, proof_js: JsValue) -> Result<bool, Js
     }
 }
 
-
-
-
 #[wasm_bindgen]
 pub fn create_genesis_block() -> Result<JsValue, JsValue> {
     let genesis = block::Block::genesis();
@@ -328,7 +305,6 @@ pub fn create_genesis_block() -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&genesis)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
-
 
 #[wasm_bindgen]
 pub fn wallet_create_transaction(
@@ -340,21 +316,19 @@ pub fn wallet_create_transaction(
     // 1. Deserialize the wallet state from the JSON string provided by JavaScript.
     let mut wallet: Wallet = serde_json::from_str(wallet_json)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    
     // 2. Decode the recipient's public key from the hex string.
     let pub_key_bytes = hex::decode(recipient_scan_pub_hex)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     let compressed_point = CompressedRistretto::from_slice(&pub_key_bytes)
-        .map_err(|e| JsValue::from_str(&format!("Invalid public key bytes: {}", e)))?; // Convert error to JsValue
+        .map_err(|e| JsValue::from_str(&format!("Invalid public key bytes: {}", e)))?;
+        // Convert error to JsValue
 
     let recipient_scan_pub = compressed_point.decompress() // Now you can call decompress
         .ok_or_else(|| JsValue::from_str("Invalid recipient public key"))?;
-
     // 3. Call the internal create_transaction method on the Wallet struct.
     //    This method contains all the complex logic for coin selection and stealth output creation.
     let transaction = wallet.create_transaction(amount, fee, &recipient_scan_pub)
         .map_err(|e| JsValue::from_str(&e))?;
-    
     // 4. Serialize the wallet's NEW state back to JSON. This is crucial because
     //    spending UTXOs and creating change modifies the wallet's state.
     let updated_wallet_json = serde_json::to_string(&wallet).unwrap();
@@ -371,35 +345,56 @@ pub fn wallet_create_transaction(
         transaction,
         updated_wallet_json,
     };
-
     serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
 }
-
-
 
 #[wasm_bindgen]
 pub fn init_blockchain() -> Result<JsValue, JsValue> {
     let mut chain = BLOCKCHAIN.lock().unwrap();
     *chain = blockchain::Blockchain::new();
-    log("[RUST] Blockchain initialized with genesis block");
+    // Reset the global UTXO set and transaction pool for a clean state.
+    let mut utxo_set = blockchain::UTXO_SET.lock().unwrap();
+    utxo_set.clear();
+    let mut tx_pool = TX_POOL.lock().unwrap();
+    tx_pool.pending.clear();
+    tx_pool.fee_total = 0;
 
+    log("[RUST] Blockchain and global state initialized with genesis block");
     serde_wasm_bindgen::to_value(&*chain)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 #[wasm_bindgen]
-pub fn add_block_to_chain(block_json: JsValue) -> Result<JsValue, JsValue> {
-    let block: block::Block = serde_wasm_bindgen::from_value(block_json)
-        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize block: {}", e)))?;
+pub fn add_block_to_chain(block_js: JsValue) -> Result<(), JsValue> {
+    let block: Block = serde_wasm_bindgen::from_value(block_js)
+        .map_err(|e| JsValue::from_str(&format!("bad block: {e}")))?;
+    {
+        let mut chain = BLOCKCHAIN.lock().unwrap();
+        chain.add_block(block.clone())
+            .map_err(|e| JsValue::from_str(&format!("Failed to add block: {e}")))?;
+    }
 
-    let mut chain = BLOCKCHAIN.lock().unwrap();
-    chain.add_block(block.clone())
-        .map_err(|e| JsValue::from_str(&format!("Failed to add block: {}", e)))?;
+    // === NEW: mempool hygiene ===
+    {
+        use std::collections::HashSet;
+        // 1) drop txs that were just mined
+        let mined: HashSet<Vec<u8>> = block.transactions
+            .iter().skip(1) // skip coinbase
+            .map(|t| t.kernel.excess.clone())
+            .collect();
+        let mut pool = TX_POOL.lock().unwrap();
+        pool.pending.retain(|t| !mined.contains(&t.kernel.excess));
 
-    log(&format!("[RUST] Block added to chain. New height: {}", chain.current_height));
+        // 2) drop txs whose inputs are no longer available
+        let utxos = blockchain::UTXO_SET.lock().unwrap();
+        pool.pending.retain(|t|
+            t.inputs.iter().all(|inp| utxos.contains_key(&inp.commitment))
+        );
+        // 3) recompute fee total
+        pool.fee_total = pool.pending.iter().map(|t| t.kernel.fee).sum();
+    }
 
-    serde_wasm_bindgen::to_value(&*chain)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    Ok(())
 }
 
 #[wasm_bindgen]
@@ -415,11 +410,9 @@ pub fn get_latest_block_hash() -> Result<String, JsValue> {
     Ok(chain.get_latest_block().hash())
 }
 
-
 #[wasm_bindgen]
 pub fn get_block_by_hash(hash: String) -> Result<JsValue, JsValue> {
     let chain = BLOCKCHAIN.lock().unwrap();
-    
     // Check all blocks including genesis
     for block in &chain.blocks {
         if block.hash() == hash {
@@ -435,11 +428,9 @@ pub fn get_block_by_hash(hash: String) -> Result<JsValue, JsValue> {
     }
 }
 
-
 #[wasm_bindgen]
 pub fn get_blockchain_with_hashes() -> Result<JsValue, JsValue> {
     let chain = BLOCKCHAIN.lock().unwrap();
-
     #[derive(serde::Serialize)]
     struct BlockWithHash {
         height: u64,
@@ -471,14 +462,9 @@ pub fn get_blockchain_with_hashes() -> Result<JsValue, JsValue> {
         blocks: blocks_with_hashes,
         current_height: chain.current_height,
     };
-
     serde_wasm_bindgen::to_value(&result)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
-
-
-
-
 
 // Get wallet balance
 #[wasm_bindgen]
@@ -486,30 +472,25 @@ pub fn wallet_get_balance(wallet_json: &str) -> Result<u64, JsValue> {
     // 1. Deserialize the wallet state passed from JavaScript.
     let wallet: Wallet = serde_json::from_str(wallet_json)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
     // 2. Call the internal balance() method on the Wallet struct.
     //    This method simply sums the value of the UTXOs the wallet owns.
     Ok(wallet.balance())
 }
 
-
 #[wasm_bindgen]
 pub fn wallet_create() -> Result<String, JsValue> {
     // 1. Create a new Wallet instance using the logic in wallet.rs
     let wallet = Wallet::new();
-
     // 2. Serialize the new wallet to a JSON string and return it.
     // The JavaScript caller is now responsible for saving this string.
     serde_json::to_string(&wallet)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
-
 // Get transaction pool
 #[wasm_bindgen]
 pub fn get_tx_pool() -> Result<JsValue, JsValue> {
     let pool = TX_POOL.lock().unwrap();
-
     #[derive(serde::Serialize)]
     struct PoolInfo {
         pending_count: usize,
@@ -522,14 +503,13 @@ pub fn get_tx_pool() -> Result<JsValue, JsValue> {
         fee_total: pool.fee_total,
         transactions: pool.pending.clone(),
     };
-
     serde_wasm_bindgen::to_value(&info)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 
 // Introducing - PoWrPoST - Thermodynamic finality!
- #[wasm_bindgen]
+#[wasm_bindgen]
  pub fn mine_block_header(
      height: u64,
      miner_secret_key_bytes: Vec<u8>,
@@ -556,7 +536,6 @@ pub fn get_tx_pool() -> Result<JsValue, JsValue> {
     let mut vrf_threshold = [0u8; 32];
     vrf_threshold.copy_from_slice(&vrf_threshold_bytes);
     
-    // Sequential-lottery ticketing: VDF -> VRF (no PoW)
    // Mine just the header ticket (no transactions needed yet)
     for nonce in start_nonce..max_nonce {
         let mut test_block = Block::genesis();
@@ -570,9 +549,10 @@ pub fn get_tx_pool() -> Result<JsValue, JsValue> {
         let vdf_input = format!("{}{}{}", prev_hash, hex::encode(miner_pubkey), nonce);
         let vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), vdf_iterations)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
+            
         // 2) VRF lottery over the VDF output (non-outsourcable per attempt)
         let vrf_proof = vrf::create_vrf(&secret_key, &vdf_proof.y);
+        
         if vrf_proof.output >= vrf_threshold {
             continue;
         }
@@ -587,6 +567,9 @@ pub fn get_tx_pool() -> Result<JsValue, JsValue> {
             vrf_proof: VrfProof,
             vdf_proof: VDFProof,
             miner_pubkey: Vec<u8>,
+            // NEW: Propagate committed params
+            vrf_threshold: Vec<u8>,
+            vdf_iterations: u64,
         }
         
         return serde_wasm_bindgen::to_value(&HeaderSolution {
@@ -594,6 +577,9 @@ pub fn get_tx_pool() -> Result<JsValue, JsValue> {
             vrf_proof,
             vdf_proof,
             miner_pubkey: miner_pubkey.to_vec(),
+            // NEW
+            vrf_threshold: vrf_threshold_bytes.clone(),
+            vdf_iterations,
         }).map_err(|e| e.into());
     }
     
@@ -603,44 +589,47 @@ pub fn get_tx_pool() -> Result<JsValue, JsValue> {
 
 #[wasm_bindgen]
 pub fn complete_block_with_transactions(
-     height: u64,
-     prev_hash: String,
-     nonce: u64,
-     miner_pubkey_bytes: Vec<u8>,
-     miner_scan_pubkey_bytes: Vec<u8>,
-     vrf_proof_js: JsValue,
-     vdf_proof_js: JsValue,
-     pow_difficulty: u8,
-     mempool_transactions_js: JsValue,  
- ) -> Result<JsValue, JsValue> {
-    // Deserialize VRF proof
+    height: u64,
+    prev_hash: String,
+    nonce: u64,
+    miner_pubkey_bytes: Vec<u8>,
+    miner_scan_pubkey_bytes: Vec<u8>,
+    vrf_proof_js: JsValue,
+    vdf_proof_js: JsValue,
+    // NEW PARAMS
+    vrf_threshold_bytes: Vec<u8>,
+    vdf_iterations: u64,
+    pow_difficulty: u8,
+    _mempool_transactions_js: JsValue, // kept for API compatibility; ignored
+) -> Result<JsValue, JsValue> {
+    // Deserialize proofs
     let vrf_proof: VrfProof = serde_wasm_bindgen::from_value(vrf_proof_js)?;
-    
-    // Use the VDF proof computed during header mining
     let vdf_proof: VDFProof = serde_wasm_bindgen::from_value(vdf_proof_js)?;
-    
-    // NOW get current mempool transactions
-    // Get transactions from parameter if provided, otherwise from local pool
-    let mut transactions: Vec<Transaction> = if mempool_transactions_js.is_null() || mempool_transactions_js.is_undefined() {
-        let pool = TX_POOL.lock().unwrap();
-        pool.pending.clone()
-    } else {
-        serde_wasm_bindgen::from_value(mempool_transactions_js)?
+
+    // Snapshot mempool and select a valid, non-conflicting set
+    let (mut selected, total_fees) = {
+        let chain = BLOCKCHAIN.lock().unwrap();
+        let pool_snapshot = {
+            let pool = TX_POOL.lock().unwrap();
+            pool.pending.clone()
+        };
+
+        chain.select_transactions_for_block(&pool_snapshot)
     };
-    let total_fees: u64 = transactions.iter().map(|tx| tx.kernel.fee).sum();
     
-    // Calculate reward
-    let chain = BLOCKCHAIN.lock().unwrap();
-    let reward = chain.calculate_block_reward(height, pow_difficulty) + total_fees; // Miner collects fees!
-    drop(chain);
+    // Coinbase pays base + fees
+    let base_reward = {
+        let chain = BLOCKCHAIN.lock().unwrap();
+        chain.calculate_block_reward(height, pow_difficulty)
+    };
+    let coinbase_amount = base_reward + total_fees;
+    let coinbase_tx = Transaction::create_coinbase(vec![
+        (miner_scan_pubkey_bytes, coinbase_amount)
+    ]).map_err(|e| JsValue::from_str(&e.to_string()))?;
     
-    // Create coinbase
-    let coinbase_tx = Transaction::create_coinbase(vec![(miner_scan_pubkey_bytes, reward)])
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    
-    transactions.insert(0, coinbase_tx);
-    
-    // Build final block
+    // Assemble block (coinbase first)
+    selected.insert(0, coinbase_tx);
+
     let mut miner_pubkey = [0u8; 32];
     miner_pubkey.copy_from_slice(&miner_pubkey_bytes);
     
@@ -648,35 +637,43 @@ pub fn complete_block_with_transactions(
         height,
         prev_hash,
         timestamp: js_sys::Date::now() as u64,
-        transactions,
-        pow_nonce: nonce, // acts as ticket_nonce; kept on-wire
+        transactions: selected,
+        pow_nonce: nonce,
         vrf_proof,
         vdf_proof,
         miner_pubkey,
+        // NEW: Commit params into header
+        vdf_iterations,
+        vrf_threshold: {
+            let mut t = [0u8; 32];
+            t.copy_from_slice(&vrf_threshold_bytes);
+            t
+        },
         tx_merkle_root: [0u8; 32],
         hash: String::new(),
     };
     
-    // Apply cut-through
+    // Before cut-through
+    let before_ct = block.transactions.len();
+
     block.apply_cut_through()
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    
+    log(&format!("[CUT-THROUGH] txs before={}, after={}", before_ct, block.transactions.len()));
+        
     block.tx_merkle_root = block.calculate_tx_merkle_root();
     block.hash = block.compute_hash();
     
-    log(&format!("[MINING] Completed block #{} with {} transactions", 
-        height, block.transactions.len() - 1));
+    log(&format!(
+        "[MINING] Completed block #{} with {} txs (fees = {})",
+        height, block.transactions.len().saturating_sub(1), total_fees
+    ));
     
     serde_wasm_bindgen::to_value(&block).map_err(|e| e.into())
 }
 
-
-
-
 #[wasm_bindgen]
 pub fn get_current_mining_params() -> Result<JsValue, JsValue> {
     let chain = BLOCKCHAIN.lock().unwrap();
-    
     #[derive(Serialize)]
     struct MiningParams {
         pow_difficulty: u8,
@@ -693,7 +690,6 @@ pub fn get_current_mining_params() -> Result<JsValue, JsValue> {
         current_height: chain.current_height,
         total_work: chain.total_work,
     };
-    
     serde_wasm_bindgen::to_value(&params).map_err(|e| e.into())
 }
 
@@ -708,7 +704,6 @@ pub fn get_mining_metrics() -> Result<JsValue, JsValue> {
 pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
     let tx: Transaction = serde_wasm_bindgen::from_value(tx_json)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize transaction: {}", e)))?;
-
     // 1) Kernel signature (single source of truth)
     if !tx.verify_signature().unwrap_or(false) {
         return Err(JsValue::from_str("Invalid transaction signature"));
@@ -751,24 +746,37 @@ pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
         .map_err(|_| JsValue::from_str("Invalid kernel excess"))?
         .decompress()
         .ok_or_else(|| JsValue::from_str("Failed to decompress kernel excess"))?;
-
     if input_sum != (output_sum + excess_point) {
         return Err(JsValue::from_str("Transaction doesn't balance"));
     }
 
-    // 4) Inputs must exist in current UTXO set (and not be spent already)
-    let utxo_set_guard = blockchain::UTXO_SET.lock().unwrap_or_else(|p| p.into_inner());
-    for input in &tx.inputs {
-        if !utxo_set_guard.contains_key(&input.commitment) {
-            return Err(JsValue::from_str("Input not found in UTXO set"));
+    // 4) Inputs must exist in current UTXO set (and coinbase spends must be mature)
+    {
+        use crate::constants::COINBASE_MATURITY;
+        // read the current tip height
+        let tip = { crate::BLOCKCHAIN.lock().unwrap_or_else(|p| p.into_inner()).current_height };
+        let utxos = crate::blockchain::UTXO_SET.lock().unwrap_or_else(|p| p.into_inner());
+        let cb    = crate::blockchain::COINBASE_INDEX.lock().unwrap_or_else(|p| p.into_inner());
+        for input in &tx.inputs {
+            if !utxos.contains_key(&input.commitment) {
+                return Err(JsValue::from_str("Input not found in UTXO set"));
+            }
+            if let Some(&born_at) = cb.get(&input.commitment) {
+                // tx admitted now will be mined in the *next* block
+                if tip.saturating_add(1) < born_at.saturating_add(COINBASE_MATURITY) {
+                    let confs = tip.saturating_add(1).saturating_sub(born_at);
+                    return Err(JsValue::from_str(&format!(
+                        "Coinbase spend is immature (have {} confs, need {})",
+                        confs, COINBASE_MATURITY
+                    )));
+                }
+            }
         }
     }
-    drop(utxo_set_guard);
 
     // 5) Mempool policy & add
     let mut pool = TX_POOL.lock().unwrap_or_else(|p| p.into_inner());
-
-    // (optional but recommended) prevent conflicts with pending txs
+    // prevent conflicts with pending txs
     for pending in &pool.pending {
         // same kernel = duplicate
         if pending.kernel.excess == tx.kernel.excess {
@@ -808,15 +816,12 @@ pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
     Ok(())
 }
 
-
 #[wasm_bindgen]
 pub fn verify_transaction(tx_json: JsValue) -> Result<bool, JsValue> {
     let tx: Transaction = serde_wasm_bindgen::from_value(tx_json)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize transaction: {}", e)))?;
-
     // Lock the UTXO set to pass it to the verify function.
     let utxos = crate::blockchain::UTXO_SET.lock().unwrap();
-    
     // Call verify with the correct arguments.
     match tx.verify(None, Some(&utxos)) {
         Ok(_) => Ok(true),
@@ -837,7 +842,6 @@ pub fn clear_transaction_pool() -> Result<(), JsValue> {
 pub fn get_transaction_hash(tx_json: JsValue) -> Result<String, JsValue> {
     let tx: Transaction = serde_wasm_bindgen::from_value(tx_json)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize transaction: {}", e)))?;
-    
     // Hash based on kernel excess and signature (unique per transaction)
     let mut hasher = Sha256::new();
     hasher.update(&tx.kernel.excess);
@@ -846,23 +850,15 @@ pub fn get_transaction_hash(tx_json: JsValue) -> Result<String, JsValue> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-
-
 #[wasm_bindgen]
 pub fn get_utxo_set_size() -> usize {
     blockchain::UTXO_SET.lock().unwrap().len()
 }
 
-
-
-
-
-
 #[wasm_bindgen]
 pub fn wallet_get_data(wallet_json: &str) -> Result<JsValue, JsValue> {
     let wallet: Wallet = serde_json::from_str(wallet_json)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
     #[derive(Serialize)]
     struct WalletData {
         balance: u64,
@@ -877,25 +873,16 @@ pub fn wallet_get_data(wallet_json: &str) -> Result<JsValue, JsValue> {
         scan_pub_key_hex: hex::encode(wallet.scan_pub.compress().to_bytes()),
         spend_pub_key_hex: hex::encode(wallet.spend_pub.compress().to_bytes()),
     };
-
     serde_wasm_bindgen::to_value(&data).map_err(|e| e.into())
 }
-
-
-
-
-
-
 
 #[wasm_bindgen]
 pub fn create_utxo_snapshot() -> Result<JsValue, JsValue> {
     let chain = BLOCKCHAIN.lock().unwrap();
     let snapshot = chain.create_utxo_snapshot()
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    
     log(&format!("[RUST] Created UTXO snapshot at height {} with {} UTXOs", 
         snapshot.height, snapshot.utxos.len()));
-    
     serde_wasm_bindgen::to_value(&snapshot)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
@@ -904,30 +891,23 @@ pub fn create_utxo_snapshot() -> Result<JsValue, JsValue> {
 pub fn restore_from_utxo_snapshot(snapshot_js: JsValue) -> Result<(), JsValue> {
     let snapshot: UTXOSnapshot = serde_wasm_bindgen::from_value(snapshot_js)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize snapshot: {}", e)))?;
-    
     let height = snapshot.height;
     
     let mut chain = BLOCKCHAIN.lock().unwrap();
     chain.restore_from_snapshot(snapshot)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    
     log(&format!("[RUST] Restored chain from UTXO snapshot at height {}", height));
     Ok(())
 }
-
-
 
 #[wasm_bindgen]
 pub fn prune_blockchain(keep_recent_blocks: u64) -> Result<(), JsValue> {
     let mut chain = BLOCKCHAIN.lock().unwrap();
     let original_length = chain.blocks.len();
-    
     chain.prune_to_horizon(keep_recent_blocks)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    
     log(&format!("[RUST] Pruned blockchain: {} blocks -> {} blocks", 
         original_length, chain.blocks.len()));
-    
     Ok(())
 }
 
@@ -935,7 +915,6 @@ pub fn prune_blockchain(keep_recent_blocks: u64) -> Result<(), JsValue> {
 pub fn get_chain_storage_size() -> Result<JsValue, JsValue> {
     let chain = BLOCKCHAIN.lock().unwrap();
     let utxo_set = blockchain::UTXO_SET.lock().unwrap();
-    
     // Calculate approximate storage size
     let blocks_size: usize = chain.blocks.iter()
         .map(|b| {
@@ -951,7 +930,8 @@ pub fn get_chain_storage_size() -> Result<JsValue, JsValue> {
         })
         .sum();
     
-    let utxo_size = utxo_set.len() * (32 + 700); // commitment + range proof average
+    let utxo_size = utxo_set.len() * (32 + 700);
+    // commitment + range proof average
     
     #[derive(Serialize)]
     struct StorageInfo {
@@ -971,14 +951,9 @@ pub fn get_chain_storage_size() -> Result<JsValue, JsValue> {
         total_size_bytes: blocks_size + utxo_size,
         total_size_mb: (blocks_size + utxo_size) as f64 / 1_048_576.0,
     };
-    
     serde_wasm_bindgen::to_value(&info)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
-
-
-
-
 
 #[wasm_bindgen]
 pub fn get_genesis_timestamp() -> u64 {
@@ -989,7 +964,6 @@ pub fn get_genesis_timestamp() -> u64 {
 pub fn wallet_get_stealth_address(wallet_json: &str) -> Result<String, JsValue> {
     let wallet: Wallet = serde_json::from_str(wallet_json)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    
     let scan_pub_bytes = wallet.scan_pub.compress().to_bytes();
     
     crate::address::encode_stealth_address(&scan_pub_bytes)
@@ -1006,10 +980,8 @@ pub fn create_transaction_to_stealth_address(
     // Decode stealth address to get recipient's scan public key
     let scan_pub_bytes = crate::address::decode_stealth_address(stealth_address)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    
     // Convert to hex for existing function
     let scan_pub_hex = hex::encode(scan_pub_bytes);
-    
     // Use existing transaction creation
     wallet_create_transaction(wallet_json, amount, fee, &scan_pub_hex)
 }
@@ -1027,12 +999,10 @@ pub fn sign_message(message: String, private_key_bytes: Vec<u8>) -> Result<Vec<u
     // Create the Schnorr signature
     let (challenge, s) = mimblewimble::create_schnorr_signature(message_hash, &private_key)
         .map_err(|e| JsValue::from_str(&format!("Failed to create signature: {:?}", e)))?;
-    
     // Serialize the signature into a single byte vector
     let mut signature = Vec::with_capacity(64);
     signature.extend_from_slice(&challenge.to_bytes());
     signature.extend_from_slice(&s.to_bytes());
-
     Ok(signature)
 }
 
@@ -1040,7 +1010,6 @@ pub fn sign_message(message: String, private_key_bytes: Vec<u8>) -> Result<Vec<u
 pub fn get_genesis_block_hash() -> String {
     block::Block::genesis().hash()
 }
-
 
 #[wasm_bindgen]
 pub fn wallet_scan_block(wallet_json: &str, block_json: JsValue) -> Result<String, JsValue> {
@@ -1050,24 +1019,16 @@ pub fn wallet_scan_block(wallet_json: &str, block_json: JsValue) -> Result<Strin
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     
     wallet.scan_block(&block);
-    
     serde_json::to_string(&wallet)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
-
-
-
 
 #[wasm_bindgen]
 pub fn get_chain_work(blocks_json: JsValue) -> Result<u64, JsValue> {
     let blocks: Vec<Block> = serde_wasm_bindgen::from_value(blocks_json)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    
     Ok(blockchain::Blockchain::get_chain_work(&blocks))
 }
-
-
-
 
 #[wasm_bindgen]
 pub fn rewind_block(block_js: JsValue) -> Result<(), JsValue> {
@@ -1084,21 +1045,24 @@ pub fn rewind_block(block_js: JsValue) -> Result<(), JsValue> {
 
     // --- Start of Refactored State Manipulation ---
     { // This scope ensures mutex locks are released as soon as we're done with them.
-        
         // 1. Lock the ONE canonical UTXO set.
         let mut utxo_set = blockchain::UTXO_SET.lock().unwrap();
         let mut cache = RECENT_UTXO_CACHE.lock().unwrap();
-
         for tx in &block.transactions {
             // For every input in the rewound transaction, we must find the
             // original TransactionOutput it came from and add it back to the UTXO set.
             if !tx.inputs.is_empty() { // Skip coinbase transactions which have no inputs.
                 for input in &tx.inputs {
                     let mut found_output: Option<TransactionOutput> = None;
+                    // Keep track of where we found the source output.
+                    let mut found_origin_height: Option<u64> = None;
+                    let mut found_origin_is_coinbase: bool = false;
 
                     // A. First, try the fast cache to find the spent output.
-                    if let Some((_height, output)) = cache.get(&input.commitment) {
+                    if let Some((height, output)) = cache.get(&input.commitment) {
                         found_output = Some(output.clone());
+                        found_origin_height = Some(*height);
+                        // We don't know if coinbase yet; we'll resolve after we have the height.
                     } else {
                         // B. If not in cache, search the chain backwards block by block.
                         'search: for search_block in chain.blocks.iter().rev() {
@@ -1106,10 +1070,13 @@ pub fn rewind_block(block_js: JsValue) -> Result<(), JsValue> {
                                 for search_output in &search_tx.outputs {
                                     if search_output.commitment == input.commitment {
                                         found_output = Some(search_output.clone());
+                                        found_origin_height = Some(search_block.height);
+                                        found_origin_is_coinbase =
+                                            search_tx.inputs.is_empty() && search_tx.kernel.fee == 0;
                                         // Add to cache for future reorgs
                                         cache.insert(
                                             input.commitment.clone(),
-                                            (search_block.height, search_output.clone())
+                                            (search_block.height, search_output.clone()),
                                         );
                                         break 'search; // Exit all loops once found.
                                     }
@@ -1121,8 +1088,35 @@ pub fn rewind_block(block_js: JsValue) -> Result<(), JsValue> {
                     // C. If we found the original output, add it back to the live UTXO set.
                     if let Some(output_to_restore) = found_output {
                         utxo_set.insert(input.commitment.clone(), output_to_restore);
+                        
+                        // Determine if the source was coinbase.
+                        // If we didn’t learn it during the search (cache hit), check by height now.
+                        let is_cb = if found_origin_is_coinbase {
+                            true
+                        } else if let Some(h) = found_origin_height {
+                            // Find the block with that height and confirm the tx producing this commitment
+                            // is a coinbase (inputs empty & fee == 0).
+                            if let Some(b) = chain.blocks.iter().find(|b| b.height == h) {
+                                b.transactions.iter().any(|t|
+                                    t.inputs.is_empty() && t.kernel.fee == 0 &&
+                                    t.outputs.iter().any(|o| o.commitment == input.commitment)
+                                )
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+                        
+                        if is_cb {
+                            let mut cb = crate::blockchain::COINBASE_INDEX.lock().unwrap();
+                            if let Some(h) = found_origin_height {
+                                cb.insert(input.commitment.clone(), h);
+                            }
+                        }
                     } else {
-                        log(&format!("[RUST] Reorg Warning: Could not find source for input {:?}",
+                        log(&format!(
+                            "[RUST] Reorg Warning: Could not find source for input {:?}",
                             hex::encode(&input.commitment[..8])
                         ));
                     }
@@ -1133,19 +1127,19 @@ pub fn rewind_block(block_js: JsValue) -> Result<(), JsValue> {
             for output in &tx.outputs {
                 utxo_set.remove(&output.commitment);
                 cache.remove(&output.commitment);
+
+                let mut cb = crate::blockchain::COINBASE_INDEX.lock().unwrap();
+                cb.remove(&output.commitment);
             }
         }
     } // All locks on UTXO_SET and RECENT_UTXO_CACHE are released here.
     // --- End of Refactored State Manipulation ---
 
-
-    
     // Return the block's non-coinbase transactions to the mempool
     {
         let mut tx_pool = TX_POOL.lock().unwrap();
         let utxo_set = blockchain::UTXO_SET.lock().unwrap();
         for tx in &block.transactions {
-
             if !tx.inputs.is_empty() { // Skip coinbase
                 // Verify the transaction is still valid with the new state before adding back
                 if tx.verify(None, Some(&utxo_set)).is_ok() {
@@ -1161,8 +1155,14 @@ pub fn rewind_block(block_js: JsValue) -> Result<(), JsValue> {
     chain.blocks.pop();
     chain.current_height -= 1;
     
+    // resync consensus parameters from the new tip’s header
+    let tip_params = chain.blocks.last().map(|b| (b.vrf_threshold, b.vdf_iterations));
+    if let Some((vrf_threshold, vdf_iterations)) = tip_params {
+        chain.current_vrf_threshold = vrf_threshold;
+        chain.current_vdf_iterations = vdf_iterations;
+    }
     
-    log(&format!("[RUST] Successfully rewound block at height {}", block.height + 1));
+    log(&format!("[RUST] Successfully rewound block at height {}", block.height));
     Ok(())
 }
 
@@ -1197,9 +1197,6 @@ pub fn wallet_unscan_block(wallet_json: &str, block_js: JsValue) -> Result<Strin
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
-
-
-
 #[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use wasm_bindgen_test::*;
@@ -1219,7 +1216,4 @@ mod tests {
         tx_pool.pending.clear();
         tx_pool.fee_total = 0;
     }
-
 }
-
-

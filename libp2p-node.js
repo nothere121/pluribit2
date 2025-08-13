@@ -28,7 +28,8 @@ import path from 'path';
 export const TOPICS = {
   BLOCKS: '/pluribit/blocks/1.0.0',
   TRANSACTIONS: '/pluribit/transactions/1.0.0',
-  BLOCK_REQUEST: '/pluribit/block-request/1.0.0'
+  BLOCK_REQUEST: '/pluribit/block-request/1.0.0',
+  SYNC: '/pluribit/sync/1.0.0',   
 };
 
 export class PluribitP2P {

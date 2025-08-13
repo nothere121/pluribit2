@@ -1,65 +1,103 @@
-// constants.rs
-use lazy_static::lazy_static; 
-use std::sync::Mutex;        
+// src/constants.rs
 
-lazy_static! {
-    /// The calibrated number of VDF squarings (iterations) per second.
-    pub static ref VDF_ITERATIONS_PER_SECOND: Mutex<u64> = Mutex::new(5000);
-}
+// ─── Consensus timing ──────────────────────────────────────────────────────────
 
-// —————— Pluribit Consensus Settings ——————
+/// Target block time (seconds).
+pub const TARGET_BLOCK_TIME: u64 = 120; // 2 minutes
 
-/// Phase durations (in seconds)
-pub const MINING_PHASE_DURATION: u64 = 60;      // 1 minute
-pub const VALIDATION_PHASE_DURATION: u64 = 30;   // 0.5 minutes
-pub const PROPAGATION_PHASE_DURATION: u64 = 30;  // 0.5 minutes
-pub const CYCLE_DURATION: u64 = 120;             // 2 minutes total
+/// Retarget window (≈ 13 days @ 2 min/blk).
+pub const DIFFICULTY_ADJUSTMENT_INTERVAL: u64 = 9_360;
 
-// --- NEW: VDF Tick-based constants derived from durations ---
-pub const TICKS_PER_CYCLE: u64 = CYCLE_DURATION;
-pub const MINING_PHASE_END_TICK: u64 = MINING_PHASE_DURATION;
-pub const VALIDATION_PHASE_END_TICK: u64 = MINING_PHASE_DURATION + VALIDATION_PHASE_DURATION;
+/// Median-Time-Past window used to sanity-check block timestamps.
+pub const MTP_WINDOW: usize = 11;
 
-// --- NEW: Validation sub-phase timings (in ticks relative to start of validation phase) ---
-pub const COMMITMENT_END_TICK: u64 = 10;    // Corresponds to 10 seconds
-pub const RECONCILIATION_END_TICK: u64 = 20; // Corresponds to 20 seconds
+/// How far in the future a block time may be (milliseconds).
+/// 2 hours is conventional and safe for clock skew.
+pub const MAX_FUTURE_DRIFT_MS: u64 = 2 * 60 * 60 * 1000;
 
-/// Target total block time (in seconds)
-pub const TARGET_BLOCK_TIME: u64 = 120;           // 2 minutes
 
-/// How many blocks between each difficulty adjustment (approx. 13 days at 2 min/blk)
-pub const DIFFICULTY_ADJUSTMENT_INTERVAL: u64 = 9360; 
+/// Seconds/year (365 days; use this to keep block counts integral).
+pub const SECONDS_PER_YEAR: u64 = 31_536_000;
 
-// Genesis anchor details from the plan
-pub const GENESIS_TIMESTAMP_MS: u64 = 1750000658000; // 2025-06-15 14:57:38 UTC
-pub const GENESIS_BITCOIN_HASH: &str = "00000000000000000000656b995c9fec9ff94b554dc4aad46c06b71f94088c3c";
+/// Integer blocks/year at TARGET_BLOCK_TIME (floored).
+/// With 120s blocks: 31,536,000 / 120 = 262,800.
+pub const BLOCKS_PER_YEAR: u64 = SECONDS_PER_YEAR / TARGET_BLOCK_TIME;
 
-// Bootstrap period
-pub const BOOTSTRAP_BLOCKS: u64 = 2;
+/// Maximum number of transactions allowed in the mempool.
+pub const MAX_TX_POOL_SIZE: usize = 4096;
 
-/// The base reward for the genesis block period, in bits.
-pub const INITIAL_BASE_REWARD: u64 = 50_000_000;
+// ─── Genesis anchors ───────────────────────────────────────────────────────────
 
-/// The number of blocks between each block reward halving.
-pub const HALVING_INTERVAL: u64 = 210_000;
+/// Fixed timestamp used by the genesis block.
+pub const GENESIS_TIMESTAMP_MS: u64 = 1_750_000_658_000; // 2025-06-15 14:57:38 UTC
 
-/// The number of blocks after which the halving cycle resets (approx. 100 years).
-pub const REWARD_RESET_INTERVAL: u64 = 2_629_000; 
+/// Bitcoin block hash anchoring the genesis state.
+pub const GENESIS_BITCOIN_HASH: &str =
+    "00000000000000000000656b995c9fec9ff94b554dc4aad46c06b71f94088c3c";
 
-/// The factor to scale the log2(Difficulty) bonus to make it economically significant.
-pub const DIFFICULTY_BONUS_FACTOR: u64 = 10_000_000;
+// ─── Block reward schedule ─────────────────────────────────────────────────────
 
-/// The maximum size of a block in bytes.
-pub const MAX_BLOCK_SIZE_BYTES: usize = 4 * 1024 * 1024; // 4 MB
+/// Base reward at the start of each era (in "bits"; 1 coin = 100_000_000 bits).
+pub const INITIAL_BASE_REWARD: u64 = 50_000_000; // 0.5 coin
 
-/// The minimum number of iterations for a VDF proof.
-pub const MIN_VDF_ITERATIONS: u64 = 100;
+/// Halving cadence: once every 2 years.
+pub const YEARS_PER_HALVING: u64 = 2;
+/// Blocks between halvings (computed).
+/// With 120s blocks: 2 * 262,800 = 525,600.
+pub const HALVING_INTERVAL: u64 = YEARS_PER_HALVING * BLOCKS_PER_YEAR;
 
-/// The maximum number of iterations for a VDF proof to prevent resource exhaustion.
-pub const MAX_VDF_ITERATIONS: u64 = 100_000_000;
+/// Era length: reward schedule resets every 20 years.
+pub const YEARS_PER_RESET: u64 = 20;
+/// Blocks after which the halving cycle resets.
+/// With 120s blocks: 20 * 262,800 = 5,256,000.
+pub const REWARD_RESET_INTERVAL: u64 = YEARS_PER_RESET * BLOCKS_PER_YEAR;
 
-/// The default number of iterations for a VDF tick.
-pub const INITIAL_VDF_ITERATIONS: u64 = 1000;
+// ─── VDF (time) parameters ────────────────────────────────────────────────────
 
-/// The maximum number of transactions allowed in the mempool to prevent memory exhaustion.
-pub const MAX_TX_POOL_SIZE: usize = 10_000;
+/// VDF security parameter used when constructing the VDF instance.
+pub const VDF_SECURITY_PARAM: u32 = 2048;
+
+/// Minimum/maximum VDF iterations allowed after retargeting.
+pub const MIN_VDF_ITERATIONS: u64 = 10_000;
+pub const MAX_VDF_ITERATIONS: u64 = 1_000_000_000;
+
+/// Default VDF iterations at startup 
+pub const INITIAL_VDF_ITERATIONS: u64 = 100_000;
+
+pub const VDF_RSA_MODULUS_HEX: &str =
+"C7970CEEDCC3B0754490201A7AA613CD73911081C790F5F1A8726F463550BB5B7FF0DB8E1EA1189EC72F93D1650011BD721AEEACC2ACDE32A04107F0648C2813A31F5B0B7765FF8B44B4B6FFC93384B646EB09C7CF5E8592D40EA33C80039F35B4F14A04B51F7BFD781BE4D1673164BA8EB991C2C4D730BBBE35F592BDEF524AF7E8DAEFD26C66FC02C479AF89D64D373F442709439DE66CEB955F3EA37D5159F6135809F85334B5CB1813ADDC80CD05609F10AC6A95AD65872C909525BDAD32BC729592642920F24C61DC5B3C3B7923E56B16A4D9D373D8721F24A3FC0F1B3131F55615172866BCCC30F95054C824E733A5EB6817F7BC16399D48C6361CC7E5";
+
+/// sanity-check for the modulus we expect at runtime.
+pub const VDF_RSA_MODULUS_BITS: u64 = 2048;
+
+/// SHA-256 fingerprint of the modulus bytes (tamper check).
+pub const VDF_RSA_MODULUS_SHA256_HEX: &str = "6ae9d033c1d76c4f535b5ad5c0073933a0b375b4120a75fbb66be814eab1a9ce";
+
+// ─── VRF (lottery) parameters ─────────────────────────────────────────────────
+
+/// Default VRF threshold used at startup for leader election.
+pub const DEFAULT_VRF_THRESHOLD: [u8; 32] = [
+    0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+];
+
+/// Minimum threshold clamp 
+pub const VRF_MIN_THRESHOLD: [u8; 32] = [
+    0x00, 0x28, 0xF5, 0xC2, 0x8F, 0x5C, 0x28, 0xF5,
+    0xC2, 0x8F, 0x5C, 0x28, 0xF5, 0xC2, 0x8F, 0x5C,
+    0x28, 0xF5, 0xC2, 0x8F, 0x5C, 0x28, 0xF5, 0xC2,
+    0x8F, 0x5C, 0x28, 0xF5, 0xC2, 0x8F, 0x5C, 0x29,
+];
+
+/// Maximum threshold clamp (all 0xFF).
+pub const VRF_MAX_THRESHOLD: [u8; 32] = [0xFF; 32];
+
+/// Default PoW difficulty at startup 
+pub const INITIAL_POW_DIFFICULTY: u8 = 1;
+
+// ─── Spending rules ────────────────────────────────────────────────────────────
+
+/// Confirmations required before a coinbase output is spendable.
+pub const COINBASE_MATURITY: u64 = 6; // blocks

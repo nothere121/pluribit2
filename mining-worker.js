@@ -19,14 +19,14 @@ parentPort.on('message', async (msg) => {
 });
 
 async function mineBlock(params) {
-    const { height, minerSecretKey, minerScanPubkey, prevHash, 
-            powDifficulty, vrfThreshold, vdfIterations, mempoolTransactions } = params;
+    const { jobId, height, minerSecretKey, prevHash,
+            powDifficulty, vrfThreshold, vdfIterations } = params;
 
 
 
 
-    let nonce = 0;
-    const BATCH_SIZE = 10_000_000; // 10M nonces per batch
+    let nonce = 0n;
+    const BATCH_SIZE = 10_000_000n; // 10M nonces per batch
     
     while (!shouldStop) {
         // Try to find valid header
@@ -41,22 +41,16 @@ async function mineBlock(params) {
         );
         
         if (solution && solution !== null) {
-            // Found valid header! Now complete the block with current mempool
-            const block = await pluribit.complete_block_with_transactions(
-                BigInt(height),
-                prevHash,
-                BigInt(solution.nonce),
-                solution.miner_pubkey,
-                minerScanPubkey,
-                solution.vrf_proof,
-                solution.vdf_proof,
-                powDifficulty,
-                mempoolTransactions // Pass the transactions!
-            );
-            
+            // Report header only; main worker will assemble the full block.
             parentPort.postMessage({
-                type: 'BLOCK_MINED',
-                block: block
+                type: 'HEADER_FOUND',
+                jobId,
+                solution,
+                height,
+                prevHash,
+                powDifficulty,
+                vrfThreshold,
+                vdfIterations
             });
             return;
         }

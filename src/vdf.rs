@@ -1,17 +1,15 @@
 use crate::constants::*;
 use crate::error::{PluribitError, PluribitResult};
 use crate::utils::calculate_power_safely;
-
+use crate::constants::{VDF_RSA_MODULUS_BITS, VDF_SECURITY_PARAM};
 use num_bigint::{BigUint, RandBigInt};
 use num_integer::Integer;
-use num_traits::One;
+use num_traits::{One, Zero};
 use rand::thread_rng;
 use sha2::{Digest, Sha256};
-use std::{
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
-};
+use std::time::{Duration, Instant, SystemTime};
 use serde::{Serialize, Deserialize};
+
 
 // VDF proof for efficient verification using Wesolowski's construction
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -61,10 +59,12 @@ impl Default for VDFClockTick {
 /// VDF using sequential squaring with RSA modulus.
 /// Uses a standardized RSA-2048 modulus with no known factorization.
 pub struct VDF {
-    pub modulus: Arc<BigUint>,
+    modulus: BigUint,
+    security_param: u32,
 }
 
 impl VDF {
+    /*
     pub fn new(_bit_length: usize) -> PluribitResult<Self> {
         // Use standardized RSA modulus instead of generating p*q
         let modulus_hex = "C7970CEEDCC3B0754490201A7AA613CD73911081C790F5F1A8726F463550BB5B7FF0DB8E1EA1189EC72F93D1650011BD721AEEACC2ACDE32A04107F0648C2813A31F5B0B7765FF8B44B4B6FFC93384B646EB09C7CF5E8592D40EA33C80039F35B4F14A04B51F7BFD781BE4D1673164BA8EB991C2C4D730BBBE35F592BDEF524AF7E8DAEFD26C66FC02C479AF89D64D373F442709439DE66CEB955F3EA37D5159F6135809F85334B5CB1813ADDC80CD05609F10AC6A95AD65872C909525BDAD32BC729592642920F24C61DC5B3C3B7923E56B16A4D9D373D8721F24A3FC0F1B3131F55615172866BCCC30F95054C824E733A5EB6817F7BC16399D48C6361CC7E5";
@@ -74,8 +74,30 @@ impl VDF {
             Some(modulus) => Ok(VDF { modulus: Arc::new(modulus) }),
             None => Err(PluribitError::VdfError("Failed to parse standardized RSA modulus".to_string()))
         }
-    }
+    }*/
+    
+    pub fn new_with_default_modulus() -> Result<Self, crate::error::PluribitError> {
+        let bytes = hex::decode(VDF_RSA_MODULUS_HEX)
+            .map_err(|_| crate::error::PluribitError::InvalidBlock("Bad VDF modulus hex".into()))?;
+        if bytes.is_empty() { return Err(crate::error::PluribitError::InvalidBlock("Empty VDF modulus".into())); }
 
+        // fingerprint check 
+        let calc = hex::encode(Sha256::digest(&bytes));
+        if !VDF_RSA_MODULUS_SHA256_HEX.is_empty() && calc != VDF_RSA_MODULUS_SHA256_HEX {
+            return Err(crate::error::PluribitError::InvalidBlock("VDF modulus SHA-256 mismatch".into()));
+        }
+
+        let n = BigUint::from_bytes_be(&bytes);
+        if n.bits() != VDF_RSA_MODULUS_BITS {
+            return Err(crate::error::PluribitError::InvalidBlock("VDF modulus bitlen mismatch".into()));
+        }
+        if (&n & BigUint::from(1u8)).is_zero() {
+            return Err(crate::error::PluribitError::InvalidBlock("VDF modulus must be odd".into()));
+        }
+
+        Ok(Self { modulus: n, security_param: VDF_SECURITY_PARAM })
+    }
+    
     // Generate a prime number of the specified bit length
     pub fn generate_prime(bit_length: usize) -> PluribitResult<BigUint> {
         if bit_length < 16 || bit_length > 4096 {
@@ -137,7 +159,7 @@ impl VDF {
         let x = BigUint::from_bytes_be(&hash);
 
         // Get a reference to the modulus
-        let modulus = &*self.modulus;
+        let modulus = &self.modulus;
 
         // Generate proof prime l
         let l = match Self::generate_proof_prime() {
@@ -187,7 +209,7 @@ impl VDF {
         let x = BigUint::from_bytes_be(&hash);
 
         // Get a reference to the modulus
-        let modulus = &*self.modulus;
+        let modulus = &self.modulus;
 
         // Parse y and π from the proof
         let y = BigUint::from_bytes_be(&proof.y);
@@ -227,20 +249,26 @@ impl VDF {
     // Recreate VDF from serialized modulus
     pub fn from_modulus_bytes(bytes: &[u8]) -> PluribitResult<Self> {
         if bytes.is_empty() {
-            return Err(PluribitError::ValidationError("Empty modulus bytes".to_string()));
+            return Err(PluribitError::ValidationError("Empty modulus bytes".into()));
         }
-        
-        let modulus = Arc::new(BigUint::from_bytes_be(bytes));
-        
-        // Basic validation
-        if modulus.bits() < 1024 {
-            return Err(PluribitError::ValidationError(format!(
-                "Modulus too small: {} bits (min 1024)", modulus.bits()
-            )));
+        let n = BigUint::from_bytes_be(bytes);
+        if n.bits() != VDF_RSA_MODULUS_BITS {
+            return Err(PluribitError::ValidationError("Bad modulus size".into()));
         }
-        
-        Ok(VDF { modulus })
+        if (&n & BigUint::from(1u8)).is_zero() {
+            return Err(PluribitError::ValidationError("Modulus must be odd".into()));
+        }
+        Ok(VDF {
+            modulus: n,
+            security_param: VDF_SECURITY_PARAM,
+        })
+   }
+   
+    /// Back-compat shim for older call-sites using `VDF::new(2048)`.
+    pub fn new(_bits: usize) -> PluribitResult<Self> {
+        Self::new_with_default_modulus()
     }
+   
 }
 
 // Miller-Rabin primality test

@@ -78,15 +78,10 @@ impl Wallet {
 
     /// Scans a block for outputs belonging to this wallet using the stealth protocol.
     pub fn scan_block(&mut self, block: &Block) {
-        // Collect all outputs from this block to generate proofs against
-        let block_utxos: Vec<(Vec<u8>, TransactionOutput)> = block
-            .transactions
-            .iter()
-            .flat_map(|tx| tx.outputs.clone())
-            .map(|output| (output.commitment.clone(), output))
-            .collect();
+
 
         for tx in &block.transactions {
+            //first handle outputs
             for output in &tx.outputs {
                 if let (Some(r_bytes), Some(payload)) = (&output.ephemeral_key, &output.stealth_payload) {
                     if let Ok(compressed_point) = CompressedRistretto::from_slice(r_bytes) {
@@ -96,22 +91,43 @@ impl Wallet {
                                 if commitment.compress().to_bytes().to_vec() == output.commitment {
                                     println!("[WALLET] Found incoming UTXO! Value: {}", value);
 
-                                    // Generate and store the proof right here
-                                    let proof = merkle::generate_utxo_proof(&output.commitment, &block_utxos).ok();
 
-                                    self.owned_utxos.push(WalletUtxo {
-                                        value,
-                                        blinding,
-                                        commitment: commitment.compress(),
-                                        block_height: block.height,
-                                        merkle_proof: None, // we never store this now.
-                                    });
+
+                                    let commit_bytes = commitment.compress().to_bytes().to_vec();
+
+                                    // Already have this UTXO (e.g., pre-added change)? Upgrade it instead of duplicating.
+                                    if let Some(existing) = self.owned_utxos
+                                        .iter_mut()
+                                        .find(|u| u.commitment.to_bytes().to_vec() == commit_bytes)
+                                    {
+                                        // Mark it confirmed at this block height; keep blinding/value as-is.
+                                        existing.block_height = block.height;
+                                    } else {
+                                        // New incoming UTXO—add it.
+                                        self.owned_utxos.push(WalletUtxo {
+                                            value,
+                                            blinding,
+                                            commitment: CompressedRistretto::from_slice(&commit_bytes).unwrap(),
+                                            block_height: block.height,
+                                            merkle_proof: None, // or Some(proof) if you keep it
+                                        });
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+            //now handle inputs
+            for tx in &block.transactions {
+                for input in &tx.inputs {
+                    // input.commitment is [u8; 32] in TransactionInput
+                    // Compare to the stored CompressedRistretto commitments
+                    let spent_bytes = &input.commitment.clone();
+                    self.owned_utxos.retain(|u| u.commitment.to_bytes() != **spent_bytes);
+                }
+            }
+            
         }
     }
 
