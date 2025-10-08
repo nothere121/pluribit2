@@ -110,8 +110,14 @@ pub fn decrypt_stealth_output(
     let mut blind_bytes = [0u8; 32];
     blind_bytes.copy_from_slice(&pt[8..40]);
 
-    // Use from_bytes_mod_order for consistency, as canonical checks can be strict
-    let blinding = Scalar::from_bytes_mod_order(blind_bytes);
+    // CRITICAL FIX #7: Use canonical scalar representation only
+    // This prevents malleability attacks where multiple scalar representations
+    // could create the same commitment
+    let blinding = if let Some(scalar) = Scalar::from_canonical_bytes(blind_bytes).into() {
+        scalar
+    } else {
+        return None;
+    };
 
     // Verification that the reconstructed commitment matches the on-chain one
     // must be performed by the calling function.

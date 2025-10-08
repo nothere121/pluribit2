@@ -130,6 +130,9 @@ pub fn create_schnorr_signature(
     // Create challenge: H(R || m)
     let mut hasher = sha2::Sha256::new();
     use sha2::Digest;
+    // Add domain separation
+    hasher.update(b"pluribit_schnorr_v1");
+    hasher.update(&(message_hash.len() as u64).to_le_bytes());
     hasher.update(&nonce_commitment.compress().to_bytes());
     hasher.update(&message_hash);
     let challenge_bytes = hasher.finalize();
@@ -158,6 +161,8 @@ pub fn verify_schnorr_signature(
     // Recompute challenge from R' and message
     let mut hasher = sha2::Sha256::new();
     use sha2::Digest;
+    hasher.update(b"pluribit_schnorr_v1");
+    hasher.update(&(message_hash.len() as u64).to_le_bytes());
     hasher.update(&r_prime.compress().to_bytes());
     hasher.update(&message_hash);
     let challenge_bytes = hasher.finalize();
@@ -194,30 +199,7 @@ pub fn derive_kernel_pubkey(secret_key: &SecretKey) -> PublicKey {
     pubkey
 }
 
-/// Aggregate multiple Schnorr signatures
-pub fn aggregate_schnorr_signatures(
-    signatures: &[(Scalar, Scalar)],
-    public_keys: &[RistrettoPoint],
-    _message_hash: [u8; 32],
-) -> PluribitResult<(Scalar, Scalar)> {
-    if signatures.is_empty() ||
-        signatures.len() != public_keys.len() {
-        return Err(PluribitError::InvalidInput(
-            "Signature and public key count mismatch".to_string()
-        ));
-    }
-    
-    // For aggregated signatures, we sum both challenges and s values
-    let mut aggregate_challenge = Scalar::default();
-    let mut aggregate_s = Scalar::default();
-    
-    for (challenge, s) in signatures {
-        aggregate_challenge += challenge;
-        aggregate_s += s;
-    }
-    
-    Ok((aggregate_challenge, aggregate_s))
-}
+
 /// Extract public key from kernel excess
 pub fn kernel_excess_to_pubkey(excess: &[u8]) -> PluribitResult<RistrettoPoint> {
     CompressedRistretto::from_slice(excess)
@@ -260,44 +242,6 @@ mod tests {
         assert!(!verify_schnorr_signature(&signature, wrong_message, &public_key));
     }
     
-#[test]
-fn test_aggregate_schnorr_signatures() {
-    let message = [42u8; 32];
-    
-    // Create multiple key pairs
-    let keys: Vec<_> = (0..3).map(|_| {
-        let secret = generate_secret_key();
-        let public = &secret * &PC_GENS.B_blinding;
-        (secret, public)
-    }).collect();
-    
-    // Create individual signatures
-    let signatures: Vec<_> = keys.iter().map(|(secret, _)| {
-        create_schnorr_signature(message, secret).unwrap()
-    }).collect();
-    
-    let public_keys: Vec<_> = keys.iter().map(|(_, public)| *public).collect();
-    
-    // Aggregate signatures
-    let (agg_challenge, agg_s) = aggregate_schnorr_signatures(
-        &signatures,
-        &public_keys,
-        message
-    ).unwrap();
-    
-    // For aggregated signatures, we need to verify differently
-    // The aggregated signature is valid if s*G = sum(R_i) + sum(c_i * P_i)
-    // But since we're using a simplified aggregation, let's just check the components
-    assert_eq!(signatures.len(), 3);
-    
-    // Sum all challenges and s values manually
-    let expected_challenge: Scalar = signatures.iter().map(|(c, _)| c).sum();
-    let expected_s: Scalar = signatures.iter().map(|(_, s)| s).sum();
-    
-    assert_eq!(agg_challenge, expected_challenge);
-    assert_eq!(agg_s, expected_s);
-}
-
 #[test]
 fn test_kernel_excess_to_pubkey() {
     let secret = Scalar::from(123u64);

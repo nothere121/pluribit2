@@ -22,17 +22,33 @@ if (typeof Promise.withResolvers !== 'function') {
     return { promise, resolve, reject };
   };
 }
-
+import { CONFIG } from './config.js';
 import { PluribitP2P } from './libp2p-node.js';
 
 // Bootstrap node that stays online to help peers discover each other
 async function runBootstrap() {
   console.log('Starting Pluribit bootstrap node...');
   
-  const p2p = new PluribitP2P(console.log, { 
+    const net = process.env.PLURIBIT_NET || 'mainnet';
+    
+    // CRITICAL: No public fallback for testnet
+    if (net !== 'mainnet') {
+        const fs = await import('fs/promises');
+        try {
+            await fs.access('./bootstrap-config.json');
+        } catch {
+            console.error('ERROR: bootstrap-config.json required for non-mainnet networks');
+            console.error('Public IPFS bootstrappers disabled for testnet isolation');
+            process.exit(1);
+        }
+        console.log(`Running bootstrap node for network: ${net}`);
+    }
+    
+  
+  const p2p = new PluribitP2P(console.log, {
     isBootstrap: true,
-    tcpPort: 26658,
-    wsPort: 26659
+    tcpPort: CONFIG.P2P.TCP_PORT,
+    wsPort: CONFIG.P2P.WS_PORT
   });
   await p2p.initialize();
   
@@ -48,7 +64,8 @@ async function runBootstrap() {
     const config = {
       bootstrapNodes: [tcpAddr.toString()]
     };
-    await fs.writeFile('./bootstrap-config.json', JSON.stringify(config, null, 2));
+    await fs.writeFile('./bootstrap-config.json', JSON.stringify(config, null, 2), { mode: 0o600 });
+    try { await fs.chmod('./bootstrap-config.json', 0o600); } catch {}
     console.log('\nBootstrap address saved to bootstrap-config.json');
   }
   

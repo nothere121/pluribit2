@@ -64,6 +64,8 @@ pub fn create_vrf(secret_key: &Scalar, input: &[u8]) -> VrfProof {
     
     // Compute challenge c = H(h, gamma, k*G, k*H)
     let mut hasher = Sha256::new();
+    // Add domain separation
+    hasher.update(b"pluribit_vrf_v2");
     hasher.update(b"pluribit_vrf_challenge_v1");
     hasher.update(&h.compress().to_bytes());
     hasher.update(&gamma.compress().to_bytes());
@@ -149,6 +151,7 @@ pub fn verify_vrf(public_key: &RistrettoPoint, input: &[u8], proof: &VrfProof) -
 
     // Recompute challenge
     let mut hasher = Sha256::new();
+    hasher.update(b"pluribit_vrf_v2");
     hasher.update(b"pluribit_vrf_challenge_v1");
     hasher.update(&h.compress().to_bytes());
     hasher.update(&gamma_point.compress().to_bytes());

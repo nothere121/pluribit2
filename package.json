@@ -5,7 +5,7 @@
   "main": "main.js",
   "type": "module",
   "scripts": {
-    "build": "wasm-pack build --target nodejs -d ./pkg-node",
+    "build": "wasm-pack build --target nodejs -d ./pkg-node && cd native && npm run build && cd ..",
     "start": "node main.js",
     "test": "c8 --all node test.js && cargo test --lib && wasm-pack test --node"
   },
@@ -38,8 +38,8 @@
     "level": "^8.0.1",
     "libp2p": "^2.9.0",
     "multiformats": "^13.4.0",
-    "tweetnacl": "^1.0.3",
-    "uint8arrays": "^5.1.0"
+    "pipe": "^1.1.0",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "c8": "^10.1.3",

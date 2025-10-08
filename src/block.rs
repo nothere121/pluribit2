@@ -4,9 +4,8 @@ use crate::transaction::Transaction;
 use crate::vdf::VDFProof;
 use crate::vrf::VrfProof;
 use sha2::{Sha256, Digest};
-use num_bigint::BigUint;
-use num_traits::One;
-use crate::constants::{GENESIS_TIMESTAMP_MS, GENESIS_BITCOIN_HASH, DEFAULT_VRF_THRESHOLD, INITIAL_VDF_ITERATIONS}; 
+use crate::{constants::{GENESIS_TIMESTAMP_MS, GENESIS_BITCOIN_HASH, DEFAULT_VRF_THRESHOLD, INITIAL_VDF_ITERATIONS}, error::PluribitError};
+
 use crate::error::PluribitResult;
 use std::collections::HashSet;
 use crate::transaction::{TransactionInput, TransactionOutput, TransactionKernel};
@@ -18,8 +17,8 @@ pub struct Block {
    pub timestamp: u64,
    pub transactions: Vec<Transaction>,
    
-   //  PoW + PoST fields
-   pub pow_nonce: u64,
+   // SEQLOT Fields
+   pub lottery_nonce: u64,
    pub vrf_proof: VrfProof,
    pub vdf_proof: VDFProof,
    pub miner_pubkey: [u8; 32],
@@ -30,6 +29,9 @@ pub struct Block {
 
    // Merkle root
    pub tx_merkle_root: [u8; 32],
+   
+   //cumulative work
+   pub total_work: u64, 
    
    //  hash as a computed field during serialization
    #[serde(skip_deserializing)]
@@ -49,13 +51,14 @@ impl Block {
            prev_hash: genesis_prev_hash,
            timestamp: GENESIS_TIMESTAMP_MS, 
            transactions: vec![],
-           pow_nonce: 0,
+           lottery_nonce: 0,
            vrf_proof: VrfProof::default(),
            vdf_proof: VDFProof::default(),
            miner_pubkey: [0u8; 32],
            vrf_threshold: DEFAULT_VRF_THRESHOLD,
            vdf_iterations: INITIAL_VDF_ITERATIONS,
            tx_merkle_root: Sha256::digest(&[]).into(),
+           total_work: 0,
            hash: String::new(), // Will be computed below
        };
        block.hash = block.compute_hash();
@@ -65,11 +68,13 @@ impl Block {
    /// Calculates the hash of the block header.
    pub fn compute_hash(&self) -> String {
        let mut hasher = Sha256::new();
-       hasher.update(b"pluribit_block_v2");
+       hasher.update(b"pluribit_block_v3"); // Version bump for replay protection
        hasher.update(&self.height.to_le_bytes());
        hasher.update(self.prev_hash.as_bytes());
        hasher.update(&self.timestamp.to_le_bytes());
        hasher.update(&self.tx_merkle_root);
+       // FIX #10: Include lottery nonce in hash to bind VDF to specific block height
+       hasher.update(&self.lottery_nonce.to_le_bytes());
        hasher.update(&self.vrf_proof.output);
        hasher.update(&self.vdf_proof.y);
        hasher.update(&self.miner_pubkey);
@@ -79,32 +84,13 @@ impl Block {
        hex::encode(hasher.finalize())
    }
 
-   /// just returns the stored hash - i.e. not recomputing
-   pub fn hash(&self) -> String {
-       if self.hash.is_empty() {
-           self.compute_hash()
-       } else {
-           self.hash.clone()
-       }
-   }
+   /// dont trust, verify!
+    pub fn hash(&self) -> String {
+        // Always recompute from canonical header fields
+        self.compute_hash()
+    }
    
-   /// Calculates the hash for the PoW ticket lottery.
-   pub fn pow_ticket_hash(&self) -> [u8; 32] {
-       let mut hasher = Sha256::new();
-       hasher.update(b"pluribit_pow_ticket_v1");
-       hasher.update(self.prev_hash.as_bytes());
-       hasher.update(&self.miner_pubkey);
-       hasher.update(&self.pow_nonce.to_le_bytes());
-       hasher.finalize().into()
-   }
 
-   /// Verifies if the PoW ticket hash meets the required difficulty.
-   pub fn is_valid_pow_ticket(&self, difficulty: u8) -> bool {
-       let hash_bytes = self.pow_ticket_hash();
-       let value = BigUint::from_bytes_be(&hash_bytes);
-       let target = BigUint::one() << (256 - difficulty as usize);
-       value < target
-   }
    
    /// Calculates the Merkle root of the block's transactions.
    pub fn calculate_tx_merkle_root(&self) -> [u8; 32] {
@@ -134,6 +120,31 @@ impl Block {
 
     /// Apply cut-through to remove intermediate transactions
     pub fn apply_cut_through(&mut self) -> PluribitResult<()> {
+        // CRITICAL FIX #4: Validate no double-spends exist before cut-through
+        let mut seen_inputs = HashSet::new();
+        for tx in &self.transactions {
+            for input in &tx.inputs {
+                if !seen_inputs.insert(input.commitment.clone()) {
+                    return Err(PluribitError::InvalidBlock(
+                        format!("Double-spend detected: commitment {} spent multiple times in block",
+                            hex::encode(&input.commitment[..8]))
+                    ));
+                }
+            }
+        }
+        
+        // Also validate outputs are unique (shouldn't happen but defense in depth)
+        let mut seen_outputs = HashSet::new();
+        for tx in &self.transactions {
+            for output in &tx.outputs {
+                if !seen_outputs.insert(output.commitment.clone()) {
+                    return Err(PluribitError::InvalidBlock(
+                        "Duplicate output commitment in block".to_string()
+                    ));
+                }
+            }
+        }
+
         // No work needed if there's only a coinbase transaction (or fewer).
         if self.transactions.len() <= 1 {
             return Ok(());
@@ -183,17 +194,18 @@ impl Block {
             .filter(|output| !internal_spends.contains(&output.commitment))
             .collect();
         
-        // Collect all kernels
-        let all_kernels: Vec<TransactionKernel> = self.transactions.iter()
-            .map(|tx| tx.kernel.clone())
-            .collect();
-            
-        // Create aggregated transaction
-        let aggregated_kernel = TransactionKernel::aggregate(&all_kernels)?;
+        // Collect all kernels (NO signature aggregation - concatenate)
+        let mut all_kernels: Vec<TransactionKernel> = Vec::new();
+        for tx in &self.transactions {
+            all_kernels.extend(tx.kernels.clone());
+        }
+        
+        // Create aggregated transaction with all kernels
         let aggregated_tx = Transaction {
             inputs: external_inputs,
             outputs: unspent_outputs,
-            kernel: aggregated_kernel,
+            kernels: all_kernels,
+            timestamp: self.transactions.last().map_or(0, |tx| tx.timestamp),
         };
 
         // 4. REBUILD TRANSACTION LIST
@@ -276,7 +288,8 @@ mod tests {
                     stealth_payload: None,
                 },
             ],
-            kernel: TransactionKernel::new(tx1_kernel_blinding, 1_000_000, 0).unwrap(),
+            kernels: vec![TransactionKernel::new(tx1_kernel_blinding, 1_000_000, 0, 1).unwrap()],
+            timestamp: 1,
         };
 
         // Transaction 2: Alice_change (29) -> Charlie (28) + fee (1)
@@ -300,7 +313,8 @@ mod tests {
                     stealth_payload: None,
                 },
             ],
-            kernel: TransactionKernel::new(tx2_kernel_blinding, 1_000_000, 1).unwrap(),
+            kernels: vec![TransactionKernel::new(tx2_kernel_blinding, 1_000_000, 1,2).unwrap()],
+            timestamp: 2,
         };
 
         // Create coinbase transaction
@@ -347,7 +361,7 @@ mod tests {
             "Should contain Charlie's output");
 
         // Verify total fees are preserved (aggregated kernel)
-        assert_eq!(aggregated_tx.kernel.fee, 2_000_000, "Total fees should be preserved");
+        assert_eq!(aggregated_tx.total_fee(), 2_000_000, "Total fees should be preserved");
     }
 
     #[test]
@@ -379,7 +393,8 @@ mod tests {
                 ephemeral_key: None,
                 stealth_payload: None,
             }],
-            kernel: TransactionKernel::new(Scalar::from(888u64), 1_000_000, 0).unwrap(),
+            kernels: vec![TransactionKernel::new(Scalar::from(888u64), 1_000_000, 0, 1).unwrap()],
+            timestamp: 1,
         };
 
         let mut block = Block::genesis();

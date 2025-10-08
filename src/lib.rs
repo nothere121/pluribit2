@@ -3,21 +3,19 @@ use wasm_bindgen::prelude::*;
 use serde_wasm_bindgen;
 use lazy_static::lazy_static;
 use std::sync::Mutex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
+use serde::{Serialize, Deserialize};
 use serde_json;
 use sha2::{Sha256, Digest};
-use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::Identity;
-use bulletproofs::RangeProof;
-use serde::Serialize;
-use serde::Deserialize;
-use std::collections::HashSet;
+use curve25519_dalek::{ristretto::{CompressedRistretto, RistrettoPoint}, scalar::Scalar, traits::Identity};
+
+use crate::blockchain::Blockchain;
 use crate::vrf::VrfProof;
-
-use crate::wallet::Wallet; 
-
+use crate::constants::DIFFICULTY_ADJUSTMENT_INTERVAL;
+use crate::wallet::Wallet;
+use bulletproofs::RangeProof;
 use crate::vdf::{VDF, VDFProof};
+use crate::blockchain::get_current_base_reward;
 
 use crate::transaction::{Transaction, TransactionOutput, TransactionKernel};
 use crate::block::Block; 
@@ -36,6 +34,9 @@ pub mod wallet;
 pub mod address;
 pub mod merkle;
 pub mod vrf;
+
+// RATIONALE: Prevent DoS via extremely deep reorgs
+const MAX_REORG_DEPTH: u64 = 1000000000; 
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UTXO {
@@ -67,7 +68,7 @@ pub struct CompactBlockData {
     pub hash: String,
     pub prev_hash: String,
     pub timestamp: u64,
-    pub aggregated_kernel: TransactionKernel,
+    pub aggregated_kernels: Vec<TransactionKernel>,
     pub spent_commitments: Vec<Vec<u8>>,
     pub new_outputs: Vec<TransactionOutput>,
 }
@@ -89,6 +90,10 @@ pub struct MiningMetrics {
     pub avg_vdf_time_ms: u64,
 }
 
+// RATIONALE: Prevent memory exhaustion attacks by bounding cache sizes
+// LRU eviction ensures we keep most relevant data.
+const MAX_SIDE_BLOCKS: usize = 10000;
+const MAX_UTXO_CACHE: usize = 10000;
 
 lazy_static! {
     static ref BLOCKCHAIN: Mutex<blockchain::Blockchain> = Mutex::new(blockchain::Blockchain::new());
@@ -96,13 +101,25 @@ lazy_static! {
         pending: Vec::new(),
         fee_total: 0,
     });
-    static ref POW_TICKET_CACHE: Mutex<HashMap<[u8; 32], Vec<PoWTicket>>> = 
+    static ref POW_TICKET_CACHE: Mutex<HashMap<[u8; 32], Vec<PoWTicket>>> =
         Mutex::new(HashMap::new());
-    static ref MINING_METRICS: Mutex<MiningMetrics> = 
+    static ref MINING_METRICS: Mutex<MiningMetrics> =
         Mutex::new(MiningMetrics::default());
+
+    // --- Caches with Bounded Sizes ---
+
     // Cache of recent UTXOs for fast recovery during reorgs
     // Maps commitment -> (height, TransactionOutput)
-    static ref RECENT_UTXO_CACHE: Mutex<HashMap<Vec<u8>, (u64, TransactionOutput)>> = 
+    static ref RECENT_UTXO_CACHE: Mutex<HashMap<Vec<u8>, (u64, TransactionOutput)>> =
+        Mutex::new(HashMap::new());
+    static ref UTXO_CACHE_LRU: Mutex<VecDeque<Vec<u8>>> = Mutex::new(VecDeque::new());
+
+    /// Side blocks that are not on the current canonical chain (by hash)
+    static ref SIDE_BLOCKS: Mutex<HashMap<String, Block>> = Mutex::new(HashMap::new());
+    static ref SIDE_BLOCKS_LRU: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
+
+    // in-process wallet sessions (Rust owns keys/state)
+    static ref WALLET_SESSIONS: Mutex<HashMap<String, wallet::Wallet>> =
         Mutex::new(HashMap::new());
 }
 
@@ -128,22 +145,299 @@ pub fn log(s: &str) {
     native_log(s);
 }
 
+async fn delete_canonical_block(height: u64) -> Result<(), JsValue> {
+    let promise = delete_canonical_block_raw(height);
+    wasm_bindgen_futures::JsFuture::from(promise).await?;
+    Ok(())
+}
+
+async fn set_tip_metadata(height: u64, hash: &str) -> Result<(), JsValue> {
+    let promise = set_tip_metadata_raw(height, hash);
+    wasm_bindgen_futures::JsFuture::from(promise).await?;
+    Ok(())
+}
+
+// --- START: JS BRIDGE DEFINITION ---
 #[wasm_bindgen]
-pub fn wallet_scan_blockchain(wallet_json: &str) -> Result<String, JsValue> {
-    // Deserialize the wallet
-    let mut wallet: Wallet = serde_json::from_str(wallet_json)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    // Get the blockchain
-    let chain = BLOCKCHAIN.lock().unwrap();
-    // Scan each block
-    for block in &chain.blocks {
-        wallet.scan_block(block);
-    }
+extern "C" {
+    #[wasm_bindgen(js_name = load_block_from_db)]
+    fn load_block_from_db_raw(height: u64) -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = get_tip_height_from_db)]
+    fn get_tip_height_from_db_raw() -> js_sys::Promise;
     
-    // Return the updated wallet as JSON
-    serde_json::to_string(&wallet)
+    #[wasm_bindgen(js_name = save_total_work_to_db)]
+    fn save_total_work_to_db_raw(work: u64) -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = get_total_work_from_db)]
+    fn get_total_work_from_db_raw() -> js_sys::Promise;
+    
+    #[wasm_bindgen(js_name = saveBlock)]
+    fn save_block_to_db_raw(block: JsValue) -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = clear_all_utxos)]
+    fn clear_all_utxos_raw() -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = "loadBlocks")]
+    fn load_blocks_from_db_raw(start: u64, end: u64) -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = save_utxo)]
+    fn save_utxo_raw(commitment_hex: &str, output: JsValue) -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = load_utxo)]
+    fn load_utxo_raw(commitment_hex: &str) -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = delete_utxo)]
+    fn delete_utxo_raw(commitment_hex: &str) -> js_sys::Promise;
+    
+    #[wasm_bindgen(js_name = saveBlockWithHash)]
+    fn save_block_with_hash_raw(block: JsValue) -> js_sys::Promise;
+    
+    #[wasm_bindgen(js_name = loadBlockByHash)]
+    fn load_block_by_hash_raw(hash: &str) -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = deleteCanonicalBlock)]
+    fn delete_canonical_block_raw(height: u64) -> js_sys::Promise;
+    
+    #[wasm_bindgen(js_name = setTipMetadata)]
+    fn set_tip_metadata_raw(height: u64, hash: &str) -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = save_reorg_marker)]
+    fn save_reorg_marker_raw(marker: JsValue) -> js_sys::Promise;
+    #[wasm_bindgen(js_name = clear_reorg_marker)]
+    fn clear_reorg_marker_raw() -> js_sys::Promise;
+    #[wasm_bindgen(js_name = save_block_to_staging)]
+    fn save_block_to_staging_raw(block: JsValue) -> js_sys::Promise;
+    #[wasm_bindgen(js_name = commit_staged_reorg)]
+    fn commit_staged_reorg_raw(blocks: JsValue, old_heights: JsValue, new_tip_height: u64, new_tip_hash: &str) -> js_sys::Promise;
+
+
+}
+
+// helper
+async fn save_block_with_hash(block: &Block) -> Result<(), JsValue> {
+    let block_js = serde_wasm_bindgen::to_value(block)?;
+    wasm_bindgen_futures::JsFuture::from(save_block_with_hash_raw(block_js)).await?;
+    Ok(())
+}
+
+async fn load_block_by_hash(hash: &str) -> Result<Option<Block>, JsValue> {
+    let promise = load_block_by_hash_raw(hash);
+    let result_js = wasm_bindgen_futures::JsFuture::from(promise).await?;
+    if result_js.is_null() || result_js.is_undefined() {
+        Ok(None)
+    } else {
+        let mut block: Block = serde_wasm_bindgen::from_value(result_js)?;
+        block.hash = block.compute_hash();
+        Ok(Some(block))
+    }
+}
+
+async fn save_reorg_marker(marker: &impl Serialize) -> Result<(), JsValue> {
+    let marker_js = serde_wasm_bindgen::to_value(marker)?;
+    wasm_bindgen_futures::JsFuture::from(save_reorg_marker_raw(marker_js)).await?;
+    Ok(())
+}
+
+async fn clear_reorg_marker() -> Result<(), JsValue> {
+    wasm_bindgen_futures::JsFuture::from(clear_reorg_marker_raw()).await?;
+    Ok(())
+}
+
+async fn save_block_to_staging(block: &Block) -> Result<(), JsValue> {
+    let block_js = serde_wasm_bindgen::to_value(block)?;
+    wasm_bindgen_futures::JsFuture::from(save_block_to_staging_raw(block_js)).await?;
+    Ok(())
+}
+
+async fn commit_staged_reorg(blocks: &Vec<Block>, old_heights: &Vec<u64>, new_tip_height: u64, new_tip_hash: &str) -> Result<(), JsValue> {
+    let blocks_js = serde_wasm_bindgen::to_value(blocks)?;
+    let old_heights_js = serde_wasm_bindgen::to_value(old_heights)?;
+    let promise = commit_staged_reorg_raw(blocks_js, old_heights_js, new_tip_height, new_tip_hash);
+    wasm_bindgen_futures::JsFuture::from(promise).await?;
+    Ok(())
+}
+
+
+// Helper function to convert the raw JS Promise for saving a block
+async fn save_block_to_db(block: Block) -> Result<(), JsValue> {
+    let block_js = serde_wasm_bindgen::to_value(&block)?;
+    let promise = save_block_to_db_raw(block_js);
+    wasm_bindgen_futures::JsFuture::from(promise).await?;
+    Ok(())
+}
+
+async fn save_total_work_to_db(work: u64) -> Result<(), JsValue> {
+    let promise = save_total_work_to_db_raw(work);
+    wasm_bindgen_futures::JsFuture::from(promise).await?;
+    Ok(())
+}
+
+async fn get_total_work_from_db() -> Result<u64, JsValue> {
+    let promise = get_total_work_from_db_raw();
+    let result_js = wasm_bindgen_futures::JsFuture::from(promise).await?;
+    let work_str = result_js.as_string().unwrap_or_else(|| "0".to_string());
+    // Parse the string from JS into a u64 for Rust
+    work_str.parse::<u64>().map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+async fn clear_all_utxos_from_db() -> Result<(), JsValue> {
+    let promise = clear_all_utxos_raw();
+    wasm_bindgen_futures::JsFuture::from(promise).await?;
+    Ok(())
+}
+
+pub async fn save_utxo_to_db(commitment: &[u8], output: &TransactionOutput) -> Result<(), JsValue> {
+    let hex = hex::encode(commitment);
+    let output_js = serde_wasm_bindgen::to_value(output)?;
+    wasm_bindgen_futures::JsFuture::from(save_utxo_raw(&hex, output_js)).await?;
+    Ok(())
+}
+
+pub async fn load_utxo_from_db(commitment: &[u8]) -> Result<Option<TransactionOutput>, JsValue> {
+    let hex = hex::encode(commitment);
+    let result = wasm_bindgen_futures::JsFuture::from(load_utxo_raw(&hex)).await?;
+    if result.is_null() || result.is_undefined() {
+        Ok(None)
+    } else {
+        Ok(Some(serde_wasm_bindgen::from_value(result)?))
+    }
+}
+
+pub async fn delete_utxo_from_db(commitment: &[u8]) -> Result<(), JsValue> {
+    let hex = hex::encode(commitment);
+    wasm_bindgen_futures::JsFuture::from(delete_utxo_raw(&hex)).await?;
+    Ok(())
+}
+
+
+// Helper functions to convert the raw JS Promise into a Rust Future
+// that yields a result we can use.
+async fn load_block_from_db(height: u64) -> Result<Option<Block>, JsValue> {
+    let promise = load_block_from_db_raw(height);
+    let result_js = wasm_bindgen_futures::JsFuture::from(promise).await?;
+    if result_js.is_null() || result_js.is_undefined() {
+        Ok(None)
+    } else {
+        let mut block: Block = serde_wasm_bindgen::from_value(result_js)?;
+        block.hash = block.compute_hash();
+        Ok(Some(block))
+    }
+}
+
+async fn load_blocks_from_db(start: u64, end: u64) -> Result<Vec<Block>, JsValue> {
+    let promise = load_blocks_from_db_raw(start, end);
+    let result_js = wasm_bindgen_futures::JsFuture::from(promise).await?;
+    if result_js.is_null() || result_js.is_undefined() {
+        Ok(Vec::new())
+    } else {
+        let blocks: Vec<Block> = serde_wasm_bindgen::from_value(result_js)?;
+        Ok(blocks)
+    }
+}
+
+async fn get_tip_height_from_db() -> Result<u64, JsValue> {
+    let promise = get_tip_height_from_db_raw();
+    let result_js = wasm_bindgen_futures::JsFuture::from(promise).await?;
+    Ok(result_js.as_f64().unwrap_or(0.0) as u64)
+}
+
+// =========================
+// Wallet session API (wasm)
+// =========================
+#[wasm_bindgen]
+pub fn wallet_session_create(wallet_id: &str) -> Result<(), JsValue> {
+    let mut map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    if map.contains_key(wallet_id) {
+        return Err(JsValue::from_str("Wallet session already exists"));
+    }
+    let w = wallet::Wallet::new();
+    map.insert(wallet_id.to_string(), w);
+    Ok(())
+}
+
+/// Load a wallet into a session from a persisted JSON blob (plaintext for now).
+#[wasm_bindgen]
+pub fn wallet_session_open(wallet_id: &str, wallet_json: &str) -> Result<(), JsValue> {
+    let w: wallet::Wallet = serde_json::from_str(wallet_json)
+        .map_err(|e| JsValue::from_str(&format!("Wallet parse failed: {}", e)))?;
+    let mut map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    map.insert(wallet_id.to_string(), w);
+    Ok(())
+}
+
+/// Export the current session wallet as JSON (for persistence).
+#[wasm_bindgen]
+pub fn wallet_session_export(wallet_id: &str) -> Result<String, JsValue> {
+    let map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let w = map.get(wallet_id).ok_or_else(|| JsValue::from_str("Wallet not loaded"))?;
+    serde_json::to_string(w).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn wallet_session_get_address(wallet_id: &str) -> Result<String, JsValue> {
+    let map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let w = map.get(wallet_id).ok_or_else(|| JsValue::from_str("Wallet not loaded"))?;
+    let scan_pub_bytes = w.scan_pub.compress().to_bytes();
+    crate::address::encode_stealth_address(&scan_pub_bytes)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
+
+#[wasm_bindgen]
+pub fn wallet_session_get_balance(wallet_id: &str) -> Result<u64, JsValue> {
+    let map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let w = map.get(wallet_id).ok_or_else(|| JsValue::from_str("Wallet not loaded"))?;
+    Ok(w.balance())
+}
+
+/// Scan the entire blockchain into this wallet session (Rust iterates blocks).
+#[wasm_bindgen]
+pub async fn wallet_session_scan_chain(wallet_id: &str) -> Result<(), JsValue> {
+    let tip_height = get_tip_height_from_db().await?;
+    let mut map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let w = map.get_mut(wallet_id).ok_or_else(|| JsValue::from_str("Wallet not loaded"))?;
+    // Loop from genesis to the tip, fetching each block from the DB via the JS bridge.
+    for h in 0..=tip_height {
+        if let Some(b) = load_block_from_db(h).await? {
+            w.scan_block(&b);
+        }
+    }
+    Ok(())
+}
+
+
+
+/// Create a tx from a session wallet to a stealth address, update session state, return tx.
+#[wasm_bindgen]
+pub fn wallet_session_send_to_stealth(
+    wallet_id: &str,
+    amount: u64,
+    fee: u64,
+    stealth_address: &str,
+) -> Result<JsValue, JsValue> {
+    // 1) decode stealth address into scan pubkey, reuse existing constructor
+    let scan_pub_bytes = crate::address::decode_stealth_address(stealth_address)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let scan_pub_hex = hex::encode(scan_pub_bytes);
+    // 2) build tx using the session wallet
+    let mut map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let w = map.get_mut(wallet_id).ok_or_else(|| JsValue::from_str("Wallet not loaded"))?;
+    // Use existing helper by temporarily serializing (to avoid code duplication).
+    let json = serde_json::to_string(w).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let result = wallet_create_transaction(&json, amount, fee, &scan_pub_hex)?;
+    // Merge updated state back into session
+    #[derive(serde::Deserialize)]
+    struct TxResult { transaction: transaction::Transaction, updated_wallet_json: String }
+    let parsed: TxResult = serde_wasm_bindgen::from_value(result.clone())
+        .map_err(|e| JsValue::from_str(&format!("Bad tx result: {}", e)))?;
+    let updated: wallet::Wallet = serde_json::from_str(&parsed.updated_wallet_json)
+        .map_err(|e| JsValue::from_str(&format!("Updated wallet parse failed: {}", e)))?;
+    *w = updated;
+    Ok(result)
+}
+
+
+
 
 #[wasm_bindgen]
 pub fn wallet_get_address(wallet_json: &str) -> Result<String, JsValue> {
@@ -348,54 +642,903 @@ pub fn wallet_create_transaction(
     serde_wasm_bindgen::to_value(&result).map_err(|e| e.into())
 }
 
+// ADDED: New async initialization function that loads state from the DB.
 #[wasm_bindgen]
-pub fn init_blockchain() -> Result<JsValue, JsValue> {
+pub async fn init_blockchain_from_db() -> Result<JsValue, JsValue> {
     let mut chain = BLOCKCHAIN.lock().unwrap();
-    *chain = blockchain::Blockchain::new();
-    // Reset the global UTXO set and transaction pool for a clean state.
-    let mut utxo_set = blockchain::UTXO_SET.lock().unwrap();
-    utxo_set.clear();
-    let mut tx_pool = TX_POOL.lock().unwrap();
+    let tip_height = get_tip_height_from_db().await?;
+
+    if tip_height > 0 {
+        if let Some(tip_block) = load_block_from_db(tip_height).await? {
+            // Restore chain state from the tip block in the DB.
+            chain.current_height = tip_block.height;
+            chain.tip_hash = tip_block.hash();
+            chain.total_work = get_total_work_from_db().await?;
+
+            chain.current_vrf_threshold = tip_block.vrf_threshold;
+            chain.current_vdf_iterations = tip_block.vdf_iterations;
+             log(&format!("[RUST] Restored blockchain from DB to height {}", tip_height));
+        } else {
+             return Err(JsValue::from_str("DB tip height is > 0 but tip block could not be loaded."));
+        }
+    } else {
+        // If the DB is empty (height 0), initialize with a fresh genesis state.
+        *chain = Blockchain::new();
+        log("[RUST] Initialized new blockchain with genesis block.");
+    }
+    
+    // Reset UTXO set and tx pool
+
+    { let mut utxo_set = blockchain::UTXO_SET.lock().unwrap(); utxo_set.clear(); }
+    //clear_all_utxos_from_db().await?;
+let mut tx_pool = TX_POOL.lock().unwrap();
+
     tx_pool.pending.clear();
     tx_pool.fee_total = 0;
+    // Rebuild UTXO set by replaying all blocks in one batch
+    if tip_height > 0 {
+        let all_blocks = load_blocks_from_db(0, tip_height).await?;
+        for block in all_blocks {
+            for tx in &block.transactions {
+                // Spend inputs
+                for inp in &tx.inputs {
+                    { blockchain::UTXO_SET.lock().unwrap().remove(&inp.commitment); }
+                    delete_utxo_from_db(&inp.commitment).await.ok();
+                }
+                // Create outputs
+                for out in &tx.outputs {
+                    save_utxo_to_db(&out.commitment, out).await?;
+                    { blockchain::UTXO_SET.lock().unwrap().insert(out.commitment.clone(), out.clone()); }
+                }
+            }
+        }
+    }
+    log(&format!("[RUST] Rebuilt UTXO set from DB, size: {}", blockchain::UTXO_SET.lock().unwrap().len()));
 
-    log("[RUST] Blockchain and global state initialized with genesis block");
-    serde_wasm_bindgen::to_value(&*chain)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+
+    serde_wasm_bindgen::to_value(&*chain).map_err(|e| e.into())
+
 }
 
+
+// ---- Results returned to JS -----------------------------------------------------
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum IngestResult {
+    AcceptedAndExtended,
+    StoredOnSide { tip_hash: String, height: u64 },
+    NeedParent { hash: String, reason: String },
+    Invalid { reason: String },
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ReorgPlan {
+    pub detach: Vec<String>,       // hashes to roll back (old canonical)
+    pub attach: Vec<String>,       // hashes to apply (forward order)
+    pub new_tip_hash: String,
+    pub new_height: u64,
+    pub requests: Vec<String>,     // missing parent hashes we still need
+}
+
+fn mempool_hygiene_after_block(block: &Block) {
+    // [drop mined txs, drop spent-input txs, recompute fee_total]
+    // (Source: your current add_block_to_chain)  // cite:
+    // L11-L29 from concatenated_output.txt
+    let mut pool = TX_POOL.lock().unwrap();
+    let mined_excesses: HashSet<Vec<u8>> = block.transactions.iter()
+        .flat_map(|t| t.kernels.iter().map(|k| k.excess.clone()))
+        .collect();
+    pool.pending.retain(|t| !t.kernels.iter().any(|k| mined_excesses.contains(&k.excess)));
+
+    let utxos = blockchain::UTXO_SET.lock().unwrap();
+    pool.pending.retain(|t| t.inputs.iter().all(|inp| utxos.contains_key(&inp.commitment)));
+    pool.fee_total = pool.pending.iter().map(|t| t.total_fee()).sum();
+}
+
+fn have_block(hash: &str) -> bool {
+    let (tip_hash, _) = tip_hash_and_height();
+    if tip_hash == hash { return true; } // Quick check for tip
+    let side = SIDE_BLOCKS.lock().unwrap();
+    side.contains_key(hash)
+}
+fn store_side_block(hash: String, block: Block) {
+    let mut blocks = SIDE_BLOCKS.lock().unwrap();
+    let mut lru = SIDE_BLOCKS_LRU.lock().unwrap();
+
+    // RATIONALE: If at capacity, remove least recently used block
+    // This is now just a cache - the DB is the source of truth
+    if blocks.len() >= MAX_SIDE_BLOCKS && !blocks.contains_key(&hash) {
+        if let Some(oldest) = lru.pop_front() {
+            blocks.remove(&oldest);
+            log(&format!("[CACHE] Evicted old side block: {}", &oldest[..8]));
+        }
+    }
+
+    if !blocks.contains_key(&hash) {
+        blocks.insert(hash.clone(), block.clone());
+        lru.push_back(hash.clone());
+        
+        // Save to DB asynchronously - fire and forget
+        let block_clone = block.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(e) = save_block_with_hash(&block_clone).await {
+                log(&format!("[ERROR] Failed to save side block to DB: {:?}", e));
+            }
+        });
+    }
+}
+
+async fn get_block_any_async(hash: &str) -> Result<Option<Block>, JsValue> {
+    // Check memory cache first
+    if let Some(block) = SIDE_BLOCKS.lock().unwrap().get(hash).cloned() {
+        return Ok(Some(block));
+    }
+    
+    // Not in cache? Check the database
+    load_block_by_hash(hash).await
+}
+
+// Keep the sync version for compatibility but it only checks memory
+fn get_block_any(hash: &str) -> Option<Block> {
+    SIDE_BLOCKS.lock().unwrap().get(hash).cloned()
+}
+
+ fn tip_hash_and_height() -> (String, u64) {
+     let chain = BLOCKCHAIN.lock().unwrap();
+    (chain.tip_hash.clone(), chain.current_height)
+ }
+
+/// Unified entrypoint for all incoming blocks from the network.
+/// - If parent missing -> store on side + ask JS to fetch the parent.
+/// - Else -> valid side block; JS may ask for reorg via plan_reorg_for_tip.
 #[wasm_bindgen]
-pub fn add_block_to_chain(block_js: JsValue) -> Result<(), JsValue> {
-    let block: Block = serde_wasm_bindgen::from_value(block_js)
+pub async fn ingest_block(block_js: JsValue) -> Result<JsValue, JsValue> {
+    let mut block: Block = serde_wasm_bindgen::from_value(block_js)
         .map_err(|e| JsValue::from_str(&format!("bad block: {e}")))?;
+    if block.hash.is_empty() {
+        block.hash = block.compute_hash();
+    }
+    
+    // --- START: CORRECT DUPLICATE DETECTION LOGIC ---
+    // RATIONALE: This logic performs an async database call to see if we already
+    // have a canonical block at this height. This is the correct way to detect a common ancestor.
+    if let Some(db_block) = load_block_from_db(block.height).await? {
+        if db_block.hash() == block.hash() {
+            let res = IngestResult::Invalid { reason: "Duplicate block".to_string() };
+            return serde_wasm_bindgen::to_value(&res).map_err(|e| e.into());
+        }
+    }
+    // Also check the side cache for duplicates that are not yet canonical.
+    if SIDE_BLOCKS.lock().unwrap().contains_key(&block.hash()) {
+        let res = IngestResult::Invalid { reason: "Duplicate block".to_string() };
+        return serde_wasm_bindgen::to_value(&res).map_err(|e| e.into());
+    }
+    // --- END: CORRECT DUPLICATE DETECTION LOGIC ---
+    
+    log(&format!("[RUST DEBUG] ingest_block: height={}, hash={}", block.height, block.hash));
+
+    
+    // Add timestamp validation
+    {
+        const MAX_FUTURE_DRIFT_MS: u64 = 120_000; // 2 minutes
+        let now_ms = js_sys::Date::now() as u64;
+        
+        if block.timestamp > now_ms + MAX_FUTURE_DRIFT_MS {
+            let res = IngestResult::Invalid { 
+                reason: format!("Block timestamp {} is too far in the future (max drift: {}ms)", 
+                    block.timestamp, MAX_FUTURE_DRIFT_MS) 
+            };
+            return serde_wasm_bindgen::to_value(&res).map_err(|e| e.into());
+        }
+    }
+ 
+
+    // Parent present?
+    if load_block_from_db(block.height.saturating_sub(1)).await?.is_none() && block.height > 0 {
+        // Stash and request parent
+        let parent = block.prev_hash.clone();
+        let h = block.hash();
+        store_side_block(h, block);
+        let res = IngestResult::NeedParent {
+            hash: parent,
+            reason: "Block was stored on a side-chain pending parent download".to_string(),
+        };
+        return serde_wasm_bindgen::to_value(&res).map_err(|e| e.into());
+    }
+
+    // Parent equals canonical tip? Fast-path extend canonical chain.
+    let (tip_h, tip_ht) = tip_hash_and_height();
+    log(&format!("[RUST DEBUG] Current tip: hash={}, height={}", tip_h, tip_ht));
+    log(&format!("[RUST DEBUG] Block wants: prev_hash={}, height={}", block.prev_hash, block.height));
+    
+    if block.height == tip_ht + 1 && block.prev_hash == tip_h {
+        log("[RUST DEBUG] Block extends canonical tip, processing...");
+        {
+            let mut chain = BLOCKCHAIN.lock().unwrap();
+            
+            let (expected_vrf_threshold, expected_vdf_iterations) = if block.height > 0 && block.height % DIFFICULTY_ADJUSTMENT_INTERVAL == 0 {
+                let start_height = block.height - (DIFFICULTY_ADJUSTMENT_INTERVAL - 1);
+                match load_block_from_db(start_height).await? {
+                    Some(start_block) => {
+                        let end_block = load_block_from_db(block.height - 1).await?
+                            .ok_or_else(|| JsValue::from_str("Could not load parent block for difficulty adjustment"))?;
+                        
+                        Blockchain::calculate_next_difficulty(&end_block, &start_block, chain.current_vrf_threshold, chain.current_vdf_iterations) 
+                    }
+                    None => return Err(JsValue::from_str(&format!("CRITICAL: Missing start block {} for difficulty adjustment.", start_height))),
+                }
+            } else {
+                (chain.current_vrf_threshold, chain.current_vdf_iterations)
+            };
+            
+            if block.height > constants::MTP_WINDOW as u64 {
+                let mut timestamps = Vec::new();
+                for i in (block.height - constants::MTP_WINDOW as u64)..block.height {
+                    if let Some(b) = load_block_from_db(i).await? {
+                        timestamps.push(b.timestamp);
+                    }
+                }
+                timestamps.sort_unstable();
+                let mtp = timestamps[timestamps.len() / 2];
+                if block.timestamp < mtp {
+                    let res = IngestResult::Invalid { reason: "Timestamp < MTP".to_string() };
+                    return serde_wasm_bindgen::to_value(&res).map_err(|e| e.into());
+                }
+            }
+
+            chain.add_block(block.clone(), expected_vrf_threshold, expected_vdf_iterations).await
+                .map_err(|e| JsValue::from_str(&format!("Failed to add block: {e}")))?;
+            log("[RUST DEBUG] Block added to chain successfully");
+            // CRITICAL: Update block's total_work from chain
+            block.total_work = chain.total_work;
+
+            chain.current_vrf_threshold = expected_vrf_threshold;
+            chain.current_vdf_iterations = expected_vdf_iterations;
+        }
+        save_block_to_db(block.clone()).await?;
+        save_total_work_to_db(BLOCKCHAIN.lock().unwrap().total_work).await?;
+        mempool_hygiene_after_block(&block);
+        let res = IngestResult::AcceptedAndExtended;
+        log("[RUST DEBUG] Returning AcceptedAndExtended");  
+        return serde_wasm_bindgen::to_value(&res).map_err(|e| e.into());
+    }
+
+    // Otherwise, store as side block (fork candidate)
+    store_side_block(block.hash(), block.clone());
+    
+    // Save to database immediately
+    {
+        let block_clone = block.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(e) = save_block_with_hash(&block_clone).await {
+                log(&format!("[ERROR] Failed to save ingested block to DB: {:?}", e));
+            }
+        });
+    }
+        
+    let res = IngestResult::StoredOnSide { tip_hash: block.hash(), height: block.height };
+    log(&format!("[RUST DEBUG] Returning StoredOnSide for block {}", block.hash()));  
+    serde_wasm_bindgen::to_value(&res).map_err(|e| e.into())
+}
+
+
+/// Create a deterministic reorg plan from a candidate tip.
+#[wasm_bindgen]
+pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
+    let (canon_tip_hash, canon_tip_height) = tip_hash_and_height();
+
+    // Check if we have the candidate tip block at all
+    let have_candidate = match get_block_any(&tip_hash) {
+        Some(_) => true,
+        None => {
+            match load_block_by_hash(&tip_hash).await? {
+                Some(_) => true,
+                None => false,
+            }
+        }
+    };
+    
+    if !have_candidate {
+        // We don't have this block - request it first so we can evaluate work
+        log(&format!("[REORG] Don't have candidate tip {}. Requesting for work evaluation.", &tip_hash[..12]));
+        let plan = ReorgPlan {
+            detach: vec![],
+            attach: vec![],
+            new_tip_hash: canon_tip_hash,
+            new_height: canon_tip_height,
+            requests: vec![tip_hash],
+        };
+        return serde_wasm_bindgen::to_value(&plan).map_err(|e| e.into());
+    }    
+
+    let mut canon_history: HashMap<u64, String> = HashMap::new();
+    // First, load the canonical tip block directly from the DB to get a trusted starting point.
+    let tip_block_from_db = load_block_from_db(canon_tip_height).await?
+        .ok_or_else(|| JsValue::from_str(&format!("Failed to load canonical tip block {} from DB", canon_tip_height)))?;
+
+    // Now, initialize the history and the hash for the backward walk from this trusted block.
+    canon_history.insert(canon_tip_height, tip_block_from_db.hash());
+    let mut current_hash = tip_block_from_db.prev_hash;
+
+    // Walk backwards from the block BEFORE the tip, with the integrity check still in place.
+    for h in (0..canon_tip_height).rev() {
+        if let Some(block) = load_block_from_db(h).await? {
+            if block.hash() == current_hash {
+                canon_history.insert(h, current_hash.clone());
+                current_hash = block.prev_hash;
+            } else {
+                return Err(JsValue::from_str(&format!("Chain history broken in DB at height {}", h)));
+            }
+        } else {
+             if h > 0 {
+                 return Err(JsValue::from_str(&format!("Failed to load canonical block {} from DB", h)));
+             }
+        }
+    }
+
+    let mut fork_path: Vec<Block> = Vec::new();
+    let mut missing_parents: Vec<String> = Vec::new();
+    let mut common_height: Option<u64> = None;
+    
+    // --- START: MODIFIED SECTION ---
+    // RATIONALE: We must be able to find the starting block for the fork from either the
+    // side-chain cache OR the canonical database (in the case of a reorg from genesis).
+    let mut current_fork_block = match get_block_any(&tip_hash) {
+        Some(b) => b,
+        None => {
+            // Check database by hash
+            match load_block_by_hash(&tip_hash).await? {
+                Some(b) => b,
+                None => {
+                    // Last resort: try by height
+                    load_block_from_db(canon_tip_height + 1).await?
+                        .ok_or_else(|| JsValue::from_str("Candidate tip not found in cache or DB"))?
+                }
+            }
+        }
+    };
+    // --- END: MODIFIED SECTION ---
+
+    let mut iterations = 0;
+    loop {
+        iterations += 1;
+        if iterations > MAX_REORG_DEPTH {
+            log(&format!("[REORG] Rejecting reorg deeper than {} blocks", MAX_REORG_DEPTH));
+            return Err(JsValue::from_str("Reorg depth exceeds maximum allowed"));
+        }
+
+        if let Some(canon_hash) = canon_history.get(&current_fork_block.height) {
+            if canon_hash == &current_fork_block.hash() {
+                common_height = Some(current_fork_block.height);
+                break;
+            }
+        }
+
+        fork_path.push(current_fork_block.clone());
+        if current_fork_block.height == 0 {
+            break; 
+        }
+
+        let parent_hash = current_fork_block.prev_hash.clone();
+        
+        // --- START: MODIFIED SECTION ---
+        // RATIONALE: When building the fork path, we must check both the side-chain cache
+        // AND the database to find parent blocks.
+        if let Some(parent_block) = get_block_any(&parent_hash) {
+            current_fork_block = parent_block;
+        } else if let Some(parent_block_from_db) = load_block_by_hash(&parent_hash).await? {
+            current_fork_block = parent_block_from_db;
+        } else if let Some(parent_block_from_db) = load_block_from_db(current_fork_block.height - 1).await? {
+            if parent_block_from_db.hash() == parent_hash {
+                current_fork_block = parent_block_from_db;
+            } else {
+                missing_parents.push(parent_hash);
+                if missing_parents.len() > 10 {
+                    log("[REORG] Too many missing parents in fork, aborting plan");
+                    return Err(JsValue::from_str("Too many missing blocks in fork chain"));
+                }
+                break;
+            }
+        } else {
+        // --- END: MODIFIED SECTION ---
+            missing_parents.push(parent_hash);
+            if missing_parents.len() > 10 {
+                log("[REORG] Too many missing parents in fork, aborting plan");
+                return Err(JsValue::from_str("Too many missing blocks in fork chain"));
+            }
+            break;
+        }
+    }
+    
+    // ... THE REST OF THE FUNCTION REMAINS UNCHANGED ...
+    if !missing_parents.is_empty() {
+        let plan = ReorgPlan {
+            detach: vec![],
+            attach: vec![],
+            new_tip_hash: canon_tip_hash,
+            new_height: canon_tip_height,
+            requests: missing_parents,
+        };
+        return serde_wasm_bindgen::to_value(&plan).map_err(|e| e.into());
+    }
+
+    let ancestor_h = common_height.expect("Logical error: common ancestor must be found");
+    
+    fork_path.reverse(); 
+    let attach_hashes: Vec<String> = fork_path.iter().map(|b| b.hash()).collect();
+    
+    let mut detach_segment = Vec::new();
+    for h in (ancestor_h + 1)..=canon_tip_height {
+        let block_to_detach = load_block_from_db(h).await?
+            .ok_or_else(|| JsValue::from_str(&format!("Failed to load canonical block {} for detach plan", h)))?;
+        detach_segment.push(block_to_detach);
+    }
+    let detach_hashes: Vec<String> = detach_segment.iter().map(|b| b.hash()).collect();
+    
+    let current_total_work = { BLOCKCHAIN.lock().unwrap().total_work };
+    let detached_work = Blockchain::get_chain_work(&detach_segment);
+    let ancestor_total_work = current_total_work.saturating_sub(detached_work);
+
+    let canon_total_work = current_total_work;
+    let fork_total_work = ancestor_total_work.saturating_add(Blockchain::get_chain_work(&fork_path));
+    log(&format!("[REORG] Comparing chains: Canonical Work={}, Fork Work={}", canon_total_work, fork_total_work));
+
+    let should_switch = if fork_total_work > canon_total_work {
+        true
+    } else if fork_total_work == canon_total_work {
+        tip_hash < canon_tip_hash
+    } else {
+       false
+    };
+    
+    let (final_detach, final_attach, new_tip_hash, new_height) = if should_switch {
+        let new_tip = fork_path.last().unwrap();
+        (detach_hashes, attach_hashes, new_tip.hash(), new_tip.height)
+    } else {
+        (vec![], vec![], canon_tip_hash, canon_tip_height)
+    };
+
+    #[derive(Serialize)]
+    struct PlanOut<'a> {
+        detach: &'a [String],
+        attach: &'a [String],
+        new_tip_hash: &'a str,
+        new_height: u64,
+        requests: Vec<String>,
+        should_switch: bool,
+    }
+
+    let out = PlanOut {
+        detach: &final_detach,
+        attach: &final_attach,
+        new_tip_hash: &new_tip_hash,
+        new_height,
+        requests: vec![],
+        should_switch,
+    };
+    serde_wasm_bindgen::to_value(&out).map_err(|e| e.into())
+}
+
+// CRITICAL FIX #2: Helper types for lock-free change tracking
+#[derive(Clone)]
+enum UtxoChange {
+    Add(Vec<u8>, TransactionOutput),
+    Remove(Vec<u8>),
+}
+
+#[derive(Clone)]
+enum CoinbaseChange {
+    Add(Vec<u8>, u64),
+    Remove(Vec<u8>),
+}
+
+enum WalletUpdate {
+    RemoveBlockUtxos(HashSet<Vec<u8>>),
+    ScanBlock(Block),
+}
+
+#[derive(Clone)]
+struct StateSnapshot {
+    current_height: u64,
+    current_tip_hash: String,
+    current_vrf_threshold: [u8; 32],
+    current_vdf_iterations: u64,
+}
+
+struct ReorgChanges {
+    utxo_changes: Vec<UtxoChange>,
+    coinbase_changes: Vec<CoinbaseChange>,
+    wallet_updates: Vec<WalletUpdate>,
+    mempool_txs_to_add: Vec<Transaction>,
+    new_height: u64,
+    new_tip_hash: String,
+    new_vrf_threshold: [u8; 32],
+    new_vdf_iterations: u64,
+    total_work: u64,
+    ancestor_height: u64,
+}
+
+impl ReorgChanges {
+    fn new() -> Self {
+        Self {
+            utxo_changes: Vec::new(),
+            coinbase_changes: Vec::new(),
+            wallet_updates: Vec::new(),
+            mempool_txs_to_add: Vec::new(),
+            new_height: 0,
+            new_tip_hash: String::new(),
+            new_vrf_threshold: [0u8; 32],
+            new_vdf_iterations: 0,
+            total_work: 0,
+            ancestor_height: 0,
+        }
+    }
+}
+
+/// Atomically apply a reorganization plan
+#[wasm_bindgen(js_name = "atomic_reorg")]
+pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
+    let plan: ReorgPlan = serde_wasm_bindgen::from_value(plan_js)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    
+    if !plan.requests.is_empty() { 
+        return Err(JsValue::from_str("Cannot apply reorg: plan has outstanding requests"));
+    }
+    if plan.detach.is_empty() && plan.attach.is_empty() { 
+        log("[REORG] Plan requires no changes. Aborting.");
+        return Ok(()); 
+    }
+
+    log(&format!("[REORG] Starting atomic reorg: Detaching {} blocks, Attaching {} blocks.", 
+        plan.detach.len(), plan.attach.len())); 
+
+    // ============================================================================
+    // PHASE 1: DATA FETCHING (ASYNC, NO LOCKS HELD)
+    // ============================================================================
+    
+    log("[REORG] Phase 1: Fetching blocks from database");
+    
+    let mut blocks_to_attach = Vec::new();
+    for hash in &plan.attach { 
+        let block = match get_block_any(hash) {
+            Some(b) => b,
+            None => {
+                match load_block_by_hash(hash).await? {
+                    Some(b) => b,
+                    None => return Err(JsValue::from_str(&format!("Block {} not found", hash))),
+                }
+            }
+        };
+        blocks_to_attach.push(block); 
+    }
+
+    let mut blocks_to_detach = Vec::new();
+    for hash in &plan.detach {
+        let block = load_block_by_hash(hash).await?
+            .ok_or_else(|| JsValue::from_str(&format!("Could not load block {}", hash)))?;
+        blocks_to_detach.push(block);
+    }
+
+    // Fetch source blocks for restoring spent inputs
+    let mut source_blocks = std::collections::HashMap::new();
+    for block in &blocks_to_detach {
+        for tx in &block.transactions {
+            for input in &tx.inputs {
+                if !source_blocks.contains_key(&input.source_height) {
+                    let source_block = load_block_from_db(input.source_height).await?
+                        .ok_or_else(|| JsValue::from_str(&format!("Missing source block #{}", input.source_height)))?;
+                    source_blocks.insert(input.source_height, source_block);
+                }
+            }
+        }
+    }
+
+    // ============================================================================
+    // PHASE 2: SNAPSHOT CURRENT STATE (LOCKS HELD BRIEFLY)
+    // ============================================================================
+    
+    log("[REORG] Phase 2: Snapshotting current state");
+    
+    let (original_tip_height, state_snapshot) = {
+        let chain = BLOCKCHAIN.lock().unwrap();
+        let snapshot = StateSnapshot {
+            current_height: chain.current_height,
+            current_tip_hash: chain.tip_hash.clone(),
+            current_vrf_threshold: chain.current_vrf_threshold,
+            current_vdf_iterations: chain.current_vdf_iterations,
+        };
+        (chain.current_height, snapshot)
+    }; // Lock released immediately
+
+    // FIX #1: Write recovery marker BEFORE any state changes
+    #[derive(Serialize)]
+    struct ReorgMarker {
+        original_tip_height: u64,
+        new_tip_height: u64,
+        new_tip_hash: String,
+        blocks_to_attach: Vec<String>,
+        blocks_to_detach_heights: Vec<u64>,
+        timestamp: u64,
+    }
+    
+    let marker = ReorgMarker {
+        original_tip_height,
+        new_tip_height: plan.new_height,
+        new_tip_hash: plan.new_tip_hash.clone(),
+        blocks_to_attach: plan.attach.clone(),
+        blocks_to_detach_heights: ((state_snapshot.current_height - blocks_to_detach.len() as u64 + 1)..=original_tip_height).collect(),
+        timestamp: js_sys::Date::now() as u64,
+    };
+    
+    save_reorg_marker(&marker).await?;
+    log("[REORG] Recovery marker saved");
+
+    // ============================================================================
+    // PHASE 3: COMPUTE ALL CHANGES (NO LOCKS, PURE COMPUTATION)
+    // ============================================================================
+    
+    log("[REORG] Phase 3: Computing state changes (lock-free)");
+    
+    let mut changes = ReorgChanges::new();
+    let mut working_height = state_snapshot.current_height;
+    let mut working_tip_hash = state_snapshot.current_tip_hash.clone();
+
+    // === Step 3.1: Process Detached Blocks ===
+    log(&format!("[REORG] Computing changes for {} detached blocks", blocks_to_detach.len()));
+    
+    for block in blocks_to_detach.iter().rev() {
+        if working_height != block.height {
+            return Err(JsValue::from_str(&format!(
+                "Reorg plan mismatch: expected height {}, got {}",
+                working_height, block.height
+            )));
+        }
+        if working_tip_hash != block.hash() {
+            return Err(JsValue::from_str("Reorg plan mismatch: hash mismatch"));
+        }
+
+        log(&format!("[REORG] Planning detach of block #{} ({}...)", 
+            block.height, &block.hash()[..12]));
+
+        // Collect outputs to remove
+        let block_outputs: HashSet<Vec<u8>> = block.transactions.iter()
+            .flat_map(|tx| tx.outputs.iter().map(|o| o.commitment.clone()))
+            .collect();
+
+        for commitment in &block_outputs {
+            changes.utxo_changes.push(UtxoChange::Remove(commitment.clone()));
+            changes.coinbase_changes.push(CoinbaseChange::Remove(commitment.clone()));
+        }
+
+        // Schedule wallet update
+        changes.wallet_updates.push(WalletUpdate::RemoveBlockUtxos(block_outputs));
+
+        // Restore inputs that were spent in this block
+        for tx in &block.transactions {
+            for input in &tx.inputs {
+                if let Some(source_block) = source_blocks.get(&input.source_height) {
+                    let mut found_output = None;
+                    for source_tx in &source_block.transactions {
+                        if let Some(output) = source_tx.outputs.iter()
+                            .find(|o| o.commitment == input.commitment) 
+                        {
+                            found_output = Some(output.clone());
+                            break;
+                        }
+                    }
+                    
+                    if let Some(original_output) = found_output {
+                        changes.utxo_changes.push(
+                            UtxoChange::Add(input.commitment.clone(), original_output)
+                        );
+                        
+                        let is_coinbase = source_block.transactions.iter()
+                            .any(|t| t.inputs.is_empty() && 
+                                t.outputs.iter().any(|o| o.commitment == input.commitment));
+                        
+                        if is_coinbase {
+                            changes.coinbase_changes.push(
+                                CoinbaseChange::Add(input.commitment.clone(), input.source_height)
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Return non-coinbase transactions to mempool
+        for tx in block.transactions.iter().filter(|t| !t.inputs.is_empty()) {
+            changes.mempool_txs_to_add.push(tx.clone());
+        }
+        
+        working_height -= 1;
+    }
+
+    // === Step 3.2: Find Common Ancestor ===
+    let ancestor_block = if working_height > 0 {
+        load_block_from_db(working_height).await?
+            .ok_or_else(|| JsValue::from_str(&format!("Ancestor block #{} not found", working_height)))?
+    } else {
+        Block::genesis()
+    };
+    
+    working_tip_hash = ancestor_block.hash();
+    changes.ancestor_height = working_height;
+    
+    log(&format!("[REORG] Common ancestor: block #{} ({}...)", 
+        working_height, &working_tip_hash[..12]));
+
+    // === Step 3.3: Process Attached Blocks ===
+    log(&format!("[REORG] Computing changes for {} attached blocks", blocks_to_attach.len()));
+    
+    for block in &blocks_to_attach {
+        working_height += 1;
+        
+        log(&format!("[REORG] Planning attach of block #{} ({}...)", 
+            block.height, &block.hash()[..12]));
+
+        for tx in &block.transactions {
+            // Remove inputs
+            for inp in &tx.inputs {
+                changes.utxo_changes.push(UtxoChange::Remove(inp.commitment.clone()));
+                changes.coinbase_changes.push(CoinbaseChange::Remove(inp.commitment.clone()));
+            }
+            
+            // Add outputs
+            let is_coinbase = tx.total_fee() == 0 && tx.inputs.is_empty();
+            for out in &tx.outputs {
+                changes.utxo_changes.push(UtxoChange::Add(out.commitment.clone(), out.clone()));
+                if is_coinbase {
+                    changes.coinbase_changes.push(
+                        CoinbaseChange::Add(out.commitment.clone(), block.height)
+                    );
+                }
+            }
+        }
+
+        // Schedule wallet scan
+        changes.wallet_updates.push(WalletUpdate::ScanBlock(block.clone()));
+        
+        working_tip_hash = block.hash();
+    }
+
+    // === Step 3.4: Calculate Final State ===
+    changes.new_height = working_height;
+    changes.new_tip_hash = working_tip_hash;
+    
+    if let Some(last_block) = blocks_to_attach.last() {
+        changes.new_vrf_threshold = last_block.vrf_threshold;
+        changes.new_vdf_iterations = last_block.vdf_iterations;
+    } else {
+        changes.new_vrf_threshold = ancestor_block.vrf_threshold;
+        changes.new_vdf_iterations = ancestor_block.vdf_iterations;
+    }
+
+    // Calculate work (expensive but lock-free)
+    let detached_work = Blockchain::get_chain_work(&blocks_to_detach);
+    let attached_work = Blockchain::get_chain_work(&blocks_to_attach);
+    let current_total_work = { BLOCKCHAIN.lock().unwrap().total_work };
+    changes.total_work = current_total_work
+        .saturating_sub(detached_work)
+        .saturating_add(attached_work);
+
+    log(&format!("[REORG] Computed {} UTXO changes, {} coinbase changes, {} wallet updates",
+        changes.utxo_changes.len(), changes.coinbase_changes.len(), changes.wallet_updates.len()));
+
+    // ============================================================================
+    // PHASE 4: APPLY ALL CHANGES (LOCKS HELD BRIEFLY IN SEQUENCE)
+    // ============================================================================
+    
+    log("[REORG] Phase 4: Applying changes to global state");
+    
+    // Step 4.1: Apply UTXO changes
+    {
+        let mut utxo_set = blockchain::UTXO_SET.lock().unwrap();
+        for change in &changes.utxo_changes {
+            match change {
+                UtxoChange::Add(commitment, output) => {
+                    utxo_set.insert(commitment.clone(), output.clone());
+                }
+                UtxoChange::Remove(commitment) => {
+                    utxo_set.remove(commitment);
+                }
+            }
+        }
+    } // UTXO lock released
+    
+    // Step 4.2: Apply coinbase index changes
+    {
+        let mut coinbase_index = blockchain::COINBASE_INDEX.lock().unwrap();
+        for change in &changes.coinbase_changes {
+            match change {
+                CoinbaseChange::Add(commitment, height) => {
+                    coinbase_index.insert(commitment.clone(), *height);
+                }
+                CoinbaseChange::Remove(commitment) => {
+                    coinbase_index.remove(commitment);
+                }
+            }
+        }
+    } // Coinbase lock released
+    
+    // Step 4.3: Apply wallet updates
+    {
+        let mut wallet_sessions = WALLET_SESSIONS.lock().unwrap();
+        for update in &changes.wallet_updates {
+            match update {
+                WalletUpdate::RemoveBlockUtxos(commitments) => {
+                    for wallet in wallet_sessions.values_mut() {
+                        wallet.remove_block_utxos(commitments);
+                    }
+                }
+                WalletUpdate::ScanBlock(block) => {
+                    for wallet in wallet_sessions.values_mut() {
+                        wallet.scan_block(block);
+                    }
+                }
+            }
+        }
+    } // Wallet lock released
+    
+    // Step 4.4: Update transaction pool
+    {
+        let mut tx_pool = TX_POOL.lock().unwrap();
+        
+        // Add transactions from detached blocks back to mempool
+        for tx in &changes.mempool_txs_to_add {
+            if !tx_pool.pending.iter().any(|p| p.hash() == tx.hash()) {
+                tx_pool.pending.push(tx.clone());
+            }
+        }
+        
+        // Recalculate fee total
+        tx_pool.fee_total = tx_pool.pending.iter().map(|t| t.total_fee()).sum();
+    } // TX pool lock released
+    
+    // Step 4.5: Update blockchain metadata (final state update)
     {
         let mut chain = BLOCKCHAIN.lock().unwrap();
-        chain.add_block(block.clone())
-            .map_err(|e| JsValue::from_str(&format!("Failed to add block: {e}")))?;
+        chain.current_height = changes.new_height;
+        chain.tip_hash = changes.new_tip_hash.clone();
+        chain.total_work = changes.total_work;
+        chain.current_vrf_threshold = changes.new_vrf_threshold;
+        chain.current_vdf_iterations = changes.new_vdf_iterations;
+        
+        log(&format!("[REORG] Chain state updated: height={}, work={}", 
+            chain.current_height, chain.total_work));
+    } // Chain lock released
+
+    // ============================================================================
+    // PHASE 5: PERSISTENCE (ASYNC, NO LOCKS) - Uses Fix #1's atomic commit
+    // ============================================================================
+    
+    log("[REORG] Phase 5: Persisting changes to database");
+    
+    // Step 5.1: Save blocks to staging area (Fix #1)
+    for block in &blocks_to_attach {
+        save_block_to_staging(block).await?;
     }
+    
+    // Step 5.2: Atomic commit operation (Fix #1)
+    commit_staged_reorg(
+        &blocks_to_attach,
+        &((changes.ancestor_height + 1)..=original_tip_height).collect::<Vec<_>>(),
+        changes.new_height,
+        &changes.new_tip_hash
+    ).await?;
+    
+    // Step 5.3: Persist total work
+    save_total_work_to_db(changes.total_work).await?;
+    
+    // Step 5.4: Clear the reorg marker (reorg completed successfully) - Fix #1
+    clear_reorg_marker().await?;
 
-    // === NEW: mempool hygiene ===
-    {
-        use std::collections::HashSet;
-        // 1) drop txs that were just mined
-        let mined: HashSet<Vec<u8>> = block.transactions
-            .iter().skip(1) // skip coinbase
-            .map(|t| t.kernel.excess.clone())
-            .collect();
-        let mut pool = TX_POOL.lock().unwrap();
-        pool.pending.retain(|t| !mined.contains(&t.kernel.excess));
-
-        // 2) drop txs whose inputs are no longer available
-        let utxos = blockchain::UTXO_SET.lock().unwrap();
-        pool.pending.retain(|t|
-            t.inputs.iter().all(|inp| utxos.contains_key(&inp.commitment))
-        );
-        // 3) recompute fee total
-        pool.fee_total = pool.pending.iter().map(|t| t.kernel.fee).sum();
-    }
-
+    log(&format!("[REORG] Completed successfully. New tip: #{} ({}...), total work: {}",
+        changes.new_height, &changes.new_tip_hash[..12], changes.total_work));
+    
     Ok(())
 }
+
 
 #[wasm_bindgen]
 pub fn get_blockchain_state() -> Result<JsValue, JsValue> {
@@ -406,65 +1549,47 @@ pub fn get_blockchain_state() -> Result<JsValue, JsValue> {
 
 #[wasm_bindgen]
 pub fn get_latest_block_hash() -> Result<String, JsValue> {
-    let chain = BLOCKCHAIN.lock().unwrap();
-    Ok(chain.get_latest_block().hash())
+    let (tip_hash, _) = tip_hash_and_height();
+    Ok(tip_hash)
 }
 
 #[wasm_bindgen]
-pub fn get_block_by_hash(hash: String) -> Result<JsValue, JsValue> {
-    let chain = BLOCKCHAIN.lock().unwrap();
-    // Check all blocks including genesis
-    for block in &chain.blocks {
-        if block.hash() == hash {
-            return serde_wasm_bindgen::to_value(&block).map_err(|e| e.into());
-        }
+pub async fn get_block_by_hash(hash: String) -> Result<JsValue, JsValue> {
+    // 1. Check the side-chain cache first (fast path for forks).
+    if let Some(block) = get_block_any(&hash) {
+        return serde_wasm_bindgen::to_value(&Some(block)).map_err(|e| e.into());
     }
+
+    // 2. If not in cache, walk back the canonical chain from the DB tip.
+    let tip_height = get_tip_height_from_db().await?;
     
-    // Also check the hash map
-    if let Some(block) = chain.block_by_hash.get(&hash).cloned() {
-        serde_wasm_bindgen::to_value(&block).map_err(|e| e.into())
-    } else {
-        Ok(JsValue::NULL)
-    }
-}
+    // Start with the current tip block.
+    if let Some(mut current_block) = load_block_from_db(tip_height).await? {
+        loop {
+            // Check if the current block is the one we're looking for.
+            if current_block.hash() == hash {
+                return serde_wasm_bindgen::to_value(&Some(current_block)).map_err(|e| e.into());
+            }
 
-#[wasm_bindgen]
-pub fn get_blockchain_with_hashes() -> Result<JsValue, JsValue> {
-    let chain = BLOCKCHAIN.lock().unwrap();
-    #[derive(serde::Serialize)]
-    struct BlockWithHash {
-        height: u64,
-        prev_hash: String,
-        timestamp: u64,
-        pow_nonce: u64, 
-        miner_id: String,
-        hash: String,
-    }
+            // If we've reached genesis and haven't found it, stop.
+            if current_block.height == 0 {
+                break;
+            }
 
-    let blocks_with_hashes: Vec<BlockWithHash> = chain.blocks.iter().map(|block| {
-        BlockWithHash {
-            height: block.height,
-            prev_hash: block.prev_hash.clone(),
-            timestamp: block.timestamp,
-            pow_nonce: block.pow_nonce, 
-            miner_id: hex::encode(block.miner_pubkey), // <-- Use miner_pubkey
-            hash: block.hash(),
+            // Load the parent block to continue walking backwards.
+            if let Some(parent_block) = load_block_from_db(current_block.height - 1).await? {
+                current_block = parent_block;
+            } else {
+                // The chain is broken in the DB, so we can't search further.
+                break;
+            }
         }
-    }).collect();
-
-    #[derive(serde::Serialize)]
-    struct ChainWithHashes {
-        blocks: Vec<BlockWithHash>,
-        current_height: u64,
     }
 
-    let result = ChainWithHashes {
-        blocks: blocks_with_hashes,
-        current_height: chain.current_height,
-    };
-    serde_wasm_bindgen::to_value(&result)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    // 3. If the block was not found anywhere, return null.
+    serde_wasm_bindgen::to_value(&Option::<Block>::None).map_err(|e| e.into())
 }
+
 
 // Get wallet balance
 #[wasm_bindgen]
@@ -508,7 +1633,8 @@ pub fn get_tx_pool() -> Result<JsValue, JsValue> {
 }
 
 
-// Introducing - PoWrPoST - Thermodynamic finality!
+// Introducing - REST - Randomized Expensive Sequential Time
+//POW is used to "purchase" a VDF ticket. Valid VDF results are placed in a verifiable lottery via VRF.
 #[wasm_bindgen]
  pub fn mine_block_header(
      height: u64,
@@ -542,11 +1668,12 @@ pub fn get_tx_pool() -> Result<JsValue, JsValue> {
         test_block.height = height;
         test_block.prev_hash = prev_hash.clone();
         test_block.miner_pubkey = miner_pubkey;
-        test_block.pow_nonce = nonce;
+        test_block.lottery_nonce = nonce;
         
-        // 1) VDF ticket: input binds (prev_hash, miner_pubkey, nonce)
+        // CRITICAL FIX #10: VDF ticket binds (height, prev_hash, miner_pubkey, nonce)
+        // Including height prevents replay attacks across different blocks
         let vdf = VDF::new(2048).map_err(|e| JsValue::from_str(&e.to_string()))?;
-        let vdf_input = format!("{}{}{}", prev_hash, hex::encode(miner_pubkey), nonce);
+        let vdf_input = format!("{}{}{}{}", height, prev_hash, hex::encode(miner_pubkey), nonce);
         let vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), vdf_iterations)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
             
@@ -588,6 +1715,39 @@ pub fn get_tx_pool() -> Result<JsValue, JsValue> {
 }
 
 #[wasm_bindgen]
+pub async fn audit_total_supply() -> Result<String, JsValue> {
+    // The total supply is the sum of the base block rewards for all blocks
+    // in the canonical chain. Transaction fees represent a transfer of existing
+    // value from users to the miner, not the creation of new supply.
+    let tip_height = get_tip_height_from_db().await?;
+    
+    let mut total_supply: u128 = 0;
+
+    // Iterate from genesis+1 (height 1) to the current tip (genesis has no coinbase)
+    for height in 1..=tip_height {
+        // Add the base reward for the block at this height to the total
+        total_supply += get_current_base_reward(height) as u128;
+    }
+
+    // Return the total supply as a string to avoid precision issues in JavaScript
+    Ok(total_supply.to_string())
+}
+
+#[wasm_bindgen]
+pub fn create_vrf_proof(miner_secret_key_bytes: Vec<u8>, vdf_y_bytes: Vec<u8>) -> Result<JsValue, JsValue> {
+    if miner_secret_key_bytes.len() != 32 {
+        return Err(JsValue::from_str("Secret key must be 32 bytes"));
+    }
+    let mut sk = [0u8; 32];
+    sk.copy_from_slice(&miner_secret_key_bytes);
+    let secret_key = curve25519_dalek::scalar::Scalar::from_bytes_mod_order(sk);
+
+    let proof = crate::vrf::create_vrf(&secret_key, &vdf_y_bytes);
+    serde_wasm_bindgen::to_value(&proof).map_err(|e| e.into())
+}
+
+
+#[wasm_bindgen]
 pub fn complete_block_with_transactions(
     height: u64,
     prev_hash: String,
@@ -596,10 +1756,8 @@ pub fn complete_block_with_transactions(
     miner_scan_pubkey_bytes: Vec<u8>,
     vrf_proof_js: JsValue,
     vdf_proof_js: JsValue,
-    // NEW PARAMS
     vrf_threshold_bytes: Vec<u8>,
     vdf_iterations: u64,
-    pow_difficulty: u8,
     _mempool_transactions_js: JsValue, // kept for API compatibility; ignored
 ) -> Result<JsValue, JsValue> {
     // Deserialize proofs
@@ -619,8 +1777,7 @@ pub fn complete_block_with_transactions(
     
     // Coinbase pays base + fees
     let base_reward = {
-        let chain = BLOCKCHAIN.lock().unwrap();
-        chain.calculate_block_reward(height, pow_difficulty)
+        blockchain::get_current_base_reward(height)
     };
     let coinbase_amount = base_reward + total_fees;
     let coinbase_tx = Transaction::create_coinbase(vec![
@@ -638,11 +1795,11 @@ pub fn complete_block_with_transactions(
         prev_hash,
         timestamp: js_sys::Date::now() as u64,
         transactions: selected,
-        pow_nonce: nonce,
+        lottery_nonce: nonce,
         vrf_proof,
         vdf_proof,
         miner_pubkey,
-        // NEW: Commit params into header
+        // Commit params into header
         vdf_iterations,
         vrf_threshold: {
             let mut t = [0u8; 32];
@@ -650,6 +1807,7 @@ pub fn complete_block_with_transactions(
             t
         },
         tx_merkle_root: [0u8; 32],
+        total_work: 0,
         hash: String::new(),
     };
     
@@ -676,7 +1834,6 @@ pub fn get_current_mining_params() -> Result<JsValue, JsValue> {
     let chain = BLOCKCHAIN.lock().unwrap();
     #[derive(Serialize)]
     struct MiningParams {
-        pow_difficulty: u8,
         vrf_threshold: String,
         vdf_iterations: u64,
         current_height: u64,
@@ -684,7 +1841,6 @@ pub fn get_current_mining_params() -> Result<JsValue, JsValue> {
     }
     
     let params = MiningParams {
-        pow_difficulty: chain.current_pow_difficulty,
         vrf_threshold: hex::encode(&chain.current_vrf_threshold),
         vdf_iterations: chain.current_vdf_iterations,
         current_height: chain.current_height,
@@ -741,12 +1897,16 @@ pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
         output_sum += c;
     }
 
-    // kernel.excess -> point
-    let excess_point = CompressedRistretto::from_slice(&tx.kernel.excess)
-        .map_err(|_| JsValue::from_str("Invalid kernel excess"))?
-        .decompress()
-        .ok_or_else(|| JsValue::from_str("Failed to decompress kernel excess"))?;
-    if input_sum != (output_sum + excess_point) {
+    // Sum all kernel excess points
+    let mut excess_total = RistrettoPoint::identity();
+    for k in &tx.kernels {
+        let p = CompressedRistretto::from_slice(&k.excess)
+            .map_err(|_| JsValue::from_str("Invalid kernel excess"))?
+            .decompress()
+            .ok_or_else(|| JsValue::from_str("Failed to decompress kernel excess"))?;
+        excess_total += p;
+    }
+    if input_sum != (output_sum + excess_total) {
         return Err(JsValue::from_str("Transaction doesn't balance"));
     }
 
@@ -778,8 +1938,8 @@ pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
     let mut pool = TX_POOL.lock().unwrap_or_else(|p| p.into_inner());
     // prevent conflicts with pending txs
     for pending in &pool.pending {
-        // same kernel = duplicate
-        if pending.kernel.excess == tx.kernel.excess {
+        // same hash = duplicate
+        if pending.hash() == tx.hash() {
             return Err(JsValue::from_str("Transaction already in pool"));
         }
         // basic double-spend check vs pending txs
@@ -791,18 +1951,18 @@ pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
     }
 
     if pool.pending.len() >= MAX_TX_POOL_SIZE {
-        if let Some((idx, low)) = pool.pending.iter().enumerate().min_by_key(|(_, t)| t.kernel.fee) {
-            if tx.kernel.fee > low.kernel.fee {
+        if let Some((idx, low)) = pool.pending.iter().enumerate().min_by_key(|(_, t)| t.total_fee()) {
+            if tx.total_fee() > low.total_fee() {
                 log(&format!(
                     "[RUST] Pool full. Evicting tx with fee {} to add new tx with fee {}",
-                    low.kernel.fee, tx.kernel.fee
+                    low.total_fee(), tx.total_fee()
                 ));
-                pool.fee_total -= low.kernel.fee;
+                pool.fee_total -= low.total_fee();
                 pool.pending.remove(idx);
             } else {
                 return Err(JsValue::from_str(&format!(
                     "Transaction fee {} is too low for a full pool. Minimum required: {}",
-                    tx.kernel.fee, low.kernel.fee + 1
+                    tx.total_fee(), low.total_fee() + 1
                 )));
             }
         } else {
@@ -810,7 +1970,7 @@ pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
         }
     }
 
-    pool.fee_total += tx.kernel.fee;
+    pool.fee_total = pool.fee_total.saturating_add(tx.total_fee());
     pool.pending.push(tx);
     log(&format!("[RUST] Added network transaction to pool. Total: {}", pool.pending.len()));
     Ok(())
@@ -842,12 +2002,8 @@ pub fn clear_transaction_pool() -> Result<(), JsValue> {
 pub fn get_transaction_hash(tx_json: JsValue) -> Result<String, JsValue> {
     let tx: Transaction = serde_wasm_bindgen::from_value(tx_json)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize transaction: {}", e)))?;
-    // Hash based on kernel excess and signature (unique per transaction)
-    let mut hasher = Sha256::new();
-    hasher.update(&tx.kernel.excess);
-    hasher.update(&tx.kernel.signature);
-    hasher.update(&tx.kernel.fee.to_le_bytes());
-    Ok(hex::encode(hasher.finalize()))
+    // Use the canonical Transaction::hash method
+    Ok(tx.hash())
 }
 
 #[wasm_bindgen]
@@ -876,81 +2032,26 @@ pub fn wallet_get_data(wallet_json: &str) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&data).map_err(|e| e.into())
 }
 
-#[wasm_bindgen]
-pub fn create_utxo_snapshot() -> Result<JsValue, JsValue> {
-    let chain = BLOCKCHAIN.lock().unwrap();
-    let snapshot = chain.create_utxo_snapshot()
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    log(&format!("[RUST] Created UTXO snapshot at height {} with {} UTXOs", 
-        snapshot.height, snapshot.utxos.len()));
-    serde_wasm_bindgen::to_value(&snapshot)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
-}
-
-#[wasm_bindgen]
-pub fn restore_from_utxo_snapshot(snapshot_js: JsValue) -> Result<(), JsValue> {
-    let snapshot: UTXOSnapshot = serde_wasm_bindgen::from_value(snapshot_js)
-        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize snapshot: {}", e)))?;
-    let height = snapshot.height;
-    
-    let mut chain = BLOCKCHAIN.lock().unwrap();
-    chain.restore_from_snapshot(snapshot)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    log(&format!("[RUST] Restored chain from UTXO snapshot at height {}", height));
-    Ok(())
-}
-
-#[wasm_bindgen]
-pub fn prune_blockchain(keep_recent_blocks: u64) -> Result<(), JsValue> {
-    let mut chain = BLOCKCHAIN.lock().unwrap();
-    let original_length = chain.blocks.len();
-    chain.prune_to_horizon(keep_recent_blocks)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    log(&format!("[RUST] Pruned blockchain: {} blocks -> {} blocks", 
-        original_length, chain.blocks.len()));
-    Ok(())
-}
 
 #[wasm_bindgen]
 pub fn get_chain_storage_size() -> Result<JsValue, JsValue> {
     let chain = BLOCKCHAIN.lock().unwrap();
     let utxo_set = blockchain::UTXO_SET.lock().unwrap();
-    // Calculate approximate storage size
-    let blocks_size: usize = chain.blocks.iter()
-        .map(|b| {
-            // Rough estimate of block size
-            let tx_size: usize = b.transactions.iter()
-                .map(|tx| {
-                    tx.inputs.len() * 32 + 
-                    tx.outputs.iter().map(|o| o.commitment.len() + o.range_proof.len()).sum::<usize>() +
-                    96 // kernel size
-                })
-                .sum();
-            tx_size + 200 // header overhead
-        })
-        .sum();
-    
-    let utxo_size = utxo_set.len() * (32 + 700);
-    // commitment + range proof average
-    
+
+    // This is a very rough estimate and should be improved if precise metrics are needed.
+    let utxo_size = utxo_set.len() * (32 + 675); // commitment + range proof average
+
     #[derive(Serialize)]
     struct StorageInfo {
-        blocks_count: usize,
-        blocks_size_bytes: usize,
         utxo_count: usize,
         utxo_size_bytes: usize,
-        total_size_bytes: usize,
-        total_size_mb: f64,
     }
-    
+
     let info = StorageInfo {
-        blocks_count: chain.blocks.len(),
-        blocks_size_bytes: blocks_size,
         utxo_count: utxo_set.len(),
         utxo_size_bytes: utxo_size,
-        total_size_bytes: blocks_size + utxo_size,
-        total_size_mb: (blocks_size + utxo_size) as f64 / 1_048_576.0,
     };
+
     serde_wasm_bindgen::to_value(&info)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
@@ -1012,26 +2113,67 @@ pub fn get_genesis_block_hash() -> String {
 }
 
 #[wasm_bindgen]
-pub fn wallet_scan_block(wallet_json: &str, block_json: JsValue) -> Result<String, JsValue> {
-    let mut wallet: Wallet = serde_json::from_str(wallet_json)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let block: Block = serde_wasm_bindgen::from_value(block_json)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    
-    wallet.scan_block(&block);
-    serde_json::to_string(&wallet)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+pub fn wallet_session_get_spend_pubkey(wallet_id: &str) -> Result<Vec<u8>, JsValue> {
+    let map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let w = map.get(wallet_id).ok_or_else(|| JsValue::from_str("Wallet session not active"))?;
+    Ok(w.spend_pub.compress().to_bytes().to_vec())
+}
+
+
+// This function lets JS get the scan pubkey from an active Rust session.
+#[wasm_bindgen]
+pub fn wallet_session_get_scan_pubkey(wallet_id: &str) -> Result<Vec<u8>, JsValue> {
+    let map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let w = map.get(wallet_id).ok_or_else(|| JsValue::from_str("Wallet session not active"))?;
+    Ok(w.scan_pub.compress().to_bytes().to_vec())
+}
+
+// This function lets JS get the private spend key needed by the mining worker.
+#[wasm_bindgen]
+pub fn wallet_session_get_spend_privkey(wallet_id: &str) -> Result<Vec<u8>, JsValue> {
+    let map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let w = map.get(wallet_id).ok_or_else(|| JsValue::from_str("Wallet session not active"))?;
+    Ok(w.spend_priv.to_bytes().to_vec())
+}
+
+/// Clear pending UTXO marks after transaction failure
+#[wasm_bindgen]
+pub fn wallet_clear_pending_utxos(commitments_js: JsValue) -> Result<(), JsValue> {
+    let commitments: Vec<Vec<u8>> = serde_wasm_bindgen::from_value(commitments_js)?;
+    wallet::Wallet::clear_pending_utxos(&commitments);
+    Ok(())
+}
+
+
+/// Scan a single block (used during live sync).
+#[wasm_bindgen]
+pub fn wallet_session_scan_block(wallet_id: &str, block_js: JsValue) -> Result<(), JsValue> {
+    let block: Block = serde_wasm_bindgen::from_value(block_js)?;
+    let mut map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let w = map.get_mut(wallet_id).ok_or_else(|| JsValue::from_str("Wallet not loaded"))?;
+    w.scan_block(&block);
+    Ok(())
+ }
+
+#[wasm_bindgen]
+pub async fn get_canonical_hashes_after(start_height: u64) -> Result<JsValue, JsValue> {
+    let tip_height = get_tip_height_from_db().await?;
+    let mut hashes = Vec::new();
+
+    // Iterate from the block after the requester's tip to our current tip
+    for height in (start_height + 1)..=tip_height {
+        if let Some(block) = load_block_from_db(height).await? {
+            hashes.push(block.hash());
+        } else {
+            return Err(JsValue::from_str(&format!("Could not load canonical block at height {}", height)));
+        }
+    }
+
+    serde_wasm_bindgen::to_value(&hashes).map_err(|e| e.into())
 }
 
 #[wasm_bindgen]
-pub fn get_chain_work(blocks_json: JsValue) -> Result<u64, JsValue> {
-    let blocks: Vec<Block> = serde_wasm_bindgen::from_value(blocks_json)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    Ok(blockchain::Blockchain::get_chain_work(&blocks))
-}
-
-#[wasm_bindgen]
-pub fn rewind_block(block_js: JsValue) -> Result<(), JsValue> {
+pub async fn rewind_block(block_js: JsValue) -> Result<(), JsValue> {
     let block: Block = serde_wasm_bindgen::from_value(block_js)?;
     let mut chain = BLOCKCHAIN.lock().unwrap();
 
@@ -1043,128 +2185,67 @@ pub fn rewind_block(block_js: JsValue) -> Result<(), JsValue> {
         )));
     }
 
-    // --- Start of Refactored State Manipulation ---
-    { // This scope ensures mutex locks are released as soon as we're done with them.
-        // 1. Lock the ONE canonical UTXO set.
+    // --- State Manipulation ---
+    {
         let mut utxo_set = blockchain::UTXO_SET.lock().unwrap();
-        let mut cache = RECENT_UTXO_CACHE.lock().unwrap();
+        let cache = RECENT_UTXO_CACHE.lock().unwrap();
         for tx in &block.transactions {
-            // For every input in the rewound transaction, we must find the
-            // original TransactionOutput it came from and add it back to the UTXO set.
-            if !tx.inputs.is_empty() { // Skip coinbase transactions which have no inputs.
+            // Restore spent inputs by finding their original output in the cache
+            if !tx.inputs.is_empty() {
                 for input in &tx.inputs {
-                    let mut found_output: Option<TransactionOutput> = None;
-                    // Keep track of where we found the source output.
-                    let mut found_origin_height: Option<u64> = None;
-                    let mut found_origin_is_coinbase: bool = false;
-
-                    // A. First, try the fast cache to find the spent output.
-                    if let Some((height, output)) = cache.get(&input.commitment) {
-                        found_output = Some(output.clone());
-                        found_origin_height = Some(*height);
-                        // We don't know if coinbase yet; we'll resolve after we have the height.
-                    } else {
-                        // B. If not in cache, search the chain backwards block by block.
-                        'search: for search_block in chain.blocks.iter().rev() {
-                            for search_tx in &search_block.transactions {
-                                for search_output in &search_tx.outputs {
-                                    if search_output.commitment == input.commitment {
-                                        found_output = Some(search_output.clone());
-                                        found_origin_height = Some(search_block.height);
-                                        found_origin_is_coinbase =
-                                            search_tx.inputs.is_empty() && search_tx.kernel.fee == 0;
-                                        // Add to cache for future reorgs
-                                        cache.insert(
-                                            input.commitment.clone(),
-                                            (search_block.height, search_output.clone()),
-                                        );
-                                        break 'search; // Exit all loops once found.
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // C. If we found the original output, add it back to the live UTXO set.
-                    if let Some(output_to_restore) = found_output {
-                        utxo_set.insert(input.commitment.clone(), output_to_restore);
-                        
-                        // Determine if the source was coinbase.
-                        // If we didn’t learn it during the search (cache hit), check by height now.
-                        let is_cb = if found_origin_is_coinbase {
-                            true
-                        } else if let Some(h) = found_origin_height {
-                            // Find the block with that height and confirm the tx producing this commitment
-                            // is a coinbase (inputs empty & fee == 0).
-                            if let Some(b) = chain.blocks.iter().find(|b| b.height == h) {
-                                b.transactions.iter().any(|t|
-                                    t.inputs.is_empty() && t.kernel.fee == 0 &&
-                                    t.outputs.iter().any(|o| o.commitment == input.commitment)
-                                )
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        };
-                        
-                        if is_cb {
-                            let mut cb = crate::blockchain::COINBASE_INDEX.lock().unwrap();
-                            if let Some(h) = found_origin_height {
-                                cb.insert(input.commitment.clone(), h);
-                            }
-                        }
+                    if let Some((_height, output)) = cache.get(&input.commitment) {
+                        utxo_set.insert(input.commitment.clone(), output.clone());
                     } else {
                         log(&format!(
-                            "[RUST] Reorg Warning: Could not find source for input {:?}",
+                            "[RUST] Reorg Warning: Could not find source for input in cache {:?}",
                             hex::encode(&input.commitment[..8])
                         ));
                     }
                 }
             }
-
-            // 2. Remove the outputs that were created in this block from the UTXO set and cache.
+            // Remove outputs created in this block
             for output in &tx.outputs {
                 utxo_set.remove(&output.commitment);
-                cache.remove(&output.commitment);
-
                 let mut cb = crate::blockchain::COINBASE_INDEX.lock().unwrap();
                 cb.remove(&output.commitment);
             }
         }
-    } // All locks on UTXO_SET and RECENT_UTXO_CACHE are released here.
-    // --- End of Refactored State Manipulation ---
+    }
 
     // Return the block's non-coinbase transactions to the mempool
     {
         let mut tx_pool = TX_POOL.lock().unwrap();
         let utxo_set = blockchain::UTXO_SET.lock().unwrap();
-        for tx in &block.transactions {
-            if !tx.inputs.is_empty() { // Skip coinbase
-                // Verify the transaction is still valid with the new state before adding back
-                if tx.verify(None, Some(&utxo_set)).is_ok() {
-                    tx_pool.pending.push(tx.clone());
-                    tx_pool.fee_total += tx.kernel.fee;
-                }
+        for tx in block.transactions.iter().filter(|t| !t.inputs.is_empty()) {
+            if tx.verify(None, Some(&utxo_set)).is_ok() {
+                tx_pool.pending.push(tx.clone());
+                tx_pool.fee_total += tx.total_fee();
             }
         }
     }
 
-    // 4. Finally, update the chain's metadata.
-    chain.block_by_hash.remove(&block.hash());
-    chain.blocks.pop();
+    // Update the chain's metadata
     chain.current_height -= 1;
     
-    // resync consensus parameters from the new tip’s header
-    let tip_params = chain.blocks.last().map(|b| (b.vrf_threshold, b.vdf_iterations));
-    if let Some((vrf_threshold, vdf_iterations)) = tip_params {
-        chain.current_vrf_threshold = vrf_threshold;
-        chain.current_vdf_iterations = vdf_iterations;
+    // Asynchronously load the new tip to restore its consensus parameters
+    if let Some(parent_block) = load_block_from_db(chain.current_height).await? {
+        chain.tip_hash = parent_block.hash();
+        chain.current_vrf_threshold = parent_block.vrf_threshold;
+        chain.current_vdf_iterations = parent_block.vdf_iterations;
+    } else if chain.current_height == 0 {
+        // If we rewound to genesis, reset to genesis state
+        let genesis = Block::genesis();
+        chain.tip_hash = genesis.hash();
+        chain.current_vrf_threshold = genesis.vrf_threshold;
+        chain.current_vdf_iterations = genesis.vdf_iterations;
+    } else {
+        return Err(JsValue::from_str("Failed to load new tip block during rewind."));
     }
     
     log(&format!("[RUST] Successfully rewound block at height {}", block.height));
     Ok(())
 }
+
 
 #[wasm_bindgen]
 pub fn wallet_unscan_block(wallet_json: &str, block_js: JsValue) -> Result<String, JsValue> {

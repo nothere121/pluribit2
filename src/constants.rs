@@ -94,10 +94,18 @@ pub const VRF_MIN_THRESHOLD: [u8; 32] = [
 /// Maximum threshold clamp (all 0xFF).
 pub const VRF_MAX_THRESHOLD: [u8; 32] = [0xFF; 32];
 
-/// Default PoW difficulty at startup 
-pub const INITIAL_POW_DIFFICULTY: u8 = 1;
-
 // ─── Spending rules ────────────────────────────────────────────────────────────
 
 /// Confirmations required before a coinbase output is spendable.
-pub const COINBASE_MATURITY: u64 = 6; // blocks
+pub const COINBASE_MATURITY: u64 = 1;// 210000; // blocks ~ 10-11 weeks
+
+// ─── Domain separation tags (single source of truth) ───────────────────────────
+
+pub const DOMAIN_VDF_INPUT: &[u8]        = b"pluribit_vdf_input_v2";
+pub const DOMAIN_SCHNORR_NONCE: &[u8]    = b"pluribit_schnorr_nonce_v1";
+pub const DOMAIN_SCHNORR_CHALLENGE: &[u8]= b"pluribit_schnorr_v1";
+pub const DOMAIN_VRF_NONCE: &[u8]        = b"pluribit_vrf_nonce_v1";
+pub const DOMAIN_VRF_CHALLENGE: &[u8]    = b"pluribit_vrf_challenge_v1";
+pub const DOMAIN_VRF_OUTPUT: &[u8]       = b"pluribit_vrf_output_v1";
+pub const DOMAIN_BLOCK_HASH: &[u8]       = b"pluribit_block_v2";
+pub const DOMAIN_TX_HASH: &[u8]          = b"pluribit_tx_v2";

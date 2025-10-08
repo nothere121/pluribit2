@@ -1,11 +1,11 @@
 // src/blockchain.rs
 use crate::block::Block;
 use crate::transaction::{Transaction, TransactionOutput}; 
+use crate::load_block_from_db;
 use crate::error::{PluribitError, PluribitResult};
 use crate::vrf;
 use crate::constants;
-use crate::vdf::VDFProof;
-use crate::vrf::VrfProof;
+
 use crate::mimblewimble;
 use crate::log;
 use bulletproofs::RangeProof; // Added for range proof verification
@@ -13,20 +13,12 @@ use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar; // Added for creating commitments
 use curve25519_dalek::traits::Identity; // Added for RistrettoPoint::identity()
 use std::collections::HashMap;
-use num_bigint::BigUint;
 use std::sync::Mutex;
 use lazy_static::lazy_static;
 use serde::{Serialize, Deserialize};
-use crate::constants::{
-    INITIAL_POW_DIFFICULTY,
-    DEFAULT_VRF_THRESHOLD,
-    INITIAL_VDF_ITERATIONS,
-    VRF_MIN_THRESHOLD,
-    VRF_MAX_THRESHOLD,
-    COINBASE_MATURITY,
-    MTP_WINDOW,
-    MAX_FUTURE_DRIFT_MS,
-};
+use crate::constants::{COINBASE_MATURITY, DEFAULT_VRF_THRESHOLD, INITIAL_VDF_ITERATIONS, MAX_FUTURE_DRIFT_MS};
+
+use crate::{save_utxo_to_db, delete_utxo_from_db};
 
 
 lazy_static! {
@@ -39,44 +31,32 @@ lazy_static! {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blockchain {
-    pub blocks: Vec<Block>,
-    #[serde(skip)]
-    pub block_by_hash: HashMap<String, Block>,
+    // REMOVED: No longer storing all blocks in memory.
+    // ADDED: We only store the hash of the chain tip.
+    pub tip_hash: String,
+    
+    // KEPT: These fields represent the current state of the chain tip.
     pub current_height: u64,
     
-    // NEW difficulty and work tracking
+    // difficulty and work tracking
     pub total_work: u64,
-    pub current_pow_difficulty: u8,
     pub current_vrf_threshold: [u8; 32],
     pub current_vdf_iterations: u64,
 }
 
 impl Blockchain {
 
-    /// Median-Time-Past of the last `window` blocks (inclusive of tip).
-    fn median_time_past(&self, window: usize) -> u64 {
-        let n = self.blocks.len().min(window);
-        if n == 0 {
-            return 0;
-        }
-        let start = self.blocks.len() - n;
-        let mut ts: Vec<u64> = self.blocks[start..].iter().map(|b| b.timestamp).collect();
-        ts.sort_unstable();
-        ts[n / 2]
-    }
 
     pub fn new() -> Self {
         let genesis = Block::genesis();
-        let genesis_hash = genesis.hash();
-        let mut block_by_hash = HashMap::new();
-        block_by_hash.insert(genesis_hash.clone(), genesis.clone());
         
         Blockchain {
-            blocks: vec![genesis],
-            block_by_hash,
+            // ADDED: Store only the genesis hash as the initial tip.
+            tip_hash: genesis.hash(),
+            
+            // KEPT: Initialize state with genesis values.
             current_height: 0,
             total_work: 0,
-            current_pow_difficulty: INITIAL_POW_DIFFICULTY,
             current_vrf_threshold:  DEFAULT_VRF_THRESHOLD,
             current_vdf_iterations: INITIAL_VDF_ITERATIONS,
         }
@@ -129,9 +109,7 @@ impl Blockchain {
         self.total_work
     }
     
-    pub fn get_latest_block(&self) -> &Block {
-        self.blocks.last().expect("blockchain always has genesis")
-    }
+
 
     /// Very simple selector: verify signature + avoid input conflicts.
     /// Returns (selected_txs, total_fees)
@@ -168,7 +146,7 @@ impl Blockchain {
                 continue;
             }
 
-            total_fees = total_fees.saturating_add(tx.kernel.fee);
+            total_fees = total_fees.saturating_add(tx.total_fee());
             selected.push(tx.clone());
         }
 
@@ -179,7 +157,7 @@ impl Blockchain {
 
 
 
-    pub fn add_block(&mut self, mut block: Block) -> PluribitResult<()> {
+    pub async fn add_block(&mut self, mut block: Block, expected_vrf_threshold: [u8; 32], expected_vdf_iterations: u64) -> PluribitResult<()> {
         // Ensure hash is computed
         if block.hash.is_empty() {
             block.hash = block.compute_hash();
@@ -189,25 +167,77 @@ impl Blockchain {
         if block.height != self.current_height + 1 {
             return Err(PluribitError::InvalidBlock(format!("Expected height {}, got {}", self.current_height + 1, block.height)));
         }
-        if block.prev_hash != self.get_latest_block().hash() {
+        if block.prev_hash != self.tip_hash {
             return Err(PluribitError::InvalidBlock("Parent hash mismatch".into()));
         }
 
-        // Timestamp sanity: Median-Time-Past & future-drift checks
-        let mtp = self.median_time_past(MTP_WINDOW);
-        if block.timestamp < mtp {
-            return Err(PluribitError::InvalidBlock("Block timestamp < median-time-past".into()));
+        // Enhanced timestamp validation - ensure monotonic time
+        if block.height > 0 {
+            let parent_result = load_block_from_db(block.height - 1).await
+                .map_err(|e| PluribitError::StateError(format!("DB error loading parent: {:?}", e)));
+            if let Some(parent_block) = parent_result? {
+                if block.timestamp <= parent_block.timestamp {
+                    return Err(PluribitError::InvalidBlock(
+                        "Block timestamp must be greater than parent".into()
+                    ));
+                }
+            }
         }
+
         let now_ms = js_sys::Date::now() as u64;
         if block.timestamp > now_ms.saturating_add(MAX_FUTURE_DRIFT_MS) {
             return Err(PluribitError::InvalidBlock("Block timestamp too far in the future".into()));
         }
+
+        // === 1b. Merkle root consistency ===
+        let expected_root = block.calculate_tx_merkle_root();
+        if block.tx_merkle_root != expected_root {
+            return Err(PluribitError::InvalidBlock("Bad tx_merkle_root".into()));
+        }
+
+        // CRITICAL FIX #8: Validate transaction ordering within block
+        let mut prev_tx_timestamp = 0u64;
+        for (idx, tx) in block.transactions.iter().enumerate() {
+            // Skip coinbase (first transaction)
+            if idx == 0 && tx.inputs.is_empty() {
+                continue;
+            }
+            
+            // Transactions must be ordered by timestamp
+            if tx.timestamp < prev_tx_timestamp {
+                return Err(PluribitError::InvalidBlock(
+                    format!("Transaction {} has timestamp {} before previous transaction {}",
+                        idx, tx.timestamp, prev_tx_timestamp)
+                ));
+            }
+            
+            prev_tx_timestamp = tx.timestamp;
+        }
+
 
        // === 2. Sequential-Lottery Validation ===
         let miner_pubkey = CompressedRistretto::from_slice(&block.miner_pubkey)
             .map_err(|_| PluribitError::InvalidBlock("Invalid miner public key format".into()))?
             .decompress()
             .ok_or_else(|| PluribitError::InvalidBlock("Invalid miner public key".into()))?;
+
+        // === 2a. Enforce epoch params ===
+        // RATIONALE: We must validate difficulty parameters BEFORE accepting the block
+        // This prevents attacks where miners could manipulate difficulty by submitting
+        // blocks with incorrect parameters that get accepted before validation
+        if block.vrf_threshold != expected_vrf_threshold {
+            return Err(PluribitError::InvalidBlock(format!(
+                "Invalid VRF threshold. Expected {}, got {}",
+                hex::encode(expected_vrf_threshold), hex::encode(block.vrf_threshold)
+            )));
+        }
+        if block.vdf_iterations != expected_vdf_iterations {
+            return Err(PluribitError::InvalidBlock(format!(
+                "Invalid VDF iterations. Expected {}, got {}",
+                expected_vdf_iterations, block.vdf_iterations
+            )));
+        }
+
             
         let vrf_input = &block.vdf_proof.y;
         if !vrf::verify_vrf(&miner_pubkey, vrf_input, &block.vrf_proof) {
@@ -219,8 +249,14 @@ impl Blockchain {
             return Err(PluribitError::InvalidBlock("VRF output does not meet threshold".into()));
         }
 
+        // CRITICAL FIX #10: Verify VDF input binds to this specific block height
         let vdf = crate::vdf::VDF::new_with_default_modulus()?;
-        let vdf_input = format!("{}{}{}", block.prev_hash, hex::encode(&block.miner_pubkey), block.pow_nonce);
+        let vdf_input = format!("{}{}{}{}", 
+            block.height,           // FIX #10: Include height
+            block.prev_hash, 
+            hex::encode(&block.miner_pubkey), 
+            block.lottery_nonce
+        );
         if !vdf.verify(vdf_input.as_bytes(), &block.vdf_proof)? {
             return Err(PluribitError::InvalidBlock("Invalid VDF proof".into()));
         }
@@ -231,10 +267,12 @@ impl Blockchain {
         }
         
         // === 3. Aggregate Transaction and State Validation ===
+        // Collect UTXO changes WITHOUT holding locks during async calls
+        let mut utxos_to_add = Vec::new();
+        let mut utxos_to_remove = Vec::new();
+        let mut coinbase_to_add = Vec::new();              
         {
-            // Lock the UTXO set once for all checks.
-            let mut utxos = UTXO_SET.lock().unwrap();
-
+            let utxos = UTXO_SET.lock().unwrap();
             let mut sum_in_pts = RistrettoPoint::identity();
             let mut sum_out_pts = RistrettoPoint::identity();
             let mut sum_kernel_non_cb = RistrettoPoint::identity();
@@ -246,30 +284,36 @@ impl Blockchain {
 
             for (tx_idx, tx) in block.transactions.iter().enumerate() {
                 log(&format!("[BLOCK VALIDATION] Processing transaction #{}", tx_idx));
-                log(&format!("[BLOCK VALIDATION] TX#{}: Inputs: {}, Outputs: {}, Fee: {}", 
-                    tx_idx, tx.inputs.len(), tx.outputs.len(), tx.kernel.fee));
+                let tx_fee = tx.total_fee();
+                log(&format!("[BLOCK VALIDATION] TX#{}: Inputs: {}, Outputs: {}, Fee(total): {}", 
+                    tx_idx, tx.inputs.len(), tx.outputs.len(), tx_fee));
                 
-                if !tx.kernel.verify_signature()? {
+                if !tx.verify_signature()? {
                     log(&format!("[BLOCK VALIDATION] TX#{}: Kernel signature verification FAILED", tx_idx));
                     return Err(PluribitError::InvalidKernelSignature);
                 }
-                log(&format!("[BLOCK VALIDATION] TX#{}: Kernel signature verified", tx_idx));
+                log(&format!("[BLOCK VALIDATION] TX#{}: All kernel signatures verified", tx_idx));
                 
-                let kernel_excess_pt = mimblewimble::kernel_excess_to_pubkey(&tx.kernel.excess)?;
-                let is_coinbase = tx.kernel.fee == 0 && tx.inputs.is_empty();
+                // Sum all kernel excess points
+                let mut kernel_excess_pt = RistrettoPoint::identity();
+                for k in &tx.kernels {
+                    kernel_excess_pt += mimblewimble::kernel_excess_to_pubkey(&k.excess)?;
+                }
+                
+                let is_coinbase = tx_fee == 0 && tx.inputs.is_empty();
 
                 if is_coinbase {
                     coinbase_kernel += kernel_excess_pt;
-                    debug_assert_eq!(tx.kernel.fee, 0);
+                    debug_assert_eq!(tx_fee, 0);
                 } else {
                     sum_kernel_non_cb += kernel_excess_pt;
                     total_fees = total_fees
-                        .checked_add(tx.kernel.fee)
+                        .checked_add(tx_fee)
                         .ok_or(PluribitError::InvalidBlock("fee overflow".into()))?;
                 }
 
-                log(&format!("[BLOCK VALIDATION] TX#{}: Kernel excess: {}", 
-                    tx_idx, hex::encode(&tx.kernel.excess)));
+                log(&format!("[BLOCK VALIDATION] TX#{}: {} kernels processed", 
+                    tx_idx, tx.kernels.len()));
                 
                 for (inp_idx, inp) in tx.inputs.iter().enumerate() {
                     if !utxos.contains_key(&inp.commitment) {
@@ -318,7 +362,22 @@ impl Blockchain {
                 log(&format!("[BLOCK VALIDATION] TX#{}: Processing complete", tx_idx));
             }
 
-            let base_reward = self.calculate_block_reward(block.height, self.current_pow_difficulty);
+            // Collect changes to apply after releasing lock
+            for tx in &block.transactions {
+                for inp in &tx.inputs {
+                    utxos_to_remove.push(inp.commitment.clone());
+                }
+                let is_coinbase_tx = tx.total_fee() == 0 && tx.inputs.is_empty();
+                for out in &tx.outputs {
+                    utxos_to_add.push(out.clone());
+                    if is_coinbase_tx {
+                        coinbase_to_add.push((out.commitment.clone(), block.height));
+                    }
+                }
+            }
+
+            let base_reward = get_current_base_reward(block.height);
+
             let total_reward = base_reward + total_fees;
             let reward_commitment = mimblewimble::commit(total_reward, &Scalar::from(0u64))?;
             
@@ -341,39 +400,45 @@ impl Blockchain {
             }
 
             log("[BLOCK VALIDATION] Balance check PASSED");
-
-            for tx in &block.transactions {
-                for inp in &tx.inputs {
-                    utxos.remove(&inp.commitment);
-                    let mut cb = crate::blockchain::COINBASE_INDEX.lock().unwrap();
-                    cb.remove(&inp.commitment);
-                }
-
-                let is_coinbase_tx = tx.kernel.fee == 0 && tx.inputs.is_empty();
-                for out in &tx.outputs {
-                    utxos.insert(out.commitment.clone(), out.clone());
-                    if is_coinbase_tx {
-                        let mut cb = crate::blockchain::COINBASE_INDEX.lock().unwrap();
-                        cb.insert(out.commitment.clone(), block.height);
-                    }
-                }
-            }
-            
-            log("[BLOCK VALIDATION] UTXO set updated successfully");
+        } // Lock released here
+        
+        // === 3b. Apply UTXO updates and persist ===
+        for commitment in &utxos_to_remove {
+            delete_utxo_from_db(commitment).await
+                .map_err(|_| PluribitError::StateError("Failed to delete UTXO".into()))?;
+            { UTXO_SET.lock().unwrap().remove(commitment); }
+            { COINBASE_INDEX.lock().unwrap().remove(commitment); }
         }
+        
+        for output in &utxos_to_add {
+            save_utxo_to_db(&output.commitment, output).await
+                .map_err(|_| PluribitError::StateError("Failed to save UTXO".into()))?;
+            { UTXO_SET.lock().unwrap().insert(output.commitment.clone(), output.clone()); }
+        }
+        
+        for (commitment, height) in coinbase_to_add {
+            { COINBASE_INDEX.lock().unwrap().insert(commitment, height); }
+        }
+        log("[BLOCK VALIDATION] UTXO set updated successfully");
+
         
         // === 4. Update Chain State ===
         // Note: total_work is calculated using get_chain_work on a slice of blocks during fork choice,
-        // so we don't need to accumulate it here. We'll update the logic to re-calculate it if needed.
-        // For simplicity, we can set it based on the new chain.
-        self.blocks.push(block.clone());
-        self.total_work = Self::get_chain_work(&self.blocks);
-        self.block_by_hash.insert(block.hash(), block.clone());
+        // so we don't need to accumulate it here. 
+        // MODIFIED: Update the state variables without adding the block to a Vec.
+        self.tip_hash = block.hash();
+        self.total_work += Self::get_chain_work(&[block.clone()]); // Accumulate work
+
+        // Store cumulative work in the block itself for quick comparison
+        block.total_work = self.total_work;
+
         self.current_height += 1;
 
         // === 5. Difficulty Adjustment ===
+        // NOTE: This check is now handled externally by an async function that fetches
+        // the required blocks from the DB before calling `adjust_difficulty`.
         if self.current_height > 0 && self.current_height % constants::DIFFICULTY_ADJUSTMENT_INTERVAL == 0 {
-            self.adjust_difficulty();
+           // The actual call to adjust_difficulty will happen in lib.rs
         }
 
         {
@@ -381,7 +446,7 @@ impl Blockchain {
             let before = pool.pending.len();
 
             pool.pending.retain(|p|
-                !block.transactions.iter().any(|t| t.kernel.excess == p.kernel.excess)
+                !block.transactions.iter().any(|t| t.hash() == p.hash())
             );
             
             let utxos = crate::blockchain::UTXO_SET.lock().unwrap_or_else(|p| p.into_inner());
@@ -389,7 +454,8 @@ impl Blockchain {
                 p.inputs.iter().all(|i| utxos.contains_key(&i.commitment))
             );
             
-            pool.fee_total = pool.pending.iter().map(|t| t.kernel.fee).sum();
+            pool.fee_total = pool.pending.iter().map(|t| t.total_fee()).sum();
+
             crate::log(&format!(
                 "[RUST] Mempool: removed {} included/invalid txs ({} → {})",
                 before - pool.pending.len(), before, pool.pending.len()
@@ -398,84 +464,64 @@ impl Blockchain {
         Ok(())
     }
     
-    fn adjust_difficulty(&mut self) {
-        let window = constants::DIFFICULTY_ADJUSTMENT_INTERVAL as usize;
-        if self.blocks.len() < window + 1 {
-            return;
-        }
-    
-        let end_block = self.get_latest_block();
-        let start_block = &self.blocks[self.blocks.len() - window];
-    
-        let actual_time_ms = end_block.timestamp.saturating_sub(start_block.timestamp);
-        let expected_time_ms = constants::DIFFICULTY_ADJUSTMENT_INTERVAL * constants::TARGET_BLOCK_TIME * 1000;
-        if actual_time_ms == 0 {
-            return;
-        }
-    
-        let mut ratio = actual_time_ms as f64 / expected_time_ms as f64;
-        ratio = ratio.max(0.25).min(4.0);
-    
-        let new_vdf_iterations = ((self.current_vdf_iterations as f64) / ratio).round() as u64;
-        let new_vdf_iterations = new_vdf_iterations.max(constants::MIN_VDF_ITERATIONS).min(constants::MAX_VDF_ITERATIONS);
+    // RATIONALE: This pure function calculates the next difficulty parameters without
+    // modifying state. This separation allows us to validate difficulty BEFORE accepting
+    // a block, preventing consensus failures from accepting invalid blocks.
+    pub fn calculate_next_difficulty(
+        end_block: &Block,
+        start_block: &Block,
+        current_vrf_threshold: [u8; 32],
+        current_vdf_iterations: u64,
+    ) -> ([u8; 32], u64) {
+        use crate::constants::{TARGET_BLOCK_TIME, DIFFICULTY_ADJUSTMENT_INTERVAL};
+        use num_bigint::BigUint;
+        use num_traits::ToPrimitive;
         
-        let new_pow_difficulty_f64 = (self.current_pow_difficulty as f64) / ratio;
-        let new_pow_difficulty = (new_pow_difficulty_f64.round() as u8).max(1).min(64);
-    
-        let mut threshold_bigint = BigUint::from_bytes_be(&self.current_vrf_threshold);
-        let ratio_numerator = (ratio * 1_000_000.0).round() as u128;
-        let ratio_denominator = 1_000_000u128;
-        threshold_bigint = (threshold_bigint * ratio_numerator) / ratio_denominator;
-        
-        let max_threshold = BigUint::from_bytes_be(&VRF_MAX_THRESHOLD);
-        if threshold_bigint > max_threshold {
-            threshold_bigint = max_threshold;
-        }
-        
-        let min_threshold = BigUint::from_bytes_be(&VRF_MIN_THRESHOLD);
-        if threshold_bigint < min_threshold {
-            threshold_bigint = min_threshold;
-        }
-        
-        let new_vrf_threshold_bytes = threshold_bigint.to_bytes_be();
+        let actual_timespan = end_block.timestamp.saturating_sub(start_block.timestamp);
+        let target_timespan = (DIFFICULTY_ADJUSTMENT_INTERVAL * TARGET_BLOCK_TIME * 1000) as u64;
+
+        // RATIONALE: Clamp adjustment factor to prevent extreme difficulty swings
+        // that could be exploited for timestamp manipulation attacks (max 4x change)
+        let actual_timespan = actual_timespan.max(target_timespan / 4).min(target_timespan * 4);
+
+        // --- Adjust VDF iterations ---
+        let vdf_iter_biguint = BigUint::from(current_vdf_iterations);
+        let new_vdf_iter_biguint = (vdf_iter_biguint * target_timespan) / actual_timespan;
+        let new_vdf_iterations = new_vdf_iter_biguint.to_u64().unwrap_or(current_vdf_iterations)
+            .max(constants::MIN_VDF_ITERATIONS)
+            .min(constants::MAX_VDF_ITERATIONS);
+
+        // --- Adjust VRF threshold ---
+        // RATIONALE: Higher threshold = easier difficulty. If blocks came too fast,
+        // we need to make it harder (lower threshold)
+        let vrf_thresh_biguint = BigUint::from_bytes_be(&current_vrf_threshold);
+        let new_vrf_thresh_biguint = (vrf_thresh_biguint * actual_timespan) / target_timespan;
+
+        let new_vrf_threshold_bytes = new_vrf_thresh_biguint.to_bytes_be();
         let mut new_vrf_threshold = [0u8; 32];
-        let pad_len = 32_usize.saturating_sub(new_vrf_threshold_bytes.len());
-        new_vrf_threshold[pad_len..].copy_from_slice(&new_vrf_threshold_bytes);
+        if new_vrf_threshold_bytes.len() >= 32 {
+            new_vrf_threshold.copy_from_slice(&new_vrf_threshold_bytes[..32]);
+        } else {
+            let offset = 32 - new_vrf_threshold_bytes.len();
+            new_vrf_threshold[offset..].copy_from_slice(&new_vrf_threshold_bytes);
+        }
+        
+        // RATIONALE: Enforce min/max bounds to prevent difficulty from becoming
+        // impossibly hard or trivially easy
+        if new_vrf_thresh_biguint < BigUint::from_bytes_be(&constants::VRF_MIN_THRESHOLD) {
+            new_vrf_threshold = constants::VRF_MIN_THRESHOLD;
+        } else if new_vrf_thresh_biguint > BigUint::from_bytes_be(&constants::VRF_MAX_THRESHOLD) {
+            new_vrf_threshold = constants::VRF_MAX_THRESHOLD;
+        }
 
-        log(&format!(
-            "[DIFFICULTY] Adjustment at height {}: Actual Time: {:.2}s, Expected: {:.2}s, Ratio: {:.2}",
-            self.current_height,
-            actual_time_ms as f64 / 1000.0,
-            expected_time_ms as f64 / 1000.0,
-            ratio
-        ));
-        log(&format!(
-            "[DIFFICULTY] VDF Iterations: {} -> {}",
-            self.current_vdf_iterations, new_vdf_iterations
-        ));
-        log(&format!(
-            "[DIFFICULTY] PoW Difficulty: {} -> {}",
-            self.current_pow_difficulty, new_pow_difficulty
-        ));
-        log(&format!(
-            "[DIFFICULTY] VRF Threshold: {}... -> {}...",
-            hex::encode(&self.current_vrf_threshold[..4]), hex::encode(&new_vrf_threshold[..4])
-        ));
+        log(&format!("[DIFFICULTY] Timespan: {}ms. New VDF: {}, New VRF: {}",
+            actual_timespan, new_vdf_iterations, hex::encode(&new_vrf_threshold[..4])));
 
-        self.current_vdf_iterations = new_vdf_iterations;
-        self.current_pow_difficulty = new_pow_difficulty;
-        self.current_vrf_threshold = new_vrf_threshold;
+        (new_vrf_threshold, new_vdf_iterations)
     }
 
-    pub fn calculate_block_reward(&self, height: u64, pow_difficulty: u8) -> u64 {
-        let base_reward = get_current_base_reward(height);
-        let pow_bonus = if pow_difficulty > 10 {
-            (pow_difficulty as u64 - 10) * 100_000
-        } else { 0 };
-        base_reward + pow_bonus
-    }
+
     
-    // Keep these existing helper methods
     pub fn can_accept_block(&self, block: &Block) -> Result<(), PluribitError> {
         if block.height != self.current_height + 1 {
             return Err(PluribitError::InvalidBlock(format!(
@@ -485,7 +531,7 @@ impl Blockchain {
             )));
         }
         
-        if block.prev_hash != self.get_latest_block().hash() {
+        if block.prev_hash != self.tip_hash {
             return Err(PluribitError::InvalidBlock(
                 "Block does not extend current chain tip".to_string()
             ));
@@ -494,108 +540,17 @@ impl Blockchain {
         Ok(())
     }
     
-    pub fn create_utxo_snapshot(&self) -> PluribitResult<crate::UTXOSnapshot> {
-        let mut current_utxos: HashMap<Vec<u8>, TransactionOutput> = HashMap::new();
-        let mut total_kernels = 0u64;
-        
-        for block in &self.blocks {
-            for tx in &block.transactions {
-                for input in &tx.inputs {
-                    current_utxos.remove(&input.commitment);
-                }
-                for output in &tx.outputs {
-                    current_utxos.insert(output.commitment.clone(), output.clone());
-                }
-                total_kernels += 1;
-            }
-        }
-        
-        let mut utxo_vec: Vec<(Vec<u8>, TransactionOutput)> = current_utxos.into_iter().collect();
-        utxo_vec.sort_by(|a, b| a.0.cmp(&b.0));
-        
-        let merkle_root = Block::calculate_utxo_merkle_root(&utxo_vec);
-        
-        Ok(crate::UTXOSnapshot {
-            height: self.current_height,
-            prev_block_hash: self.get_latest_block().hash(),
-            utxos: utxo_vec,
-            timestamp: js_sys::Date::now() as u64,
-            merkle_root,
-            total_kernels,
-        })
-    }
+pub fn create_utxo_snapshot(&self, tip_block: &Block, utxos: HashMap<Vec<u8>, TransactionOutput>) -> PluribitResult<crate::UTXOSnapshot> {
+    // TODO: This function needs to be re-implemented for the new architecture if needed.
+    Err(PluribitError::StateError("create_utxo_snapshot is not implemented".to_string()))
+}
     
-    pub fn restore_from_snapshot(&mut self, snapshot: crate::UTXOSnapshot) -> PluribitResult<()> {
-        let calculated_root = Block::calculate_utxo_merkle_root(&snapshot.utxos);
-        if calculated_root != snapshot.merkle_root {
-            return Err(PluribitError::InvalidBlock("UTXO snapshot merkle root mismatch".to_string()));
-        }
-        
-        let mut utxo_set = UTXO_SET.lock().unwrap();
-        utxo_set.clear();
-        
-        for (commitment, output) in &snapshot.utxos {
-            utxo_set.insert(commitment.clone(), output.clone());
-        }
-        
-        let snapshot_block = Block {
-            height: snapshot.height,
-            prev_hash: snapshot.prev_block_hash.clone(),
-            transactions: vec![],
-            timestamp: snapshot.timestamp,
-            pow_nonce: 0,
-            vrf_proof: VrfProof::default(),
-            vdf_proof: VDFProof::default(),
-            miner_pubkey: [0u8; 32],
-            tx_merkle_root: [0u8; 32],
-            hash: String::new(),
-            vdf_iterations: constants::INITIAL_VDF_ITERATIONS,
-            vrf_threshold: constants::DEFAULT_VRF_THRESHOLD,
-        };
-                
-        self.blocks = vec![self.blocks[0].clone(), snapshot_block];
-        self.current_height = snapshot.height;
-        
-        Ok(())
-    }
+pub fn restore_from_snapshot(&mut self, snapshot: crate::UTXOSnapshot) -> PluribitResult<()> {
+    // TODO: This function needs to be re-implemented for the new architecture if needed.
+    Err(PluribitError::StateError("restore_from_snapshot is not implemented".to_string()))
+}
     
-    pub fn prune_to_horizon(&mut self, keep_recent: u64) -> PluribitResult<()> {
-        if self.current_height <= keep_recent {
-            return Ok(());
-        }
-        
-        let horizon_height = self.current_height - keep_recent;
-        
-        let mut horizon_utxos: HashMap<Vec<u8>, TransactionOutput> = HashMap::new();
-        
-        for i in 0..=horizon_height as usize {
-            if i >= self.blocks.len() {
-                break;
-            }
-            
-            let block = &self.blocks[i];
-            for tx in &block.transactions {
-                for input in &tx.inputs {
-                    horizon_utxos.remove(&input.commitment);
-                }
-                for output in &tx.outputs {
-                    horizon_utxos.insert(output.commitment.clone(), output.clone());
-                }
-            }
-        }
-        
-        let mut pruned_chain = vec![self.blocks[0].clone()];
-        pruned_chain.extend_from_slice(&self.blocks[(horizon_height as usize + 1)..]);
-        
-        self.blocks = pruned_chain;
-        
-        self.block_by_hash.clear();
-        for block in &self.blocks {
-            self.block_by_hash.insert(block.hash(), block.clone());
-        }
-        
-        Ok(())
-    }
+   
 }
 
 pub fn get_current_base_reward(height: u64) -> u64 {
@@ -610,14 +565,14 @@ pub fn get_current_base_reward(height: u64) -> u64 {
     
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
     use crate::wallet::Wallet;
     use crate::transaction::{Transaction, TransactionInput, TransactionOutput, TransactionKernel};
     use crate::mimblewimble;
     use curve25519_dalek::scalar::Scalar;
     use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
     use curve25519_dalek::traits::Identity;
-    use rand::thread_rng;
+    
 
     #[test]
     fn test_kernel_excess_with_fee() {
@@ -625,7 +580,7 @@ mod tests {
         let blinding = Scalar::from(123u64);
         let fee = 100u64;
         
-        let kernel = TransactionKernel::new(blinding, fee, 0).unwrap();
+        let kernel = TransactionKernel::new(blinding, fee, 0, 1).unwrap();
         let excess_point = mimblewimble::kernel_excess_to_pubkey(&kernel.excess).unwrap();
         
         // The excess should be: blinding * B_blinding + fee * B
@@ -692,7 +647,7 @@ mod tests {
                 .decompress().unwrap();
         }
         
-        let kernel_excess = mimblewimble::kernel_excess_to_pubkey(&coinbase_tx.kernel.excess).unwrap();
+        let kernel_excess = mimblewimble::kernel_excess_to_pubkey(&coinbase_tx.kernels[0].excess).unwrap();
         let reward_commitment = mimblewimble::commit(base_reward, &Scalar::from(0u64)).unwrap();
         
         assert_eq!(
@@ -730,7 +685,8 @@ fn test_block_with_coinbase_and_transaction() {
             ephemeral_key: None,
             stealth_payload: None,
         }],
-        kernel: TransactionKernel::new(tx_kernel_blinding, tx_fee, 0).unwrap(),
+        kernels: vec![TransactionKernel::new(tx_kernel_blinding, tx_fee, 0, 1).unwrap()],
+        timestamp: 1,
     };
     
     // IMPORTANT: Coinbase gets base reward + all fees from the block!
@@ -747,8 +703,8 @@ fn test_block_with_coinbase_and_transaction() {
     let mut k_cb    = RistrettoPoint::identity();
 
     for tx in &[coinbase_tx.clone(), regular_tx.clone()] {
-        let k = mimblewimble::kernel_excess_to_pubkey(&tx.kernel.excess).unwrap();
-        let is_coinbase = tx.kernel.fee == 0 && tx.inputs.is_empty();
+        let k = mimblewimble::kernel_excess_to_pubkey(&tx.kernels[0].excess).unwrap();
+        let is_coinbase = tx.total_fee() == 0 && tx.inputs.is_empty();
         if is_coinbase { k_cb += k } else { k_noncb += k }
 
         for inp in &tx.inputs {
@@ -802,7 +758,7 @@ fn test_manual_block_validation_logic() {
     
     // Kernel blinding: inputs - outputs
     let kernel_blinding = initial_blinding - send_blinding - change_blinding;
-    let kernel = TransactionKernel::new(kernel_blinding, fee, 0).unwrap();
+    let kernel = TransactionKernel::new(kernel_blinding, fee, 0, 1).unwrap();
     
     let regular_tx = Transaction {
         inputs: vec![TransactionInput {
@@ -824,7 +780,8 @@ fn test_manual_block_validation_logic() {
                 stealth_payload: None,
             }
         ],
-        kernel,
+        kernels: vec![kernel],
+        timestamp: 1,
     };
     
     // Coinbase gets base reward + all fees collected!
@@ -841,8 +798,8 @@ fn test_manual_block_validation_logic() {
     let mut k_cb    = RistrettoPoint::identity();
     
     for tx in &[coinbase_tx, regular_tx] {
-        let k = mimblewimble::kernel_excess_to_pubkey(&tx.kernel.excess).unwrap();
-        let is_coinbase = tx.kernel.fee == 0 && tx.inputs.is_empty();
+        let k = mimblewimble::kernel_excess_to_pubkey(&tx.kernels[0].excess).unwrap();
+        let is_coinbase = tx.total_fee() == 0 && tx.inputs.is_empty();
         if is_coinbase { k_cb += k } else { k_noncb += k }
         
         for inp in &tx.inputs {
@@ -886,13 +843,13 @@ fn debug_transaction_creation() {
     for (i, out) in coinbase_tx.outputs.iter().enumerate() {
         println!("    Output {}: commitment = {}", i, hex::encode(&out.commitment));
     }
-    println!("  Kernel excess: {}", hex::encode(&coinbase_tx.kernel.excess));
-    println!("  Kernel fee: {}", coinbase_tx.kernel.fee);
+    println!("  Kernel excess: {}", hex::encode(&coinbase_tx.kernels[0].excess));
+    println!("  Kernel fee: {}", coinbase_tx.kernels[0].fee);
     
     // Manually verify the balance
     let output_point = CompressedRistretto::from_slice(&coinbase_tx.outputs[0].commitment)
         .unwrap().decompress().unwrap();
-    let kernel_point = mimblewimble::kernel_excess_to_pubkey(&coinbase_tx.kernel.excess).unwrap();
+    let kernel_point = mimblewimble::kernel_excess_to_pubkey(&coinbase_tx.kernels[0].excess).unwrap();
     let reward_point = mimblewimble::commit(base_reward, &Scalar::from(0u64)).unwrap();
     
     println!("\nBalance check:");
@@ -904,5 +861,4 @@ fn debug_transaction_creation() {
     assert_eq!(output_point, kernel_point + reward_point, "Should balance");
 }
 }
-
 

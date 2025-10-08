@@ -1,0 +1,17 @@
+[package]
+name = "pluribit_native"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pluribit_core = { path = ".." }
+# Update neon to the latest version
+neon = "1.0"
+num-bigint = { version = "0.4", features = ["rand"] }
+num-integer = "0.1"
+num-traits = "0.2"
+sha2 = "0.10"
+hex = "0.4"
