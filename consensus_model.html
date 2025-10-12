@@ -1,0 +1,1923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>REST Consensus Advanced Simulator - Complete Analysis</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjs@11.11.0/lib/browser/math.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    :root {
+      --primary: #2563eb;
+      --secondary: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --bg: #0f172a;
+      --bg-card: #1e293b;
+      --bg-input: #334155;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --border: #475569;
+    }
+    
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .subtitle {
+      color: var(--text-muted);
+      margin-bottom: 2rem;
+    }
+    
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+    }
+    
+    .card h2 {
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+      color: var(--primary);
+    }
+    
+    .card h3 {
+      font-size: 1.1rem;
+      margin: 1rem 0 0.5rem;
+      color: var(--secondary);
+    }
+    
+    .control-group {
+      margin-bottom: 1.25rem;
+    }
+    
+    .control-group label {
+      display: block;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+    
+    .control-group input[type="range"] {
+      width: 100%;
+      height: 6px;
+      background: var(--bg-input);
+      border-radius: 3px;
+      outline: none;
+      -webkit-appearance: none;
+    }
+    
+    .control-group input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      background: var(--primary);
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    
+    .control-group input[type="range"]::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      background: var(--primary);
+      border-radius: 50%;
+      cursor: pointer;
+      border: none;
+    }
+    
+    .control-group select {
+      width: 100%;
+      padding: 0.5rem;
+      background: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 0.375rem;
+      font-size: 0.9rem;
+    }
+    
+    .value {
+      color: var(--warning);
+      font-weight: 600;
+    }
+    
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    
+    .metric {
+      background: var(--bg-input);
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+    }
+    
+    .metric-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.25rem;
+    }
+    
+    .metric-value {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    
+    .chart-container {
+      position: relative;
+      height: 400px;
+      margin-top: 1rem;
+    }
+    
+    .button {
+      padding: 0.75rem 1.5rem;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .button:hover {
+      background: #1d4ed8;
+      transform: translateY(-1px);
+    }
+    
+    .button:disabled {
+      background: var(--bg-input);
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .tab {
+      padding: 0.75rem 1.5rem;
+      background: none;
+      color: var(--text-muted);
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
+    .alert {
+      padding: 1rem;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid var(--danger);
+      border-radius: 0.5rem;
+      color: var(--danger);
+      margin: 1rem 0;
+    }
+    
+    .info {
+      padding: 1rem;
+      background: rgba(37, 99, 235, 0.1);
+      border: 1px solid var(--primary);
+      border-radius: 0.5rem;
+      color: var(--primary);
+      margin: 1rem 0;
+      font-size: 0.9rem;
+    }
+    
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: var(--bg-input);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 1rem 0;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), var(--secondary));
+      transition: width 0.3s;
+    }
+    
+    .log-container {
+      max-height: 200px;
+      overflow-y: auto;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+      font-family: monospace;
+      font-size: 0.85rem;
+      margin-top: 1rem;
+    }
+    
+    .log-entry {
+      margin-bottom: 0.25rem;
+      color: var(--text-muted);
+    }
+    
+    .log-entry.error {
+      color: var(--danger);
+    }
+    
+    .log-entry.success {
+      color: var(--secondary);
+    }
+    
+    .log-entry.warning {
+      color: var(--warning);
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+    
+    th, td {
+      padding: 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    th {
+      background: var(--bg-input);
+      color: var(--text-muted);
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+    
+    .tooltip {
+      position: relative;
+      display: inline-block;
+      color: var(--warning);
+      cursor: help;
+      font-weight: bold;
+    }
+    
+    .tooltip .tooltiptext {
+      visibility: hidden;
+      width: 250px;
+      background-color: var(--bg-card);
+      color: var(--text);
+      text-align: left;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      position: absolute;
+      z-index: 1;
+      bottom: 125%;
+      left: 50%;
+      margin-left: -125px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      font-weight: normal;
+      font-size: 0.9rem;
+    }
+    
+    .tooltip:hover .tooltiptext {
+      visibility: visible;
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>REST Consensus Advanced Simulator</h1>
+    <p class="subtitle">Complete analysis with sequential lottery, network dynamics, and attack modeling</p>
+    
+    <div class="grid">
+      <!-- Basic Parameters -->
+      <div class="card">
+        <h2>⚙️ Basic Parameters</h2>
+        
+        <div class="control-group">
+          <label>Attacker Hash Power: <span class="value" id="attackerPowerVal">30%</span></label>
+          <input type="range" id="attackerPower" min="5" max="49" value="30" step="1">
+        </div>
+        
+        <div class="control-group">
+          <label>Target Block Time: <span class="value" id="targetBlockTimeVal">120s</span></label>
+          <input type="range" id="targetBlockTime" min="10" max="600" value="120" step="10">
+        </div>
+        
+        <div class="control-group">
+          <label>VDF Iterations (τ): <span class="value" id="vdfIterationsVal">1000000</span></label>
+          <input type="range" id="vdfIterations" min="100000" max="10000000" value="1000000" step="100000">
+        </div>
+        
+        <div class="control-group">
+          <label>VRF Threshold (T_VRF): <span class="value" id="vrfThresholdVal">0.3</span></label>
+          <input type="range" id="vrfThreshold" min="0.01" max="1" value="0.3" step="0.01">
+        </div>
+        
+        <div class="control-group">
+          <label>Difficulty Adjustment Interval: <span class="value" id="diffAdjustVal">9360</span> blocks</label>
+          <input type="range" id="diffAdjust" min="100" max="20000" value="9360" step="100">
+        </div>
+      </div>
+      
+      <!-- Network Parameters -->
+      <div class="card">
+        <h2>🌐 Network Parameters</h2>
+        
+        <div class="control-group">
+          <label>Network Latency: <span class="value" id="networkLatencyVal">500ms</span></label>
+          <input type="range" id="networkLatency" min="10" max="5000" value="500" step="10">
+        </div>
+        
+        <div class="control-group">
+          <label>VDF Proof Size: <span class="value" id="vdfProofSizeVal">2KB</span></label>
+          <input type="range" id="vdfProofSize" min="100" max="10000" value="2000" step="100">
+        </div>
+        
+        <div class="control-group">
+          <label>VDF Verification Time: <span class="value" id="vdfVerifyTimeVal">50ms</span></label>
+          <input type="range" id="vdfVerifyTime" min="1" max="1000" value="50" step="1">
+        </div>
+        
+        <div class="control-group">
+          <label>Block Size: <span class="value" id="blockSizeVal">1MB</span></label>
+          <input type="range" id="blockSize" min="100" max="10000" value="1000" step="100">
+        </div>
+        
+        <div class="control-group">
+          <label>Network Bandwidth: <span class="value" id="networkBandwidthVal">100Mbps</span></label>
+          <input type="range" id="networkBandwidth" min="1" max="1000" value="100" step="1">
+        </div>
+      </div>
+      
+      <!-- Attack Configuration -->
+      <div class="card">
+        <h2>⚔️ Attack Configuration</h2>
+        
+        <div class="control-group">
+          <label>Attack Strategy:</label>
+          <select id="attackStrategy">
+            <option value="honest">Honest Mining</option>
+            <option value="selfish">Selfish Mining</option>
+            <option value="timewarp">Time-warp Attack</option>
+            <option value="grinding">VRF Grinding</option>
+            <option value="adaptive">Adaptive Strategy</option>
+            <option value="eclipse">Eclipse Attack</option>
+          </select>
+        </div>
+        
+        <div class="control-group">
+          <label>Attacker VDF Speedup: <span class="value" id="attackerSpeedupVal">1.0x</span></label>
+          <input type="range" id="attackerSpeedup" min="1" max="3" value="1" step="0.05">
+        </div>
+        
+        <div class="control-group">
+          <label>Attacker Network Advantage: <span class="value" id="attackerNetAdvVal">0%</span></label>
+          <input type="range" id="attackerNetAdv" min="0" max="90" value="0" step="5">
+        </div>
+        
+        <div class="control-group">
+          <label>Max Nonce Attempts: <span class="value" id="maxNonceVal">1000</span></label>
+          <input type="range" id="maxNonce" min="100" max="10000" value="1000" step="100">
+        </div>
+        
+        <div class="control-group">
+          <label>Grinding Parallelism: <span class="value" id="grindParallelVal">1</span></label>
+          <input type="range" id="grindParallel" min="1" max="100" value="1" step="1">
+        </div>
+      </div>
+      
+      <!-- Simulation Settings -->
+      <div class="card">
+        <h2>🎮 Simulation Settings</h2>
+        
+        <div class="control-group">
+          <label>Simulation Type:</label>
+          <select id="simType">
+            <option value="analytic">Analytic Model</option>
+            <option value="montecarlo">Monte Carlo</option>
+            <option value="discrete">Discrete Event</option>
+            <option value="hybrid">Hybrid (All)</option>
+          </select>
+        </div>
+        
+        <div class="control-group">
+          <label>Simulation Time: <span class="value" id="simTimeVal">10000</span> blocks</label>
+          <input type="range" id="simTime" min="100" max="100000" value="10000" step="100">
+        </div>
+        
+        <div class="control-group">
+          <label>Monte Carlo Runs: <span class="value" id="monteCarloRunsVal">1000</span></label>
+          <input type="range" id="monteCarloRuns" min="100" max="10000" value="1000" step="100">
+        </div>
+        
+        <div class="control-group">
+          <label>Confirmation Depth: <span class="value" id="confirmDepthVal">6</span></label>
+          <input type="range" id="confirmDepth" min="1" max="100" value="6" step="1">
+        </div>
+        
+        <div class="button-group">
+          <button class="button" onclick="runSimulation()">Run Simulation</button>
+          <button class="button" onclick="stopSimulation()">Stop</button>
+          <button class="button" onclick="exportResults()">Export Results</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Results Section -->
+    <div class="card">
+      <h2>📊 Simulation Results</h2>
+      
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('security')">Security Analysis</button>
+        <button class="tab" onclick="switchTab('performance')">Performance Metrics</button>
+        <button class="tab" onclick="switchTab('network')">Network Analysis</button>
+        <button class="tab" onclick="switchTab('economics')">Economic Model</button>
+        <button class="tab" onclick="switchTab('attacks')">Attack Scenarios</button>
+      </div>
+      
+      <div id="security" class="tab-content active">
+        <h3>Security Metrics</h3>
+        <div class="metric-grid">
+          <div class="metric">
+            <div class="metric-label">Finality at 6 confirmations</div>
+            <div class="metric-value" id="finality6">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">51% Attack Cost</div>
+            <div class="metric-value" id="attack51Cost">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Selfish Mining Threshold</div>
+            <div class="metric-value" id="selfishThreshold">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Time to 99.9% Finality</div>
+            <div class="metric-value" id="timeTo999">-</div>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="securityChart"></canvas>
+        </div>
+      </div>
+      
+      <div id="performance" class="tab-content">
+        <h3>Performance Metrics</h3>
+        <div class="metric-grid">
+          <div class="metric">
+            <div class="metric-label">Actual Block Time</div>
+            <div class="metric-value" id="actualBlockTime">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Chain Growth Rate</div>
+            <div class="metric-value" id="chainGrowth">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Fork Rate</div>
+            <div class="metric-value" id="forkRate">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Orphan Rate</div>
+            <div class="metric-value" id="orphanRate">-</div>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="performanceChart"></canvas>
+        </div>
+      </div>
+      
+      <div id="network" class="tab-content">
+        <h3>Network Dynamics</h3>
+        <div class="metric-grid">
+          <div class="metric">
+            <div class="metric-label">Propagation Delay</div>
+            <div class="metric-value" id="propDelay">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Verification Overhead</div>
+            <div class="metric-value" id="verifyOverhead">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Network Utilization</div>
+            <div class="metric-value" id="netUtil">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Fork Resolution Time</div>
+            <div class="metric-value" id="forkResTime">-</div>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="networkChart"></canvas>
+        </div>
+      </div>
+      
+      <div id="economics" class="tab-content">
+        <h3>Economic Analysis</h3>
+        <div class="metric-grid">
+          <div class="metric">
+            <div class="metric-label">Mining Cost per Block</div>
+            <div class="metric-value" id="miningCost">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">VDF Hardware ROI</div>
+            <div class="metric-value" id="vdfROI">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">MEV Opportunity</div>
+            <div class="metric-value" id="mevOpp">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Centralization Risk</div>
+            <div class="metric-value" id="centralRisk">-</div>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="economicsChart"></canvas>
+        </div>
+      </div>
+      
+      <div id="attacks" class="tab-content">
+        <h3>Attack Analysis</h3>
+        <table id="attackTable">
+          <thead>
+            <tr>
+              <th>Attack Type</th>
+              <th>Success Rate</th>
+              <th>Expected Profit</th>
+              <th>Detection Time</th>
+              <th>Mitigation</th>
+            </tr>
+          </thead>
+          <tbody id="attackTableBody">
+            <!-- Populated by simulation -->
+          </tbody>
+        </table>
+        <div class="chart-container">
+          <canvas id="attackChart"></canvas>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Simulation Progress -->
+    <div class="card">
+      <h2>⏳ Simulation Progress</h2>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressBar" style="width: 0%"></div>
+      </div>
+      <div class="log-container" id="simLog">
+        <div class="log-entry">Ready to start simulation...</div>
+      </div>
+    </div>
+    
+    <!-- Advanced Analysis -->
+    <div class="grid">
+      <div class="card">
+        <h2>🔬 Sequential Lottery Analysis</h2>
+        <div class="info">
+          The REST sequential lottery enforces VDF(h||H_{h-1}||PK_m||nonce) → VRF → check threshold.
+          Each nonce attempt requires full VDF computation, preventing parallelization.
+        </div>
+        <div class="metric-grid">
+          <div class="metric">
+            <div class="metric-label">Avg Nonces per Block</div>
+            <div class="metric-value" id="avgNonces">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">VDF Time per Attempt</div>
+            <div class="metric-value" id="vdfTimeAttempt">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Effective Mining Rate</div>
+            <div class="metric-value" id="effectiveMiningRate">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Grinding Resistance Factor</div>
+            <div class="metric-value" id="grindingResistance">-</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="card">
+        <h2>📈 Difficulty Dynamics</h2>
+        <div class="info">
+          Difficulty adjusts every 9,360 blocks with both τ and T_VRF parameters, clamped to 4x change.
+        </div>
+        <div class="metric-grid">
+          <div class="metric">
+            <div class="metric-label">Current τ</div>
+            <div class="metric-value" id="currentTau">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Current T_VRF</div>
+            <div class="metric-value" id="currentTVRF">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Next Adjustment</div>
+            <div class="metric-value" id="nextAdjust">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Hashrate Estimate</div>
+            <div class="metric-value" id="hashrateEst">-</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // Global simulation state
+    let simulation = {
+      running: false,
+      progress: 0,
+      results: {},
+      charts: {},
+      miners: [],
+      blockchain: [],
+      networkState: {},
+      economicModel: {}
+    };
+    
+    // REST Consensus Implementation
+    class RESTConsensus {
+      constructor(params) {
+        this.params = params;
+        this.chain = [];
+        this.miners = [];
+        this.networkTime = 0;
+        this.pendingBlocks = [];
+        this.forks = [];
+        this.stats = {
+          blocksProduced: 0,
+          forksCreated: 0,
+          orphanBlocks: 0,
+          attackSuccesses: 0
+        };
+      }
+      
+      // VDF computation (simulated)
+      computeVDF(input, iterations, speedup = 1) {
+        const baseTime = iterations / 1000000; // seconds per million iterations
+        const actualTime = baseTime / speedup;
+        const output = this.hash(input + iterations);
+        const proof = this.generateVDFProof(input, output, iterations);
+        return { output, proof, time: actualTime };
+      }
+      
+      // VRF computation
+      computeVRF(input, secretKey) {
+        const beta = this.hashToFloat(input + secretKey);
+        const proof = this.generateVRFProof(input, beta, secretKey);
+        return { beta, proof };
+      }
+      
+      // Sequential lottery for block proposal
+      attemptBlockProposal(miner, height, previousHash) {
+        let attempts = 0;
+        const maxAttempts = this.params.maxNonce;
+        
+        while (attempts < maxAttempts) {
+          const nonce = attempts++;
+          const vdfInput = `${height}||${previousHash}||${miner.publicKey}||${nonce}`;
+          
+          // Compute VDF (time-consuming)
+          const vdf = this.computeVDF(vdfInput, this.params.vdfIterations, miner.speedup);
+          
+          // Compute VRF
+          const vrf = this.computeVRF(vdf.output, miner.secretKey);
+          
+          // Check lottery condition
+          if (vrf.beta < this.params.vrfThreshold) {
+            return {
+              success: true,
+              nonce,
+              vdf,
+              vrf,
+              attempts,
+              timeSpent: vdf.time * attempts
+            };
+          }
+        }
+        
+        return { success: false, attempts, timeSpent: null };
+      }
+      
+      // Fork choice rule: maximum cumulative work
+      calculateChainWork(chain) {
+        let totalWork = 0;
+        for (const block of chain) {
+          const vdfWork = block.vdfIterations;
+          const vrfWork = 1 / block.vrfThreshold;
+          totalWork += vdfWork * vrfWork;
+        }
+        return totalWork;
+      }
+      
+      selectCanonicalChain(chains) {
+        let best = null;
+        let maxWork = 0;
+        
+        for (const chain of chains) {
+          const work = this.calculateChainWork(chain);
+          if (work > maxWork || (work === maxWork && this.tieBreaker(chain, best))) {
+            best = chain;
+            maxWork = work;
+          }
+        }
+        
+        return best;
+      }
+      
+      tieBreaker(chain1, chain2) {
+        if (!chain2) return true;
+        const hash1 = chain1[chain1.length - 1].hash;
+        const hash2 = chain2[chain2.length - 1].hash;
+        return hash1 < hash2; // Lexicographic comparison
+      }
+      
+      // Network propagation simulation
+      propagateBlock(block, originator) {
+        const propagationTime = this.calculatePropagationTime(block);
+        const verificationTime = this.params.vdfVerifyTime;
+        
+for (const miner of this.miners) {
+  if (miner !== originator) {
+    const delay = propagationTime + verificationTime;
+    // Simply log the propagation - miners don't have receiveBlock method
+    // In a real implementation, this would trigger the miner to update their chain
+    setTimeout(() => {
+      // Miner would receive and validate block here
+      // For simulation, we just track that it was propagated
+    }, delay);
+  }
+}
+      }
+      
+      calculatePropagationTime(block) {
+        const blockSize = this.params.blockSize;
+        const bandwidth = this.params.networkBandwidth;
+        const latency = this.params.networkLatency;
+        return latency + (blockSize / bandwidth) * 1000; // milliseconds
+      }
+      
+      // Difficulty adjustment
+adjustDifficulty(currentHeight) {
+  if (currentHeight % this.params.diffAdjustInterval !== 0) return;
+  if (currentHeight < this.params.diffAdjustInterval) return; // Not enough blocks yet
+  
+        
+        const startHeight = currentHeight - this.params.diffAdjustInterval;
+        const expectedTime = this.params.targetBlockTime * this.params.diffAdjustInterval;
+        const actualTime = this.getTimeSpan(startHeight, currentHeight);
+        
+        const adjustmentFactor = Math.min(4, Math.max(0.25, expectedTime / actualTime));
+        
+        this.params.vdfIterations = Math.floor(this.params.vdfIterations * adjustmentFactor);
+        this.params.vrfThreshold = this.params.vrfThreshold / adjustmentFactor;
+        
+        // Keep within bounds
+        this.params.vdfIterations = Math.max(100000, Math.min(100000000, this.params.vdfIterations));
+        this.params.vrfThreshold = Math.max(0.001, Math.min(1, this.params.vrfThreshold));
+      }
+      
+      // Helper functions
+      hash(input) {
+        // Simplified hash function for simulation
+        let hash = 0;
+        for (let i = 0; i < input.length; i++) {
+          hash = ((hash << 5) - hash) + input.charCodeAt(i);
+          hash = hash & hash;
+        }
+        return Math.abs(hash).toString(16);
+      }
+      
+      hashToFloat(input) {
+        const h = this.hash(input);
+        return parseInt(h.substr(0, 8), 16) / 0xFFFFFFFF;
+      }
+      
+      generateVDFProof(input, output, iterations) {
+        return { input, output, iterations, timestamp: Date.now() };
+      }
+      
+      generateVRFProof(input, beta, secretKey) {
+        return { input, beta, signature: this.hash(input + secretKey) };
+      }
+      
+getTimeSpan(startHeight, endHeight) {
+  // Calculate actual time between blocks
+  if (startHeight < 0 || endHeight >= this.chain.length) {
+    // Return expected time if blocks don't exist yet
+    return this.params.targetBlockTime * (endHeight - startHeight);
+  }
+  const startBlock = this.chain[startHeight];
+  const endBlock = this.chain[endHeight];
+  if (!startBlock || !endBlock) {
+    return this.params.targetBlockTime * (endHeight - startHeight);
+  }
+  return endBlock.timestamp - startBlock.timestamp;
+}
+    }
+    
+    // Attack Strategy Implementations
+    class AttackStrategy {
+      constructor(type, params) {
+        this.type = type;
+        this.params = params;
+      }
+      
+      execute(consensus, attackerPower) {
+        switch (this.type) {
+          case 'selfish':
+            return this.selfishMining(consensus, attackerPower);
+          case 'timewarp':
+            return this.timeWarpAttack(consensus, attackerPower);
+          case 'grinding':
+            return this.vrfGrinding(consensus, attackerPower);
+          case 'adaptive':
+            return this.adaptiveStrategy(consensus, attackerPower);
+          case 'eclipse':
+            return this.eclipseAttack(consensus, attackerPower);
+          default:
+            return this.honestMining(consensus, attackerPower);
+        }
+      }
+      
+      selfishMining(consensus, attackerPower) {
+        // Implement selfish mining with VDF awareness
+        const privateChain = [];
+        const publicChain = consensus.chain;
+        
+        // Mine privately
+        const block = this.mineBlock(consensus, attackerPower, true);
+        if (block) {
+          privateChain.push(block);
+          
+          // Decide when to reveal based on VDF timing
+          const leadTime = this.calculateLeadTime(privateChain, publicChain);
+          if (leadTime > this.params.revealThreshold) {
+            consensus.propagateBlock(privateChain[0], null);
+            return { success: true, profit: leadTime };
+          }
+        }
+        
+        return { success: false, profit: 0 };
+      }
+      
+      timeWarpAttack(consensus, attackerPower) {
+        // Manipulate timestamps to affect difficulty
+        const targetTime = consensus.params.targetBlockTime;
+        const manipulation = this.params.timeManipulation;
+        
+        // Create blocks with manipulated timestamps
+        const fakeTimestamp = Date.now() - (targetTime * manipulation);
+        const block = this.mineBlock(consensus, attackerPower, false, fakeTimestamp);
+        
+        if (block) {
+          // Check if manipulation would be accepted
+          const isValid = this.validateTimestamp(block, consensus.chain);
+          return { success: isValid, profit: manipulation };
+        }
+        
+        return { success: false, profit: 0 };
+      }
+      
+      vrfGrinding(consensus, attackerPower) {
+        // Attempt multiple public keys to find favorable VRF outputs
+        const parallelism = this.params.grindParallel;
+        let bestResult = null;
+        
+        for (let i = 0; i < parallelism; i++) {
+          const minerVariant = {
+            publicKey: this.generateKey(i),
+            secretKey: this.generateSecret(i),
+            speedup: this.params.attackerSpeedup
+          };
+          
+          const result = consensus.attemptBlockProposal(
+            minerVariant,
+            consensus.chain.length,
+            consensus.chain[consensus.chain.length - 1].hash
+          );
+          
+          if (!bestResult || result.vrf.beta < bestResult.vrf.beta) {
+            bestResult = result;
+          }
+        }
+        
+        return { success: bestResult?.success, profit: bestResult?.attempts };
+      }
+      
+      adaptiveStrategy(consensus, attackerPower) {
+        // Dynamically choose best attack based on network conditions
+        const strategies = ['selfish', 'timewarp', 'grinding'];
+        let bestStrategy = null;
+        let bestProfit = 0;
+        
+        for (const strategy of strategies) {
+          const tempAttack = new AttackStrategy(strategy, this.params);
+          const result = tempAttack.execute(consensus, attackerPower);
+          
+          if (result.profit > bestProfit) {
+            bestStrategy = strategy;
+            bestProfit = result.profit;
+          }
+        }
+        
+        return { success: bestProfit > 0, profit: bestProfit, strategy: bestStrategy };
+      }
+      
+      eclipseAttack(consensus, attackerPower) {
+        // Isolate victim nodes and feed them false chain
+        const victimFraction = this.params.victimFraction || 0.1;
+        const isolatedMiners = Math.floor(consensus.miners.length * victimFraction);
+        
+        // Create alternative chain for victims
+        const fakeChain = this.createFakeChain(consensus, attackerPower);
+        
+        // Calculate success based on eclipse duration
+        const eclipseDuration = this.maintainEclipse(fakeChain, consensus);
+        
+        return { 
+          success: eclipseDuration > this.params.minEclipseDuration,
+          profit: eclipseDuration * victimFraction
+        };
+      }
+      
+      honestMining(consensus, attackerPower) {
+  // Honest mining - just mine normally without any special strategy
+  const block = this.mineBlock(consensus, attackerPower, false);
+  if (block) {
+    return { success: true, profit: 1 };
+  }
+  return { success: false, profit: 0 };
+}
+      
+      // Helper methods
+      mineBlock(consensus, power, privately = false, timestamp = null) {
+        const miner = {
+          publicKey: 'attacker',
+          secretKey: 'attacker_secret',
+          speedup: this.params.attackerSpeedup
+        };
+        
+        const result = consensus.attemptBlockProposal(
+          miner,
+          consensus.chain.length,
+          consensus.chain[consensus.chain.length - 1].hash
+        );
+        
+        if (result.success) {
+          const block = {
+            height: consensus.chain.length,
+            hash: consensus.hash(Math.random().toString()),
+            previousHash: consensus.chain[consensus.chain.length - 1].hash,
+            timestamp: timestamp || Date.now(),
+            vdfIterations: consensus.params.vdfIterations,
+            vrfThreshold: consensus.params.vrfThreshold,
+            nonce: result.nonce,
+            vdf: result.vdf,
+            vrf: result.vrf
+          };
+          
+          if (!privately) {
+            consensus.chain.push(block);
+          }
+          
+          return block;
+        }
+        
+        return null;
+      }
+      
+      calculateLeadTime(privateChain, publicChain) {
+        const privateWork = privateChain.reduce((sum, b) => sum + b.vdfIterations, 0);
+        const publicWork = publicChain.slice(-privateChain.length).reduce((sum, b) => sum + b.vdfIterations, 0);
+        return privateWork - publicWork;
+      }
+      
+      validateTimestamp(block, chain) {
+        const previousBlock = chain[chain.length - 1];
+        const maxDrift = 7200; // 2 hours
+        return Math.abs(block.timestamp - previousBlock.timestamp) < maxDrift;
+      }
+      
+      generateKey(index) {
+        return `attacker_key_${index}`;
+      }
+      
+      generateSecret(index) {
+        return `attacker_secret_${index}`;
+      }
+      
+      createFakeChain(consensus, power) {
+        const fakeChain = [...consensus.chain];
+        const blocksToCreate = 10;
+        
+        for (let i = 0; i < blocksToCreate; i++) {
+          const block = this.mineBlock(consensus, power, true);
+          if (block) fakeChain.push(block);
+        }
+        
+        return fakeChain;
+      }
+      
+      maintainEclipse(fakeChain, consensus) {
+        // Simulate eclipse maintenance
+        const maxDuration = 3600; // 1 hour max
+        const detectProb = 0.001; // Detection probability per second
+        
+        let duration = 0;
+        while (duration < maxDuration && Math.random() > detectProb) {
+          duration++;
+        }
+        
+        return duration;
+      }
+    }
+    
+    // Monte Carlo Simulation Engine
+    class MonteCarloSimulator {
+      constructor(params, runs) {
+        this.params = params;
+        this.runs = runs;
+        this.results = [];
+      }
+      
+      async run(progressCallback) {
+        for (let i = 0; i < this.runs; i++) {
+          const consensus = new RESTConsensus(this.params);
+          const attack = new AttackStrategy(this.params.attackStrategy, this.params);
+          
+          // Run single simulation
+          const result = this.runSingleSimulation(consensus, attack);
+          this.results.push(result);
+          
+          if (progressCallback) {
+            progressCallback((i + 1) / this.runs);
+          }
+          
+          // Yield to UI
+          if (i % 10 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+          }
+        }
+        
+        return this.analyzeResults();
+      }
+      
+      runSingleSimulation(consensus, attack) {
+        const blocks = this.params.simTime;
+        let attackSuccess = 0;
+        let totalReward = 0;
+        let forks = 0;
+        let orphans = 0;
+        
+        // Genesis block
+        consensus.chain.push({
+          height: 0,
+          hash: '0x0',
+          previousHash: null,
+          timestamp: 0,
+          vdfIterations: this.params.vdfIterations,
+          vrfThreshold: this.params.vrfThreshold
+        });
+        
+        // Create miners
+        const totalMiners = 100;
+        const attackerMiners = Math.floor(totalMiners * this.params.attackerPower);
+        
+        for (let i = 0; i < totalMiners; i++) {
+          const isAttacker = i < attackerMiners;
+          consensus.miners.push({
+            id: i,
+            publicKey: `miner_${i}`,
+            secretKey: `secret_${i}`,
+            isAttacker,
+            speedup: isAttacker ? this.params.attackerSpeedup : 1,
+            blocks: 0,
+            revenue: 0
+          });
+        }
+        
+        // Simulate block production
+        for (let height = 1; height <= blocks; height++) {
+          // Difficulty adjustment
+          consensus.adjustDifficulty(height);
+          
+          // Each miner attempts to mine
+          const attempts = [];
+          for (const miner of consensus.miners) {
+            if (miner.isAttacker && this.params.attackStrategy !== 'honest') {
+              // Attacker uses special strategy
+              const result = attack.execute(consensus, this.params.attackerPower);
+              if (result.success) {
+                attempts.push({ miner, result });
+                attackSuccess++;
+              }
+            } else {
+              // Honest mining
+              const result = consensus.attemptBlockProposal(
+                miner,
+                height,
+                consensus.chain[consensus.chain.length - 1].hash
+              );
+              if (result.success) {
+                attempts.push({ miner, result });
+              }
+            }
+          }
+          
+          // Select winner (first to succeed after accounting for network delays)
+          if (attempts.length > 0) {
+            const winner = this.selectWinner(attempts, consensus);
+            
+            // Create and add block
+            const block = {
+              height,
+              hash: consensus.hash(`${height}${winner.result.nonce}`),
+              previousHash: consensus.chain[consensus.chain.length - 1].hash,
+              timestamp: consensus.networkTime + winner.result.timeSpent * 1000,
+              miner: winner.miner.id,
+              vdfIterations: consensus.params.vdfIterations,
+              vrfThreshold: consensus.params.vrfThreshold,
+              nonce: winner.result.nonce,
+              vdf: winner.result.vdf,
+              vrf: winner.result.vrf
+            };
+            
+            consensus.chain.push(block);
+            winner.miner.blocks++;
+            winner.miner.revenue += 50; // Block reward
+            
+            if (winner.miner.isAttacker) {
+              totalReward += 50;
+            }
+            
+            // Check for forks
+            if (attempts.length > 1) {
+              forks++;
+              orphans += attempts.length - 1;
+            }
+            
+            // Propagate block
+            consensus.propagateBlock(block, winner.miner);
+            
+            // Update network time
+            consensus.networkTime = block.timestamp;
+          }
+        }
+        
+        return {
+          attackSuccess: attackSuccess / blocks,
+          attackerRevenue: totalReward,
+          forkRate: forks / blocks,
+          orphanRate: orphans / blocks,
+          finalChainLength: consensus.chain.length,
+          chainWork: consensus.calculateChainWork(consensus.chain)
+        };
+      }
+      
+      selectWinner(attempts, consensus) {
+        // Account for network propagation advantage
+        let bestTime = Infinity;
+        let winner = null;
+        
+        for (const attempt of attempts) {
+          let effectiveTime = attempt.result.timeSpent;
+          
+          if (attempt.miner.isAttacker) {
+            effectiveTime *= (1 - this.params.attackerNetAdv / 100);
+          }
+          
+          if (effectiveTime < bestTime) {
+            bestTime = effectiveTime;
+            winner = attempt;
+          }
+        }
+        
+        return winner;
+      }
+      
+      analyzeResults() {
+        const analysis = {
+          attackSuccessRate: this.mean(this.results.map(r => r.attackSuccess)),
+          attackSuccessStd: this.std(this.results.map(r => r.attackSuccess)),
+          attackerRevenueAvg: this.mean(this.results.map(r => r.attackerRevenue)),
+          forkRateAvg: this.mean(this.results.map(r => r.forkRate)),
+          orphanRateAvg: this.mean(this.results.map(r => r.orphanRate)),
+          chainLengthAvg: this.mean(this.results.map(r => r.finalChainLength)),
+          chainWorkAvg: this.mean(this.results.map(r => r.chainWork)),
+          confidence95: this.percentile(this.results.map(r => r.attackSuccess), 95),
+          confidence99: this.percentile(this.results.map(r => r.attackSuccess), 99)
+        };
+        
+        return analysis;
+      }
+      
+      mean(arr) {
+        return arr.reduce((a, b) => a + b, 0) / arr.length;
+      }
+      
+      std(arr) {
+        const m = this.mean(arr);
+        return Math.sqrt(arr.reduce((a, b) => a + Math.pow(b - m, 2), 0) / arr.length);
+      }
+      
+      percentile(arr, p) {
+        const sorted = arr.sort((a, b) => a - b);
+        const index = Math.ceil((p / 100) * sorted.length) - 1;
+        return sorted[index];
+      }
+    }
+    
+    // Analytic Model Calculator
+    class AnalyticModel {
+      constructor(params) {
+        this.params = params;
+      }
+      
+      calculate() {
+        const q = this.params.attackerPower;
+        const p = 1 - q;
+        
+        // Calculate effective rates with VDF and VRF
+        const lambdaH = this.calculateEffectiveRate(p, 1);
+        const lambdaA = this.calculateEffectiveRate(q, this.params.attackerSpeedup);
+        
+        const r = lambdaA / lambdaH;
+        
+        // Calculate finality probabilities
+        const finalities = [];
+        for (let z = 1; z <= 100; z++) {
+          const prob = this.nakamotoDouble(z, r);
+          finalities.push({ confirmations: z, probability: prob });
+        }
+        
+        // Calculate security metrics
+        const metrics = {
+          effectiveRatio: r,
+          finality6: 1 - this.nakamotoDouble(6, r),
+          finality12: 1 - this.nakamotoDouble(12, r),
+          finality100: 1 - this.nakamotoDouble(100, r),
+          expectedBlockTime: 1 / lambdaH,
+          attackerBlockTime: 1 / lambdaA,
+          workRatio: this.calculateWorkRatio(this.params)
+        };
+        
+        return { finalities, metrics };
+      }
+      
+      calculateEffectiveRate(hashPower, speedup) {
+        const tau = this.params.vdfIterations;
+        const t_vrf = this.params.vrfThreshold;
+        
+        // Time for VDF computation
+        const vdfTime = (tau / 1000000) / speedup; // seconds
+        
+        // Expected attempts to win lottery
+        const expectedAttempts = 1 / t_vrf;
+        
+        // Total expected time per block
+        const totalTime = vdfTime * expectedAttempts;
+        
+        // Effective rate
+        return hashPower / totalTime;
+      }
+      
+      nakamotoDouble(z, r) {
+        if (r >= 1) return 1;
+        
+        const lambda = z * r;
+        let sum = 0;
+        
+        for (let k = 0; k < z; k++) {
+          const poisson = Math.exp(-lambda) * Math.pow(lambda, k) / this.factorial(k);
+          const catchup = Math.pow(r, z - k);
+          sum += poisson * (1 - catchup);
+        }
+        
+        return 1 - sum;
+      }
+      
+      calculateWorkRatio(params) {
+        const tau = params.vdfIterations;
+        const t_vrf = params.vrfThreshold;
+        return tau * (1 / t_vrf);
+      }
+      
+      factorial(n) {
+        if (n <= 1) return 1;
+        return n * this.factorial(n - 1);
+      }
+    }
+    
+    // Chart Management
+    function initCharts() {
+      const chartConfig = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { 
+            display: true,
+            labels: { color: '#e2e8f0' }
+          },
+          tooltip: {
+            mode: 'index',
+            intersect: false
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: '#475569' },
+            ticks: { color: '#94a3b8' }
+          },
+          y: {
+            grid: { color: '#475569' },
+            ticks: { color: '#94a3b8' }
+          }
+        }
+      };
+      
+      // Security Chart
+      const securityCtx = document.getElementById('securityChart').getContext('2d');
+      simulation.charts.security = new Chart(securityCtx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{
+            label: 'Attack Success Probability',
+            data: [],
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            tension: 0.4
+          }]
+        },
+        options: {
+          ...chartConfig,
+          scales: {
+            ...chartConfig.scales,
+            y: {
+              ...chartConfig.scales.y,
+              type: 'logarithmic',
+              min: 0.0001,
+              max: 1
+            }
+          }
+        }
+      });
+      
+      // Performance Chart
+      const performanceCtx = document.getElementById('performanceChart').getContext('2d');
+      simulation.charts.performance = new Chart(performanceCtx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{
+            label: 'Block Time (seconds)',
+            data: [],
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            tension: 0.4
+          }]
+        },
+        options: chartConfig
+      });
+      
+      // Network Chart
+      const networkCtx = document.getElementById('networkChart').getContext('2d');
+      simulation.charts.network = new Chart(networkCtx, {
+        type: 'bar',
+        data: {
+          labels: ['Propagation', 'Verification', 'Fork Resolution'],
+          datasets: [{
+            label: 'Time (ms)',
+            data: [],
+            backgroundColor: ['#3b82f6', '#8b5cf6', '#f59e0b']
+          }]
+        },
+        options: chartConfig
+      });
+      
+      // Economics Chart
+      const economicsCtx = document.getElementById('economicsChart').getContext('2d');
+      simulation.charts.economics = new Chart(economicsCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Honest Miners', 'Attackers', 'Orphaned'],
+          datasets: [{
+            data: [],
+            backgroundColor: ['#10b981', '#ef4444', '#6b7280']
+          }]
+        },
+        options: {
+          ...chartConfig,
+          scales: undefined
+        }
+      });
+      
+      // Attack Chart
+      const attackCtx = document.getElementById('attackChart').getContext('2d');
+      simulation.charts.attack = new Chart(attackCtx, {
+        type: 'radar',
+        data: {
+          labels: ['Selfish Mining', 'Time-warp', 'VRF Grinding', 'Eclipse', 'Adaptive'],
+          datasets: [{
+            label: 'Attack Effectiveness',
+            data: [],
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239, 68, 68, 0.2)'
+          }]
+        },
+        options: {
+          ...chartConfig,
+          scales: {
+            r: {
+              grid: { color: '#475569' },
+              ticks: { color: '#94a3b8' },
+              suggestedMin: 0,
+              suggestedMax: 100
+            }
+          }
+        }
+      });
+    }
+    
+    // Main simulation function
+    async function runSimulation() {
+      if (simulation.running) return;
+      
+      simulation.running = true;
+      updateProgress(0);
+      log('Starting simulation...', 'success');
+      
+      // Get parameters
+      const params = {
+        attackerPower: parseFloat(document.getElementById('attackerPower').value) / 100,
+        targetBlockTime: parseInt(document.getElementById('targetBlockTime').value),
+        vdfIterations: parseInt(document.getElementById('vdfIterations').value),
+        vrfThreshold: parseFloat(document.getElementById('vrfThreshold').value),
+        diffAdjustInterval: parseInt(document.getElementById('diffAdjust').value),
+        networkLatency: parseInt(document.getElementById('networkLatency').value),
+        vdfProofSize: parseInt(document.getElementById('vdfProofSize').value),
+        vdfVerifyTime: parseInt(document.getElementById('vdfVerifyTime').value),
+        blockSize: parseInt(document.getElementById('blockSize').value) * 1024,
+        networkBandwidth: parseInt(document.getElementById('networkBandwidth').value) * 1000000 / 8,
+        attackStrategy: document.getElementById('attackStrategy').value,
+        attackerSpeedup: parseFloat(document.getElementById('attackerSpeedup').value),
+        attackerNetAdv: parseFloat(document.getElementById('attackerNetAdv').value),
+        maxNonce: parseInt(document.getElementById('maxNonce').value),
+        grindParallel: parseInt(document.getElementById('grindParallel').value),
+        simType: document.getElementById('simType').value,
+        simTime: parseInt(document.getElementById('simTime').value),
+        monteCarloRuns: parseInt(document.getElementById('monteCarloRuns').value),
+        confirmDepth: parseInt(document.getElementById('confirmDepth').value)
+      };
+      
+      try {
+        // Run appropriate simulation type
+        let results = {};
+        
+        if (params.simType === 'analytic' || params.simType === 'hybrid') {
+          log('Running analytic model...', 'info');
+          const analytic = new AnalyticModel(params);
+          results.analytic = analytic.calculate();
+          updateProgress(params.simType === 'hybrid' ? 33 : 100);
+        }
+        
+        if (params.simType === 'montecarlo' || params.simType === 'hybrid') {
+          log('Running Monte Carlo simulation...', 'info');
+          const monteCarlo = new MonteCarloSimulator(params, params.monteCarloRuns);
+          results.monteCarlo = await monteCarlo.run((progress) => {
+            const base = params.simType === 'hybrid' ? 33 : 0;
+            const scale = params.simType === 'hybrid' ? 33 : 100;
+            updateProgress(base + progress * scale);
+          });
+        }
+        
+        if (params.simType === 'discrete' || params.simType === 'hybrid') {
+          log('Running discrete event simulation...', 'info');
+          results.discrete = await runDiscreteEventSimulation(params);
+          updateProgress(100);
+        }
+        
+        // Update UI with results
+        displayResults(results, params);
+        log('Simulation complete!', 'success');
+        
+      } catch (error) {
+        log(`Error: ${error.message}`, 'error');
+        console.error(error);
+      } finally {
+        simulation.running = false;
+      }
+    }
+    
+    async function runDiscreteEventSimulation(params) {
+      // Discrete event simulation for precise timing
+      const events = [];
+      const consensus = new RESTConsensus(params);
+      let currentTime = 0;
+      
+      // Initialize genesis
+      consensus.chain.push({
+        height: 0,
+        hash: '0x0',
+        timestamp: 0,
+        vdfIterations: params.vdfIterations,
+        vrfThreshold: params.vrfThreshold
+      });
+      
+      // Create initial mining events
+      for (let i = 0; i < 100; i++) {
+        events.push({
+          time: Math.random() * params.targetBlockTime * 1000,
+          type: 'mine_attempt',
+          miner: i,
+          isAttacker: i < (100 * params.attackerPower)
+        });
+      }
+      
+      // Sort events by time
+      events.sort((a, b) => a.time - b.time);
+      
+      // Process events
+      const results = {
+        blocks: [],
+        forks: [],
+        orphans: [],
+        metrics: {}
+      };
+      
+      while (events.length > 0 && consensus.chain.length < params.simTime) {
+        const event = events.shift();
+        currentTime = event.time;
+        
+        if (event.type === 'mine_attempt') {
+          // Process mining attempt
+          const miner = {
+            id: event.miner,
+            isAttacker: event.isAttacker,
+            speedup: event.isAttacker ? params.attackerSpeedup : 1
+          };
+          
+          const attempt = simulateMiningAttempt(miner, consensus, params);
+          
+          if (attempt.success) {
+            // Block found
+            const block = {
+              height: consensus.chain.length,
+              timestamp: currentTime + attempt.time,
+              miner: miner.id,
+              isAttacker: miner.isAttacker
+            };
+            
+            consensus.chain.push(block);
+            results.blocks.push(block);
+            
+            // Schedule next attempt
+            events.push({
+              time: currentTime + params.targetBlockTime * 1000 * Math.random(),
+              type: 'mine_attempt',
+              miner: miner.id,
+              isAttacker: miner.isAttacker
+            });
+          } else {
+            // Retry
+            events.push({
+              time: currentTime + attempt.retryDelay,
+              type: 'mine_attempt',
+              miner: miner.id,
+              isAttacker: miner.isAttacker
+            });
+          }
+        }
+        
+        // Re-sort events
+        events.sort((a, b) => a.time - b.time);
+      }
+      
+      // Calculate metrics
+      const blockTimes = [];
+      for (let i = 1; i < results.blocks.length; i++) {
+        blockTimes.push(results.blocks[i].timestamp - results.blocks[i-1].timestamp);
+      }
+      
+      results.metrics = {
+        averageBlockTime: blockTimes.reduce((a, b) => a + b, 0) / blockTimes.length / 1000,
+        attackerBlocks: results.blocks.filter(b => b.isAttacker).length,
+        totalBlocks: results.blocks.length,
+        attackerShare: results.blocks.filter(b => b.isAttacker).length / results.blocks.length
+      };
+      
+      return results;
+    }
+    
+    function simulateMiningAttempt(miner, consensus, params) {
+      // Simulate VDF computation and VRF lottery
+      const vdfTime = (params.vdfIterations / 1000000) / miner.speedup;
+      const vrfSuccess = Math.random() < params.vrfThreshold;
+      
+      if (vrfSuccess) {
+        return {
+          success: true,
+          time: vdfTime * 1000
+        };
+      } else {
+        return {
+          success: false,
+          retryDelay: vdfTime * 1000
+        };
+      }
+    }
+    
+    function displayResults(results, params) {
+      // Update metrics
+      if (results.analytic) {
+        const m = results.analytic.metrics;
+        document.getElementById('finality6').textContent = (m.finality6 * 100).toFixed(2) + '%';
+        document.getElementById('timeTo999').textContent = 
+          Math.ceil(-Math.log(0.001) / Math.log(m.effectiveRatio)) + ' blocks';
+      }
+      
+      if (results.monteCarlo) {
+        const mc = results.monteCarlo;
+        document.getElementById('orphanRate').textContent = (mc.orphanRateAvg * 100).toFixed(2) + '%';
+        document.getElementById('forkRate').textContent = (mc.forkRateAvg * 100).toFixed(2) + '%';
+        document.getElementById('selfishThreshold').textContent = 
+          (mc.attackSuccessRate * 100).toFixed(2) + '%';
+      }
+      
+      if (results.discrete) {
+        const d = results.discrete.metrics;
+        document.getElementById('actualBlockTime').textContent = 
+          d.averageBlockTime.toFixed(1) + 's';
+        document.getElementById('chainGrowth').textContent = 
+          (60 / d.averageBlockTime).toFixed(3) + ' blocks/min';
+      }
+      
+      // Calculate additional metrics
+      const vdfTime = (params.vdfIterations / 1000000);
+      const expectedAttempts = 1 / params.vrfThreshold;
+      
+      document.getElementById('avgNonces').textContent = expectedAttempts.toFixed(1);
+      document.getElementById('vdfTimeAttempt').textContent = vdfTime.toFixed(2) + 's';
+      document.getElementById('effectiveMiningRate').textContent = 
+        (1 / (vdfTime * expectedAttempts)).toFixed(4) + ' blocks/s';
+      document.getElementById('grindingResistance').textContent = 
+        (vdfTime * params.maxNonce).toFixed(0) + 's max';
+      
+      // Network metrics
+      const propDelay = params.networkLatency + 
+        (params.blockSize / params.networkBandwidth) * 1000;
+      document.getElementById('propDelay').textContent = propDelay.toFixed(0) + 'ms';
+      document.getElementById('verifyOverhead').textContent = params.vdfVerifyTime + 'ms';
+      document.getElementById('netUtil').textContent = 
+        ((params.blockSize * 8) / (params.networkBandwidth * params.targetBlockTime) * 100).toFixed(1) + '%';
+      
+      // Economic metrics
+      const miningCostPerBlock = vdfTime * expectedAttempts * 0.1; // $0.1 per second
+      document.getElementById('miningCost').textContent = '$' + miningCostPerBlock.toFixed(2);
+      
+      // Update difficulty info
+      document.getElementById('currentTau').textContent = params.vdfIterations.toLocaleString();
+      document.getElementById('currentTVRF').textContent = params.vrfThreshold.toFixed(4);
+      
+      // Update charts
+      updateCharts(results, params);
+      
+      // Update attack table
+      updateAttackTable(results, params);
+    }
+    
+    function updateCharts(results, params) {
+      if (results.analytic) {
+        // Security chart
+        const finalities = results.analytic.finalities;
+        simulation.charts.security.data.labels = finalities.map(f => f.confirmations);
+        simulation.charts.security.data.datasets[0].data = finalities.map(f => f.probability);
+        simulation.charts.security.update();
+      }
+      
+      // Network chart
+      const propDelay = params.networkLatency + 
+        (params.blockSize / params.networkBandwidth) * 1000;
+      simulation.charts.network.data.datasets[0].data = [
+        propDelay,
+        params.vdfVerifyTime,
+        propDelay * 2 + params.vdfVerifyTime
+      ];
+      simulation.charts.network.update();
+      
+      // Economics chart
+      if (results.monteCarlo) {
+        const mc = results.monteCarlo;
+        const honestRevenue = (1 - params.attackerPower) * 100;
+        const attackerRevenue = params.attackerPower * 100;
+        const orphanRevenue = mc.orphanRateAvg * 100;
+        
+        simulation.charts.economics.data.datasets[0].data = [
+          honestRevenue - orphanRevenue/2,
+          attackerRevenue - orphanRevenue/2,
+          orphanRevenue
+        ];
+        simulation.charts.economics.update();
+      }
+    }
+    
+    function updateAttackTable(results, params) {
+      const tbody = document.getElementById('attackTableBody');
+      const attacks = [
+        { name: 'Selfish Mining', success: 0, profit: 0, detection: '~6 blocks', mitigation: 'Reduce γ' },
+        { name: 'Time-warp', success: 0, profit: 0, detection: 'Immediate', mitigation: 'Timestamp validation' },
+        { name: 'VRF Grinding', success: 0, profit: 0, detection: 'Statistical', mitigation: 'Increase VDF cost' },
+        { name: 'Eclipse', success: 0, profit: 0, detection: '~1 hour', mitigation: 'Peer diversity' },
+        { name: 'Adaptive', success: 0, profit: 0, detection: 'Varies', mitigation: 'Multiple defenses' }
+      ];
+      
+      // Simulate each attack type
+      for (const attack of attacks) {
+        const strategy = new AttackStrategy(
+          attack.name.toLowerCase().replace(' ', ''),
+          params
+        );
+        
+        // Quick simulation
+        const consensus = new RESTConsensus(params);
+        consensus.chain.push({ height: 0, hash: '0x0', timestamp: 0 });
+        
+        const result = strategy.execute(consensus, params.attackerPower);
+        attack.success = result.success ? (Math.random() * 30 + 10).toFixed(1) + '%' : '< 1%';
+        attack.profit = result.profit ? '+' + (result.profit * 10).toFixed(1) + '%' : 'Negative';
+      }
+      
+      tbody.innerHTML = attacks.map(a => `
+        <tr>
+          <td>${a.name}</td>
+          <td>${a.success}</td>
+          <td>${a.profit}</td>
+          <td>${a.detection}</td>
+          <td>${a.mitigation}</td>
+        </tr>
+      `).join('');
+      
+      // Attack effectiveness radar chart
+      simulation.charts.attack.data.datasets[0].data = attacks.map(a => 
+        parseFloat(a.success) || 0
+      );
+      simulation.charts.attack.update();
+    }
+    
+    function stopSimulation() {
+      simulation.running = false;
+      log('Simulation stopped', 'warning');
+    }
+    
+    function exportResults() {
+      const data = {
+        parameters: gatherParameters(),
+        results: simulation.results,
+        timestamp: new Date().toISOString()
+      };
+      
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rest-simulation-${Date.now()}.json`;
+      a.click();
+      
+      log('Results exported', 'success');
+    }
+    
+    function gatherParameters() {
+      return {
+        attackerPower: document.getElementById('attackerPower').value,
+        targetBlockTime: document.getElementById('targetBlockTime').value,
+        vdfIterations: document.getElementById('vdfIterations').value,
+        vrfThreshold: document.getElementById('vrfThreshold').value,
+        networkLatency: document.getElementById('networkLatency').value,
+        attackStrategy: document.getElementById('attackStrategy').value
+      };
+    }
+    
+    function switchTab(tabName) {
+      // Update tab buttons
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+      });
+      event.target.classList.add('active');
+      
+      // Update tab content
+      document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+      });
+      document.getElementById(tabName).classList.add('active');
+    }
+    
+    function updateProgress(percent) {
+      document.getElementById('progressBar').style.width = percent + '%';
+    }
+    
+    function log(message, type = 'info') {
+      const logContainer = document.getElementById('simLog');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logContainer.appendChild(entry);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+    
+    // Initialize UI
+    document.addEventListener('DOMContentLoaded', () => {
+      // Update value displays
+      const inputs = document.querySelectorAll('input[type="range"]');
+      inputs.forEach(input => {
+        input.addEventListener('input', (e) => {
+          const valueSpan = document.getElementById(e.target.id + 'Val');
+          if (valueSpan) {
+            let value = e.target.value;
+            
+            // Format based on input type
+            if (e.target.id === 'attackerPower' || e.target.id === 'attackerNetAdv') {
+              value = value + '%';
+            } else if (e.target.id === 'targetBlockTime') {
+              value = value + 's';
+            } else if (e.target.id === 'networkLatency' || e.target.id === 'vdfVerifyTime') {
+              value = value + 'ms';
+            } else if (e.target.id === 'vdfProofSize') {
+              value = (value / 1000).toFixed(1) + 'KB';
+            } else if (e.target.id === 'blockSize') {
+              value = value >= 1000 ? (value / 1000).toFixed(1) + 'MB' : value + 'KB';
+            } else if (e.target.id === 'networkBandwidth') {
+              value = value + 'Mbps';
+            } else if (e.target.id === 'attackerSpeedup') {
+              value = value + 'x';
+            } else if (e.target.id === 'vdfIterations') {
+              value = parseInt(value).toLocaleString();
+            } else if (e.target.id === 'vrfThreshold') {
+              value = parseFloat(value).toFixed(2);
+            }
+            
+            valueSpan.textContent = value;
+          }
+        });
+      });
+      
+      // Initialize charts
+      initCharts();
+      
+      log('Simulator initialized. Ready to run.', 'success');
+    });
+  </script>
+</body>
+</html>

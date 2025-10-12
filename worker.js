@@ -21,6 +21,7 @@ if (typeof Promise.withResolvers !== 'function') {
 import bridge from './js_bridge.cjs';
 const { JSONStringifyWithBigInt, JSONParseWithBigInt } = bridge;
 import { pipe } from 'it-pipe';
+import http from 'http';
 
 import { parentPort, Worker as ThreadWorker } from 'worker_threads';
 import crypto from 'crypto';    
@@ -159,7 +160,7 @@ const syncState = {
     targetHeight: 0,
     // RATIONALE (Hardening): Adds a simple state machine to prevent invalid or concurrent syncs.
     // This stops a new sync from starting while another is already in the sensitive download phase.
-    status: 'IDLE', // IDLE | CONSENSUS | DOWNLOADING
+    status: 'IDLE', // IDLE | CONSENSUS | DOWNLOADING | COOLDOWN
   },
   // RATIONALE (Fix #6): Rate limiting for peers requesting hashes *from us*.
   // This prevents a single peer from spamming our node with expensive DB lookups.
@@ -196,6 +197,187 @@ export const workerState = {
     // Peers start with a score of 100 and lose points for bad behavior.
     peerScores: new Map(), // peerId -> score
 };
+
+// === HTTP API Server for Block Explorer ===
+const API_PORT = process.env.PLURIBIT_API_PORT || 3001;
+let apiServer = null;
+
+function startApiServer() {
+    apiServer = http.createServer(async (req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', 'application/json');
+        
+        try {
+            const url = new URL(req.url, `http://localhost:${API_PORT}`);
+            
+            if (url.pathname === '/api/stats') {
+                const tipHeight = await db.getTipHeight();
+                const totalWork = await db.loadTotalWork();
+                const utxoSetSize = pluribit.get_utxo_set_size();
+
+                const tipBlock = tipHeight > 0 ? await db.loadBlock(tipHeight) : null;
+                
+                res.writeHead(200);
+                res.end(JSON.stringify({
+                    height: tipHeight,
+                    totalWork,
+                    utxoCount: utxoSetSize,
+                    tipHash: tipBlock?.hash || 'N/A',
+                    timestamp: tipBlock?.timestamp || 0,
+                    vdfIterations: tipBlock?.vdf_iterations || 0  // Add this line
+                }));
+            }
+            else if (url.pathname.startsWith('/api/block/')) {
+                const height = parseInt(url.pathname.split('/')[3]);
+                if (isNaN(height)) {
+                    res.writeHead(400);
+                    res.end(JSON.stringify({ error: 'Invalid height' }));
+                    return;
+                }
+                
+                const block = await db.loadBlock(height);
+                if (!block) {
+                    res.writeHead(404);
+                    res.end(JSON.stringify({ error: 'Block not found' }));
+                    return;
+                }
+                
+                res.writeHead(200);
+                res.end(JSON.stringify(block));
+            }
+            else if (url.pathname.startsWith('/api/block/hash/')) {
+                const hash = url.pathname.split('/')[4];
+                const tipHeight = await db.getTipHeight();
+                
+                // Search through blocks
+                for (let h = tipHeight; h >= 0; h--) {
+                    const block = await db.loadBlock(h);
+                    if (block && block.hash === hash) {
+                        res.writeHead(200);
+                        res.end(JSON.stringify(block));
+                        return;
+                    }
+                }
+                
+                res.writeHead(404);
+                res.end(JSON.stringify({ error: 'Block not found' }));
+            }
+            else if (url.pathname.startsWith('/api/blocks/recent')) {
+                const count = Math.min(parseInt(url.searchParams.get('count') || '10'), 100);
+                const tipHeight = await db.getTipHeight();
+                const blocks = [];
+                
+                for (let i = 0; i < count && tipHeight - i >= 0; i++) {
+                    const block = await db.loadBlock(tipHeight - i);
+                    if (block) {
+                        blocks.push({
+                            height: block.height,
+                            hash: block.hash,
+                            timestamp: block.timestamp,
+                            txCount: block.transactions?.length || 0,
+                            miner: block.miner_pubkey ? Buffer.from(block.miner_pubkey).toString('hex').slice(0, 16) + '...' : 'N/A'
+                        });
+                    }
+                }
+                
+                res.writeHead(200);
+                res.end(JSON.stringify(blocks));
+            }
+            // Add these new routes inside the startApiServer() function, before the final else block
+
+            else if (url.pathname === '/api/metrics/difficulty') {
+                const tipHeight = await db.getTipHeight();
+                const samples = Math.min(100, tipHeight);
+                const metrics = [];
+                
+                for (let i = Math.max(0, tipHeight - samples); i <= tipHeight; i++) {
+                    const block = await db.loadBlock(i);
+                    if (block) {
+                        metrics.push({
+                            height: block.height,
+                            vrf_threshold: Array.from(block.vrf_threshold).slice(0, 4),
+                            vdf_iterations: block.vdf_iterations,
+                            timestamp: block.timestamp
+                        });
+                    }
+                }
+                
+                res.writeHead(200);
+                res.end(JSON.stringify(metrics));
+            }
+            else if (url.pathname === '/api/metrics/rewards') {
+                const tipHeight = await db.getTipHeight();
+                const samples = Math.min(100, tipHeight);
+                const rewards = [];
+                
+                const INITIAL_BASE_REWARD = 50_000_000;
+                const HALVING_INTERVAL = 525_600;
+                const REWARD_RESET_INTERVAL = 5_256_000;
+                
+                for (let h = Math.max(1, tipHeight - samples); h <= tipHeight; h++) {
+                    const height_in_era = h % REWARD_RESET_INTERVAL;
+                    const num_halvings = Math.floor(height_in_era / HALVING_INTERVAL);
+                    const reward = num_halvings >= 64 ? 0 : INITIAL_BASE_REWARD >> num_halvings;
+                    
+                    rewards.push({ height: h, reward });
+                }
+                
+                res.writeHead(200);
+                res.end(JSON.stringify(rewards));
+            }
+            else if (url.pathname === '/api/metrics/supply') {
+                const tipHeight = await db.getTipHeight();
+                
+                const INITIAL_BASE_REWARD = 50_000_000;
+                const HALVING_INTERVAL = 525_600;
+                const REWARD_RESET_INTERVAL = 5_256_000;
+                
+                let totalSupply = 0;
+                for (let h = 1; h <= tipHeight; h++) {
+                    const height_in_era = h % REWARD_RESET_INTERVAL;
+                    const num_halvings = Math.floor(height_in_era / HALVING_INTERVAL);
+                    const reward = num_halvings >= 64 ? 0 : INITIAL_BASE_REWARD >> num_halvings;
+                    totalSupply += reward;
+                }
+                
+                const blocksPerYear = 262_800;
+                let annualIssuance = 0;
+                for (let i = 0; i < blocksPerYear; i++) {
+                    const h = tipHeight + i + 1;
+                    const height_in_era = h % REWARD_RESET_INTERVAL;
+                    const num_halvings = Math.floor(height_in_era / HALVING_INTERVAL);
+                    const reward = num_halvings >= 64 ? 0 : INITIAL_BASE_REWARD >> num_halvings;
+                    annualIssuance += reward;
+                }
+                
+                const stockToFlow = annualIssuance > 0 ? totalSupply / annualIssuance : 0;
+                
+                res.writeHead(200);
+                res.end(JSON.stringify({
+                    totalSupply,
+                    annualIssuance,
+                    stockToFlow,
+                    supplyInCoins: totalSupply / 100_000_000,
+                    annualIssuanceInCoins: annualIssuance / 100_000_000
+                }));
+            }
+            
+            
+            else {
+                res.writeHead(404);
+                res.end(JSON.stringify({ error: 'Not found' }));
+            }
+        } catch (e) {
+            log(`[API] Error: ${e.message}`, 'error');
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: e.message }));
+        }
+    });
+    
+    apiServer.listen(API_PORT, () => {
+        log(`[API] Block explorer API running on http://localhost:${API_PORT}`, 'success');
+    });
+}
 
 
 // --- MINER CONTROL HELPERS ---
@@ -618,7 +800,8 @@ async function fetchBlocksParallel(blockHashes, peerIds) {
     // Forward sync implementation
 async function syncForward(targetHeight, targetHash, trustedPeers) {
     // RATIONALE (State Machine): Prevent multiple syncs from running concurrently.
-    if (syncState.syncProgress.status !== 'IDLE') {
+    if (syncState.syncProgress.status === 'DOWNLOADING') {
+
         log('[SYNC] Sync process already running. Skipping new request.', 'warn');
         return;
     }
@@ -629,7 +812,9 @@ async function syncForward(targetHeight, targetHash, trustedPeers) {
     }
 
     syncState.syncProgress.status = 'DOWNLOADING';
-
+    // Set the global flag to activate the block deferral mechanism.
+    workerState.isSyncing = true;
+    
     const { TIMEOUT_MS, BATCH_SIZE, CHECKPOINT_INTERVAL, MAX_HASHES_PER_SYNC } = CONFIG.SYNC;
 
     const startTime = Date.now();
@@ -703,14 +888,6 @@ async function syncForward(targetHeight, targetHash, trustedPeers) {
                 if (!block) throw new Error(`Failed to fetch required block ${hash}`);
                 if (block.hash !== hash) throw new Error(`Fetched block hash mismatch for ${hash}`);
 
-                // RATIONALE (Vulnerability #2 - Block Sequence): Verify blocks chain together.
-                if (previousBlock && block.prev_hash !== previousBlock.hash) {
-                    throw new Error(`Block sequence broken at height ${block.height}. Expected prev_hash ${previousBlock.hash}`);
-                }
-                // RATIONALE (Vulnerability #6 - Timestamps): Ensure time is monotonic.
-                if (previousBlock && block.timestamp <= previousBlock.timestamp) {
-                    throw new Error(`Block at height ${block.height} has a non-monotonic timestamp.`);
-                }
                 const result = await pluribit.ingest_block(block);
                 
                 if (result.type === 'invalid') {
@@ -731,6 +908,20 @@ async function syncForward(targetHeight, targetHash, trustedPeers) {
                     throw new Error(`Invalid block ${hash}: ${result.reason}`);
                 } else if (result.type === 'needParent') {
                     throw new Error(`Sync process integrity failure: received needParent for sequential block ${hash}`);
+                }
+                
+                // Send a progress update to the main thread periodically.
+                // We update every 10 blocks or on the very last block to ensure it reaches 100%.
+                const currentBlockIndex = i + batchHashes.indexOf(hash);
+                if (currentBlockIndex % 10 === 0 || currentBlockIndex === allHashes.length - 1) {
+                    parentPort.postMessage({
+                        type: 'syncProgress',
+                        payload: {
+                            current: block.height,
+                            target: targetHeight,
+                            startTime: startTime,
+                        }
+                    });
                 }
                 
                 syncState.syncProgress.currentHeight = block.height;
@@ -759,12 +950,41 @@ async function syncForward(targetHeight, targetHash, trustedPeers) {
     
         // RATIONALE (Circuit Breaker): Reset failure count on a successful sync.
         syncState.consecutiveFailures = 0;
+        
+        // On success, reset state and notify UI
+        parentPort.postMessage({ type: 'syncComplete' });
+        syncState.syncProgress.status = 'IDLE';
+        workerState.isSyncing = false;        
+        
+        
     } catch (e) {
         log(`[SYNC] Sync failed: ${e.message}`, 'error');
         // RATIONALE (Circuit Breaker): Increment failure count.
         syncState.consecutiveFailures++;
-    } finally {
-        syncState.syncProgress.status = 'IDLE'; // Always reset state
+        // Check if we've hit the max number of retries
+        if (syncState.consecutiveFailures >= CONFIG.SYNC.MAX_CONSECUTIVE_SYNC_FAILURES) {
+            log(`[SYNC] Halting sync after ${CONFIG.SYNC.MAX_CONSECUTIVE_SYNC_FAILURES} consecutive failures. Will not retry automatically.`, 'error');
+            
+            // Give up and reset the state
+            parentPort.postMessage({ type: 'syncComplete' });
+            syncState.syncProgress.status = 'IDLE';
+            workerState.isSyncing = false;
+        } else {
+            // Implement exponential backoff for the retry delay
+            const backoffDelay = 2000 * Math.pow(2, syncState.consecutiveFailures);
+            log(`[SYNC] Entering cooldown. Retrying in ${backoffDelay / 1000} seconds...`, 'warn');
+            syncState.syncProgress.status = 'COOLDOWN';
+            
+            // Do NOT set workerState.isSyncing to false; the sync process is paused, not finished.
+            // Do NOT send 'syncComplete' to the UI; we are still trying.
+            
+            // Schedule a new attempt after the cooldown period.
+            setTimeout(() => {
+                // Reset status to allow bootstrapSync to run, then try the whole process again.
+                syncState.syncProgress.status = 'IDLE';
+                bootstrapSync(); 
+            }, backoffDelay);
+        }    
     }
 }
 
@@ -946,54 +1166,61 @@ async function handleRemoteBlockDownloaded({ block }) {
             // Give it a moment before starting the new job
             (async () => { await abortCurrentMiningJob(); await startPoSTMining(); })();
         }
+        
+ 
+        
+        
         return;
     }
 
-    if (t === 'storedonside') {
-        // CRITICAL: Wrap in guarded IIFE to prevent unhandled rejection
-        (async () => {
-            try {
-                log(`[REORG] Block ${block.hash.substring(0,12)} is a fork tip. Planning reorg...`, 'warn');
-                const plan = await pluribit.plan_reorg_for_tip(block.hash);
+      if (t === 'storedonside') {
+        // No IIFE needed - parent function is already async
+        try {
+            log(`[REORG] Block ${block.hash.substring(0,12)} is a fork tip. Planning reorg...`, 'warn');
+            const plan = await pluribit.plan_reorg_for_tip(block.hash);
 
-                if (plan.requests && plan.requests.length > 0) {
-                    log(`[REORG] Plan requires missing parents. Requesting ${plan.requests.length} block(s)...`, 'info');
-                    for (const hash of plan.requests) {
-                        if (!reorgState.requestedBlocks.has(hash)) {
-                            trackRequest(hash);
-                            await workerState.p2p.publish(TOPICS.BLOCK_REQUEST, {
-                                type: 'BLOCK_REQUEST',
-                                hash: hash
-                            });
-                        }
+            if (plan.requests && plan.requests.length > 0) {
+                log(`[REORG] Plan requires missing parents. Requesting ${plan.requests.length} block(s)...`, 'info');
+                for (const hash of plan.requests) {
+                    if (!reorgState.requestedBlocks.has(hash)) {
+                        trackRequest(hash);
+                        await workerState.p2p.publish(TOPICS.BLOCK_REQUEST, {
+                            type: 'BLOCK_REQUEST',
+                            hash: hash
+                        });
                     }
-                    return;
                 }
-
-                if (plan.should_switch) {
-                    log(`[REORG] Fork is heavier. Applying reorg: -${plan.detach?.length||0} +${plan.attach?.length||0}`, 'warn');
-                    workerState.wasMinerActiveBeforeReorg = workerState.minerActive;
-                    const __resumeMining = workerState.minerActive;
-                    await abortCurrentMiningJob();
-                    workerState.isReorging = true;
-                    await pluribit.atomic_reorg(plan);
-                    workerState.isReorging = false;
-                    if (__resumeMining) {
-                      workerState.minerActive = true;
-                      await startPoSTMining();
-                    }
-                    workerState.wasMinerActiveBeforeReorg = false;
-                } else {
-                    log(`No switch needed; staying on current canonical chain.`, 'info');
-                }
-            } catch (e) {
-                // MORE ROBUST LOGGING
-                const util = await import('node:util');
-                const errorDetails = util.inspect(e, { depth: 5 });
-                log(`[REORG] Failed to plan/execute reorg for ${block.hash}: ${errorDetails}`, 'error');
+                return; // Wait for parents to arrive
             }
+
+            if (plan.should_switch) {
+                log(`[REORG] Fork is heavier. Applying reorg: -${plan.detach?.length||0} +${plan.attach?.length||0}`, 'warn');
+                workerState.wasMinerActiveBeforeReorg = workerState.minerActive;
+                const __resumeMining = workerState.minerActive;
+                
+                await abortCurrentMiningJob();
+                workerState.isReorging = true;
+                
+                try {
+                    await pluribit.atomic_reorg(plan);
+                } finally {
+                    workerState.isReorging = false;
+                }
+                
+                if (__resumeMining) {
+                    workerState.minerActive = true;
+                    await startPoSTMining();
+                }
+                workerState.wasMinerActiveBeforeReorg = false;
+            } else {
+                log(`[REORG] No switch needed; staying on current canonical chain.`, 'info');
+            }
+        } catch (e) {
+            // MORE ROBUST LOGGING
+            const util = await import('node:util');
+            const errorDetails = util.inspect(e, { depth: 5 });
+            log(`[REORG] Failed to plan/execute reorg for ${block.hash}: ${errorDetails}`, 'error');
         }
-         )(); // Fire and forget with error handling
         return;
     }
 
@@ -1011,7 +1238,19 @@ async function handleRemoteBlockDownloaded({ block }) {
   }
 }
 
-
+async function debugReorgState() {
+    const chain = await pluribit.get_blockchain_state();
+    const sideBlocks = await pluribit.get_side_blocks_info(); // ✅ Proper async call
+    
+    log('[REORG DEBUG] =================');
+    log(`[REORG DEBUG] Canonical tip: height=${chain.current_height}, work=${chain.total_work}`);
+    log(`[REORG DEBUG] Side blocks: ${sideBlocks.length}`);
+    
+    for (const block of sideBlocks) {
+        log(`[REORG DEBUG]   Fork block: height=${block.height}, hash=${block.hash.substring(0,12)}`);
+    }
+    log('[REORG DEBUG] =================');
+}
 
 function cleanupForkCache(keepAboveHeight) {
     for (const height of reorgState.pendingForks.keys()) {
@@ -1025,6 +1264,8 @@ function cleanupForkCache(keepAboveHeight) {
 
 // SIMPLIFIED Network Initialization
 async function initializeNetwork() {
+// Periodic reorg state debugging
+setInterval(safe(debugReorgState), 60000); // Every 60 seconds
 
     log('Initializing Pluribit network...');
 
@@ -1055,7 +1296,8 @@ async function initializeNetwork() {
                 new_height: incompleteReorg.new_tip_height,
                 requests: [], // Already have all blocks
             };
-            await pluribit.atomic_reorg(serde_wasm_bindgen.to_value(plan));
+            await pluribit.atomic_reorg(plan);
+
             log('[RECOVERY] Incomplete reorg completed successfully', 'success');
         } catch (e) {
             log(`[RECOVERY] Failed to complete reorg: ${e.message}`, 'error');
@@ -1122,6 +1364,15 @@ async function initializeNetwork() {
         log(`Error during deferred block recovery: ${e.message}`, 'error');
     }
 
+    // --- START: ADD THIS NEW EVENT LISTENER ---
+    // This is the new, reliable trigger for checking for a better chain.
+    // It fires only when a peer has passed all verification steps.
+    workerState.p2p.node.addEventListener('pluribit:peer-verified', safe((evt) => {
+        log(`[SYNC] New verified peer detected (${evt.detail.slice(-6)}). Checking for a better chain...`, 'info');
+        // Add a small delay to allow network chatter to settle before syncing.
+        setTimeout(safe(bootstrapSync), 500);
+    }));
+
     // Kick off an initial attempt (will no-op if no peers yet)
     // Start the sync process after a brief pause for initial connections.
     // The bootstrapSync function itself will handle retries with backoff.
@@ -1162,6 +1413,12 @@ async function gracefulShutdown(code = 0) {
     workerState.minerActive = false;
 
     if (blockRequestCleanupTimer) clearInterval(blockRequestCleanupTimer);
+    
+    // Close API server
+    if (apiServer) {
+        apiServer.close();
+    }
+    
     // give the mining loop a tick to exit
     await new Promise(r => setTimeout(r, 5));
     if (workerState.p2p) {
@@ -1179,195 +1436,167 @@ process.on('SIGTERM', () => gracefulShutdown(0));
 
 
 
-try {
-  workerState.p2p.node.services.pubsub.addEventListener('subscription-change', (evt) => {
-    const { subscriptions } = evt.detail || {};
-    const peerSubbedSync = subscriptions?.some(s => s.topic === TOPICS.SYNC && s.subscribe);
-    if (peerSubbedSync) {
-      log('Peer subscribed to SYNC; bootstrapping…', 'info');
-      setTimeout(safe(bootstrapSync), 200); // small grace period
-    }
-  });
-} catch {}
+
 
 
     log('P2P stack online.', 'success');
     parentPort.postMessage({ type: 'networkInitialized' });
+   // Start API server for block explorer
+    startApiServer();
     log('Network initialization complete.', 'success');
 }
 
 
 // Ask peers for their tip, but only when someone is there to hear us.
 // Retries with a short backoff if nobody is subscribed yet.
-async function bootstrapSync(attempt = 1) {
-  const MAX_ATTEMPTS = 5;
-  const BASE_DELAY_MS = 2000; // Start with a 2-second delay
+// worker.js
 
-  const scheduleRetry = () => {
+async function bootstrapSync(attempt = 1) {
+  if (syncState.syncProgress.status !== 'IDLE') {
+      log('[SYNC] Bootstrap skipped: a sync is already in progress.', 'debug');
+      return;
+  }
+  syncState.syncProgress.status = 'CONSENSUS';
+
+  const MAX_ATTEMPTS = 5;
+  const BASE_DELAY_MS = 2000;
+
+  const scheduleRetry = (message) => {
+    if (syncState.syncProgress.status !== 'CONSENSUS') return;
     if (attempt >= MAX_ATTEMPTS) {
         log(`[SYNC] Initial sync failed after ${MAX_ATTEMPTS} attempts. Will rely on new peer connections to trigger sync.`, 'warn');
+        syncState.syncProgress.status = 'IDLE';
         return;
     }
-    // Exponential backoff: 2s, 4s, 8s, 16s
     const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
-    log(`[SYNC] No verified peers responded. Retrying sync in ${delay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})`, 'info');
+    log(`[SYNC] ${message}. Retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})`, 'info');
     setTimeout(() => bootstrapSync(attempt + 1), delay);
   };
 
   try {
-    // RATIONALE (State Machine): Don't start a new consensus round if a sync is already in progress.
-    if (syncState.syncProgress.status !== 'IDLE') {
-        log('[SYNC] Bootstrap skipped: a sync is already in progress.', 'debug');
+    const { p2p } = workerState;
+    if (!p2p || !p2p.node) {
+        syncState.syncProgress.status = 'IDLE';
         return;
     }
-    const { p2p } = workerState;
-    if (!p2p || !p2p.node) return;
 
-    const peers = p2p.getConnectedPeers?.() ?? [];
-    if (peers.length === 0) {
-      // Instead of just logging, schedule a retry.
-      scheduleRetry();
-      return;
-    }
+    const allPeers = p2p.getConnectedPeers?.() ?? [];
+    const verifiedPeers = allPeers.filter(p => p2p.isPeerVerified(p.id));
+if (verifiedPeers.length === 0) {
+        // RATIONALE: If no peers are found, the status must be reset
+        // to 'IDLE' *before* scheduling a retry. This prevents the 'CONSENSUS'
+        // state from blocking a new sync attempt triggered by a peer connecting
+        // and becoming verified in the interim.
+        syncState.syncProgress.status = 'IDLE';
+        scheduleRetry("No verified peers found");
+        return;
+}
+    log(`[SYNC] Found ${verifiedPeers.length} verified peers. Querying for chain tip...`, 'info');
 
-    
-    // --- IBD CONSENSUS LOGIC ---
-    const tipResponses = new Map(); // from -> { hash, height, totalWork }
-
-    const tipHandler = (event) => {
+    const tipResponses = new Map();
+    const tipHandler = (message, { from }) => {
         try {
-            // --- Correctly parse event and verify peer ---
-            const { from, data } = event.detail; // FIX 1: The data is on `event.detail`.
-            const fromStr = from.toString();
-
-            //Only accept responses from peers that have completed the challenge.
-            if (!workerState.p2p.isPeerVerified(fromStr)) {
-                return; 
-            }
-
-            const msgData = JSONParseWithBigInt(new TextDecoder().decode(data));
-
-            if (msgData.type === 'TIP_RESPONSE') {
-                tipResponses.set(fromStr, { // Use the string representation of the peer ID
-                    hash: msgData.tipHash,
-                    height: msgData.height,
-                    totalWork: BigInt(msgData.totalWork)
+            if (message.type === 'TIP_RESPONSE') {
+                log(
+                    `[SYNC] Received TIP_RESPONSE from ${from.toString().slice(-6)}: ` +
+                    `Height=${message.height}, Work=${message.totalWork}, Hash=${message.tipHash.substring(0, 12)}...`,
+                    'debug'
+                );
+                tipResponses.set(from.toString(), {
+                    hash: message.tipHash,
+                    height: message.height,
+                    totalWork: BigInt(message.totalWork)
                 });
             }
-           
-        } catch (e) {
-          // It's better to log this during debugging instead of failing silently.
-          log(`[SYNC] Error in tipHandler: ${e?.message || e}`, 'warn');
-      }
+        } catch (e) { log(`[SYNC] Error in tipHandler: ${e?.message || e}`, 'warn'); }
     };
 
-    p2p.node.services.pubsub.addEventListener('message', tipHandler);
-    syncState.syncProgress.status = 'CONSENSUS';
+    await p2p.subscribe(TOPICS.SYNC, tipHandler);
     await p2p.publish(TOPICS.SYNC, { type: 'TIP_REQUEST' });
 
-    setTimeout(async () => {
-        p2p.node.services.pubsub.removeEventListener('message', tipHandler);
+    // --- START: CORRECTED setTimeout LOGIC ---
+    setTimeout(() => {
+        (async () => {
+            await p2p.unsubscribe(TOPICS.SYNC, tipHandler);
 
-        if (syncState.syncProgress.status !== 'CONSENSUS') return; // Aborted by another process
-        syncState.syncProgress.status = 'IDLE'; // Reset state before exiting or proceeding
+            if (syncState.syncProgress.status !== 'CONSENSUS') return;
 
-
-        if (tipResponses.size < 1) { // Min peers from user input
-            scheduleRetry();
-            return;
-        }
-
-        // Tally responses by tip hash
-        const tallies = new Map();
-        for (const [peer, tip] of tipResponses) {
-            const key = tip.hash;
-            if (!tallies.has(key)) tallies.set(key, { ...tip, peers: [] });
-            tallies.get(key).peers.push(peer);
-        }
-
-        // Find the tip with the most agreement
-        const consensusTip = [...tallies.values()].sort((a,b) => b.peers.length - a.peers.length)[0];
-
-        // RATIONALE (Fix #4): Use stricter consensus rules.
-        const { CONSENSUS_THRESHOLD, MIN_AGREEING_PEERS } = CONFIG.SYNC;
-        const agreement = consensusTip.peers.length / tipResponses.size;
-        
-        if (agreement < CONSENSUS_THRESHOLD || consensusTip.peers.length < MIN_AGREEING_PEERS) {
-            log(`[SYNC] No consensus on chain tip. Best candidate had ${Math.round(agreement*100)}% agreement.`, 'warn');
-            return;
-        }
-
-        // Check if the consensus tip is better than our own
-        const myState = await pluribit.get_blockchain_state();
-        if (consensusTip.totalWork > BigInt(myState.total_work)) {
-            log(`[SYNC] Consensus reached on better chain. Planning reorg...`);
-            
-            // Let Rust figure out what needs to happen
-            const plan = await pluribit.plan_reorg_for_tip(consensusTip.hash);
-            
-            // If plan requests the tip block, fetch it first for work evaluation
-            if (plan.requests && plan.requests.length === 1 && plan.requests[0] === consensusTip.hash) {
-                log(`[SYNC] Fetching candidate tip block for work evaluation...`);
-                let tipBlock = null;
-                
-                for (const peer of consensusTip.peers) {
-                    tipBlock = await fetchBlockDirectly(peer, consensusTip.hash);
-                    if (tipBlock) break;
+            try {
+                if (tipResponses.size === 0) {
+                    scheduleRetry("No peers responded with a valid chain tip");
+                    return; 
                 }
+
+                log(`[SYNC] Consensus Phase: Collected ${tipResponses.size} valid tip(s) for evaluation.`, 'info');
                 
-                if (!tipBlock) {
-                    log(`[SYNC] Failed to fetch candidate tip. Will retry on next consensus.`, 'warn');
-                    return;
-                }
-                
-                // Ingest the tip block
-                const ingestResult = await pluribit.ingest_block(tipBlock);
-                log(`[SYNC] Ingested candidate tip: ${ingestResult.type}`);
-                
-                // Now retry the reorg plan with the tip available
-                const newPlan = await pluribit.plan_reorg_for_tip(consensusTip.hash);
-                
-                if (newPlan.requests && newPlan.requests.length > 0) {
-                    log(`[SYNC] Still need ${newPlan.requests.length} blocks. Requesting...`);
-                    for (const hash of newPlan.requests) {
-                        await workerState.p2p.publish(TOPICS.BLOCK_REQUEST, { hash });
+                const bestTip = [...tipResponses.values()].sort((a, b) => (b.totalWork > a.totalWork) ? 1 : -1)[0];
+                const peersForBestTip = [];
+                for (const [peer, tip] of tipResponses.entries()) {
+                    if (tip.hash === bestTip.hash) {
+                        peersForBestTip.push(peer);
                     }
-                    return;
                 }
-                
-                if (newPlan.should_switch) {
-                    await pluribit.atomic_reorg(newPlan);
-                }
-                return;
-            }
-            
-            
-            
-            if (plan.requests && plan.requests.length > 0) {
-                // Missing blocks - request them
-                for (const hash of plan.requests) {
-                    await workerState.p2p.publish(TOPICS.BLOCK_REQUEST, { hash });
-                }
-            } else if (plan.should_switch) {
-                // Have all blocks - execute reorg
-                await pluribit.atomic_reorg(plan);
-            }
-        } else {
-            log('[SYNC] Already synced to the best known chain.', 'info');
-        }
-    }, 2000); // Timeout from user input
 
+                const { CONSENSUS_THRESHOLD, MIN_AGREEING_PEERS } = CONFIG.SYNC;
+                const agreement = peersForBestTip.length / tipResponses.size;
+                
+                if (agreement < CONSENSUS_THRESHOLD || peersForBestTip.length < MIN_AGREEING_PEERS) {
+                    log(`[SYNC] No consensus on best chain tip. Best candidate (Work=${bestTip.totalWork}) only had ${Math.round(agreement * 100)}% agreement.`, 'warn');
+                    syncState.syncProgress.status = 'IDLE'; // Reset state after failed consensus
+                    return; 
+                }
+
+                const myState = await pluribit.get_blockchain_state();
+                if (bestTip.totalWork > BigInt(myState.total_work)) {
+                    log(`[SYNC] Consensus reached on better chain (Height=${bestTip.height}, Work=${bestTip.totalWork}).`, 'success');
+                    
+                    // *** THIS IS THE NEW LOGIC ***
+                    if (bestTip.height > myState.current_height) {
+                        // Scenario 1: The better chain is longer. Sync forward.
+                        log(`[SYNC] Better chain is longer. Starting forward sync...`, 'info');
+                        await syncForward(bestTip.height, bestTip.hash, peersForBestTip);
+                    } else {
+                        // Scenario 2: Better chain has more work at same/lower height. Trigger a reorg.
+                        log(`[SYNC] Fork with more work detected. Fetching tip to initiate reorg...`, 'info');
+                        syncState.syncProgress.status = 'DOWNLOADING'; // Use same status to prevent concurrent syncs
+                        workerState.isSyncing = true;
+                        
+                        // Fetch the single block that is the tip of the better fork.
+                        const tipBlock = await fetchBlockDirectly(peersForBestTip[0], bestTip.hash);
+                        
+                        if (tipBlock) {
+                            // Feed this block into the regular ingestion pipeline.
+                            // The Rust `ingest_block` function will see it's a fork and trigger the reorg planner.
+                            await handleRemoteBlockDownloaded({ block: tipBlock });
+                        } else {
+                            throw new Error(`Failed to fetch fork tip ${bestTip.hash} to start reorg.`);
+                        }
+
+                        // After reorg is handled, reset state.
+                        syncState.syncProgress.status = 'IDLE';
+                        workerState.isSyncing = false;
+                        parentPort.postMessage({ type: 'syncComplete' });
+                    }
+
+                } else {
+                    log('[SYNC] Already synced to the best known chain.', 'info');
+                    syncState.syncProgress.status = 'IDLE'; // Reset state if we are already synced
+                }
+            } catch (err) {
+                 log(`[SYNC] Error during consensus or reorg trigger: ${err.message}`, 'error');
+                 syncState.syncProgress.status = 'IDLE'; // Reset on error
+            }
+        })();
+    }, 2000);
+    // --- END: CORRECTED setTimeout LOGIC ---
 
   } catch (e) {
-    const msg = String(e?.message || e);
-    // Use the same retry logic for the specific pubsub error.
-    if (msg.includes('NoPeersSubscribedToTopic')) {
-      scheduleRetry();
-      return;
-    }
-    log(`SYNC: unexpected error: ${msg}`, 'warn');
+    log(`[SYNC] Unexpected error in bootstrapSync: ${String(e?.message || e)}`, 'warn');
+    syncState.syncProgress.status = 'IDLE';
   }
 }
+
+
 
 async function requestAllHashes(peerId, startHeight) {
     // RATIONALE: This function has been refactored to prevent a deadlock.
@@ -1685,6 +1914,17 @@ async function setupMessageHandlers() {
         try {
             if (message.type === 'TIP_REQUEST') {
                 const st = await pluribit.get_blockchain_state();
+
+                // --- START: ADD THIS LOGGING BLOCK ---
+                // This log shows what this node is advertising as its current best chain.
+                // It helps confirm if the synced node is correctly reporting its advanced state.
+                log(
+                    `[SYNC] Received TIP_REQUEST from ${from.toString().slice(-6)}. Responding with my tip: ` +
+                    `Height=${st.current_height}, Work=${st.total_work}, Hash=${st.tip_hash.substring(0, 12)}...`,
+                    'debug'
+                );
+                // --- END: ADD THIS LOGGING BLOCK ---
+
                 await p2p.publish(TOPICS.SYNC, {
                    type: 'TIP_RESPONSE',
                    height: st.current_height,

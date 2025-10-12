@@ -81,6 +81,13 @@ impl Blockchain {
             // 2) VDF component: proportional to iterations committed in the header
             let vdf_w = BigUint::from(b.vdf_iterations);
 
+            // DIAGNOSTIC LOGGING
+            log(&format!("[WORK] Block {}: vrf_threshold={}, vdf_iters={}, vrf_work={}", 
+                b.height, 
+                hex::encode(&b.vrf_threshold[..4]),
+                b.vdf_iterations,
+                vrf_w.to_string()));
+
             // 3) Combine (multiplicative) and downscale to <=64 bits, preserving order
             let w = vrf_w * vdf_w;
 

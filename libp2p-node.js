@@ -144,13 +144,21 @@ _updateVerificationState(peerId, { powSolved, isSubscribed }) {
     if (powSolved !== undefined) state.powSolved = powSolved;
     if (isSubscribed !== undefined) state.isSubscribed = isSubscribed;
 
-    const isNowVerified = state.powSolved && state.isSubscribed;
-    
+    const isNowVerified = state.powSolved && state.isSubscribed;    
     
     this._peerVerificationState.set(peerId, state);
 
     if (isNowVerified && !wasVerified) {
-        this.log(`[P2P] ✅ Fully Verified Peer: ${peerId}`, 'success');
+        this.log(`[P2P] ✅ Fully Verified Peer: ${peerId}`, 'success');        
+        // RATIONALE: When a peer becomes fully verified, it's a strong signal
+        // that we should check if their chain is better than ours. This is a
+        // much more reliable trigger for initiating a sync than the noisy
+        // 'subscription-change' event.
+        try {
+            this.node.dispatchEvent(new CustomEvent('pluribit:peer-verified', { detail: peerId }));
+        } catch (e) {
+            this.log(`[P2P] Error dispatching peer-verified event: ${e.message}`, 'warn');
+        }       
     }
     
     // Return true if verified 
@@ -960,6 +968,23 @@ async handleGossipMessage(msg) {
       };
     });
   }
+  
+   /**
+     * Removes a specific handler for a given topic.
+     * @param {string} topic - The topic to unsubscribe the handler from.
+     * @param {Function} handler - The specific handler function to remove.
+     */
+    async unsubscribe(topic, handler) {
+        if (!this.handlers.has(topic)) {
+            return;
+        }
+        const handlers = this.handlers.get(topic);
+        const index = handlers.indexOf(handler);
+        if (index > -1) {
+            handlers.splice(index, 1);
+            this.log(`[P2P] Unsubscribed a handler from ${topic}`, 'debug');
+        }
+    }
 
 async stop() {
   if (this._rendezvousTimer) {

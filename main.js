@@ -45,6 +45,36 @@ worker.on('message', (event) => {
             rl.prompt(true);
             break;
 
+        case 'syncProgress': {
+            // This handler draws a single-line progress bar that updates in place.
+            const { current, target, startTime } = payload;
+            const percent = ((current / target) * 100).toFixed(2);
+            const elapsedTime = (Date.now() - startTime) / 1000; // in seconds
+            const blocksPerSecond = elapsedTime > 0 ? (current / elapsedTime).toFixed(1) : 0;
+
+            const barWidth = 30;
+            const filledWidth = Math.floor(barWidth * (percent / 100));
+            const progressBar = '█'.repeat(filledWidth) + '░'.repeat(barWidth - filledWidth);
+
+            // Use process.stdout.write with a carriage return (\r) to update the line in place.
+            readline.clearLine(process.stdout, 0);
+            readline.cursorTo(process.stdout, 0);
+            process.stdout.write(
+                chalk.yellow(`[SYNC] Downloading: ${progressBar} ${percent}% `) +
+                chalk.cyan(`(${current}/${target}) | ${blocksPerSecond} blk/s`)
+            );
+            break;
+        }
+
+
+        case 'syncComplete': {
+            // This handler cleans up the progress bar and redraws the command prompt.
+            readline.clearLine(process.stdout, 0);
+            readline.cursorTo(process.stdout, 0);
+            rl.prompt(true);
+            break;
+        }
+
         case 'networkInitialized':
             isNetworkOnline = true; 
             console.log(chalk.green.bold('\nNetwork Online. Type "help" for commands.'));

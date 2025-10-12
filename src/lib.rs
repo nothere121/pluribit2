@@ -922,10 +922,78 @@ pub async fn ingest_block(block_js: JsValue) -> Result<JsValue, JsValue> {
 }
 
 
+#[wasm_bindgen]
+pub fn get_side_blocks_info() -> Result<JsValue, JsValue> {
+    let side = SIDE_BLOCKS.lock().unwrap();
+    
+    #[derive(Serialize)]
+    struct SideBlockInfo {
+        hash: String,
+        height: u64,
+    }
+    
+    let info: Vec<SideBlockInfo> = side.iter()
+        .map(|(hash, block)| SideBlockInfo {
+            hash: hash.clone(),
+            height: block.height,
+        })
+        .collect();
+    
+    serde_wasm_bindgen::to_value(&info).map_err(|e| e.into())
+}
+
+/// Recursively calculates the GHOST weight for a given block hash.
+/// RATIONALE: This is the core of the GHOST protocol. The "weight" is not a simple
+/// block count but the sum of the cumulative proof-of-work of a block and all of
+/// its descendants. This ensures that the protocol selects the chain with the most
+/// total computational effort behind it, providing security against selfish mining
+/// without regressing to a simple (and insecure) block-counting scheme.
+fn calculate_ghost_weight(
+    block_hash: &str,
+    block_map: &HashMap<String, Block>,
+    children_map: &HashMap<String, Vec<String>>,
+    memo: &mut HashMap<String, u64>,
+) -> u64 {
+    // RATIONALE (Performance): Use memoization to avoid re-calculating the weight
+    // of the same sub-trees, making the process efficient and DoS-resistant.
+    if let Some(&weight) = memo.get(block_hash) {
+        return weight;
+    }
+
+    // The weight of a block is its own work plus the weight of all its children's subtrees.
+    let self_work = match block_map.get(block_hash) {
+        Some(b) => Blockchain::get_chain_work(&[b.clone()]),
+        None => return 0, // Should not happen if block_map is complete.
+    };
+
+    let mut total_weight = self_work;
+    if let Some(children) = children_map.get(block_hash) {
+        for child_hash in children {
+            total_weight = total_weight.saturating_add(calculate_ghost_weight(
+                child_hash,
+                block_map,
+                children_map,
+                memo,
+            ));
+        }
+    }
+
+    memo.insert(block_hash.to_string(), total_weight);
+    total_weight
+}
+
 /// Create a deterministic reorg plan from a candidate tip.
 #[wasm_bindgen]
 pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
     let (canon_tip_hash, canon_tip_height) = tip_hash_and_height();
+
+    // RATIONALE (Defensive): Early exit if the candidate is already the canonical tip.
+    if tip_hash == canon_tip_hash {
+        let plan = ReorgPlan {
+            detach: vec![], attach: vec![], new_tip_hash: canon_tip_hash, new_height: canon_tip_height, requests: vec![],
+        };
+        return serde_wasm_bindgen::to_value(&plan).map_err(|e| e.into());
+    }
 
     // Check if we have the candidate tip block at all
     let have_candidate = match get_block_any(&tip_hash) {
@@ -937,9 +1005,8 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
             }
         }
     };
-    
     if !have_candidate {
-        // We don't have this block - request it first so we can evaluate work
+        // RATIONALE (Defensive): We must have the candidate to evaluate its work. If not, request it.
         log(&format!("[REORG] Don't have candidate tip {}. Requesting for work evaluation.", &tip_hash[..12]));
         let plan = ReorgPlan {
             detach: vec![],
@@ -949,7 +1016,7 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
             requests: vec![tip_hash],
         };
         return serde_wasm_bindgen::to_value(&plan).map_err(|e| e.into());
-    }    
+    }
 
     let mut canon_history: HashMap<u64, String> = HashMap::new();
     // First, load the canonical tip block directly from the DB to get a trusted starting point.
@@ -979,7 +1046,6 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
     let mut fork_path: Vec<Block> = Vec::new();
     let mut missing_parents: Vec<String> = Vec::new();
     let mut common_height: Option<u64> = None;
-    
     // --- START: MODIFIED SECTION ---
     // RATIONALE: We must be able to find the starting block for the fork from either the
     // side-chain cache OR the canonical database (in the case of a reorg from genesis).
@@ -1016,11 +1082,10 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
 
         fork_path.push(current_fork_block.clone());
         if current_fork_block.height == 0 {
-            break; 
+            break;
         }
 
         let parent_hash = current_fork_block.prev_hash.clone();
-        
         // --- START: MODIFIED SECTION ---
         // RATIONALE: When building the fork path, we must check both the side-chain cache
         // AND the database to find parent blocks.
@@ -1064,7 +1129,7 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
 
     let ancestor_h = common_height.expect("Logical error: common ancestor must be found");
     
-    fork_path.reverse(); 
+    fork_path.reverse();
     let attach_hashes: Vec<String> = fork_path.iter().map(|b| b.hash()).collect();
     
     let mut detach_segment = Vec::new();
@@ -1075,17 +1140,41 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
     }
     let detach_hashes: Vec<String> = detach_segment.iter().map(|b| b.hash()).collect();
     
-    let current_total_work = { BLOCKCHAIN.lock().unwrap().total_work };
-    let detached_work = Blockchain::get_chain_work(&detach_segment);
-    let ancestor_total_work = current_total_work.saturating_sub(detached_work);
+    // --- GHOST FORK-CHOICE RULE IMPLEMENTATION (SECURE VERSION) ---
+    log("[REORG] Calculating GHOST weights for competing chains...");
+    let (fork_weight, canon_weight) = {
+        // 1. Build a complete map of all relevant blocks and their relationships.
+        let mut block_map: HashMap<String, Block> = HashMap::new();
+        let mut children_map: HashMap<String, Vec<String>> = HashMap::new();
 
-    let canon_total_work = current_total_work;
-    let fork_total_work = ancestor_total_work.saturating_add(Blockchain::get_chain_work(&fork_path));
-    log(&format!("[REORG] Comparing chains: Canonical Work={}, Fork Work={}", canon_total_work, fork_total_work));
+        // RATIONALE (Correctness): Add ALL blocks from the competing paths (canonical
+        // and fork) to the map to construct an accurate view of the block tree.
+        let all_relevant_blocks = [fork_path.clone(), detach_segment.clone()].concat();
+        for block in all_relevant_blocks {
+            children_map.entry(block.prev_hash.clone()).or_default().push(block.hash());
+            block_map.insert(block.hash(), block);
+        }
+        // Also include all known side-blocks to correctly weigh the subtrees.
+        for block in SIDE_BLOCKS.lock().unwrap().values() {
+            if !block_map.contains_key(&block.hash()) {
+                children_map.entry(block.prev_hash.clone()).or_default().push(block.hash());
+                block_map.insert(block.hash(), block.clone());
+            }
+        }
+        
+        // 2. Calculate the proof-of-work weighted GHOST score for each chain.
+        let mut memo: HashMap<String, u64> = HashMap::new();
+        let fork_weight = calculate_ghost_weight(&tip_hash, &block_map, &children_map, &mut memo);
+        let canon_weight = calculate_ghost_weight(&canon_tip_hash, &block_map, &children_map, &mut memo);
+        (fork_weight, canon_weight)
+    };
+    log(&format!("[REORG] GHOST PoW Weights: Fork Weight={}, Canonical Weight={}", fork_weight, canon_weight));
 
-    let should_switch = if fork_total_work > canon_total_work {
+    let should_switch = if fork_weight > canon_weight {
         true
-    } else if fork_total_work == canon_total_work {
+    } else if fork_weight == canon_weight {
+        // RATIONALE (Tie-breaking): Use the lexicographically smaller hash as a
+        // deterministic tie-breaker to prevent network splits if work is identical.
         tip_hash < canon_tip_hash
     } else {
        false

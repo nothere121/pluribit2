@@ -196,7 +196,8 @@ const replacer = (_, v) => {
   return v;
 };
 const stringify = (x) => JSON.stringify(x, replacer);
-const parse = (s) => JSON.parse(s);
+const parse = (s) => JSONParseWithBigInt(s);
+
 
 // --- WALLET ENCRYPTION HELPERS ---
 const PASS_ENV = 'PLURIBIT_WALLET_PASSPHRASE';
@@ -752,9 +753,9 @@ async function commit_staged_reorg(blocks, oldHeights, newTipHeight, newTipHash)
     // Note: We keep hash: entries for historical queries
   }
   
-  // Update metadata
-  metaBatch.put('tip_height', newTipHeight);
-  metaBatch.put('tip_hash', newTipHash);
+    // Update metadata
+    metaBatch.put('tip_height', Number(newTipHeight));  // Convert BigInt to Number
+    metaBatch.put('tip_hash', newTipHash);
   
   // Execute both batches (atomic within each DB)
   await batch.write();
