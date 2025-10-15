@@ -5,7 +5,8 @@
   "main": "main.js",
   "type": "module",
   "scripts": {
-    "build": "wasm-pack build --target nodejs -d ./pkg-node && cd native && npm run build && cd ..",
+    "build:proto": "pbjs -t static-module -w commonjs -o src/p2p_pb.cjs src/p2p.proto && pbts -o src/p2p_pb.d.ts src/p2p_pb.cjs",
+    "build": "npm run build:proto && wasm-pack build --target nodejs -d ./pkg-node && cd native && npm run build && cd ..",
     "start": "node main.js",
     "test": "c8 --all node test.js && cargo test --lib && wasm-pack test --node"
   },
@@ -47,6 +48,7 @@
     "esmock": "^2.7.1",
     "fast-check": "^4.2.0",
     "memdown": "^6.1.1",
+    "protobufjs-cli": "^1.1.2",
     "sinon": "^21.0.0",
     "tape": "^5.9.0"
   }

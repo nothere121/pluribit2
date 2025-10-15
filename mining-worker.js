@@ -66,18 +66,20 @@ async function findMiningCandidate(params) {
             // Perform VDF computation
             let vdf_proof;
             if (isNative) {
-                const result = pluribit.performVdfComputation(vdf_input, Number(vdfIterations));
+                // The native addon now accepts BigInt directly, so no conversion is needed.
+                const result = pluribit.performVdfComputation(vdf_input, vdfIterations);
                 vdf_proof = {
                     y: Buffer.from(result.y, 'hex'),
                     pi: Buffer.from(result.pi, 'hex'),
                     l: Buffer.from(result.l, 'hex'),
                     r: Buffer.from(result.r, 'hex'),
-                    iterations: result.iterations
+                    iterations: BigInt(result.iterations) // The native module returns a Number, so we cast it up to BigInt
                 };
             } else {
+                // The WASM module expects a BigInt, which vdfIterations already is.
                 vdf_proof = await wasmModule.perform_vdf_computation(
                     vdf_input,
-                    BigInt(vdfIterations)
+                    vdfIterations
                 );
             }
             

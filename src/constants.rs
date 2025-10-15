@@ -31,6 +31,11 @@ pub const MAX_TX_POOL_SIZE: usize = 4096;
 /// Fixed timestamp used by the genesis block.
 pub const GENESIS_TIMESTAMP_MS: u64 = 1_750_000_658_000; // 2025-06-15 14:57:38 UTC
 
+/// Canonical genesis block hash for network consensus.
+/// All nodes must agree on this exact genesis or they're on different networks.
+pub const CANONICAL_GENESIS_HASH: &str = 
+    "cdc1fdcff58412076bbe011ddfde6071d9bcb74f54c088eecf6e15e771047b93";
+
 /// Bitcoin block hash anchoring the genesis state.
 pub const GENESIS_BITCOIN_HASH: &str =
     "00000000000000000000656b995c9fec9ff94b554dc4aad46c06b71f94088c3c";

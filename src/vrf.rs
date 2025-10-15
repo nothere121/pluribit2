@@ -5,6 +5,7 @@ use curve25519_dalek::scalar::Scalar;
 use sha2::{Sha256, Digest};
 use serde::{Serialize, Deserialize};
 use rand::thread_rng;
+use crate::p2p;
 
 
 /// VRF proof data structure
@@ -188,6 +189,53 @@ pub fn verify_vrf(public_key: &RistrettoPoint, input: &[u8], proof: &VrfProof) -
     println!("Output verified!");
     
     true
+}
+
+/// **Protobuf Conversion: Internal -> p2p**
+impl From<VrfProof> for p2p::VrfProof {
+    fn from(proof: VrfProof) -> Self {
+        p2p::VrfProof {
+            gamma: proof.gamma.to_vec(),
+            c: proof.c.to_vec(),
+            s: proof.s.to_vec(),
+            output: proof.output.to_vec(),
+        }
+    }
+}
+
+/// **Protobuf Conversion: p2p -> Internal**
+impl From<p2p::VrfProof> for VrfProof {
+    fn from(proto: p2p::VrfProof) -> Self {
+        let mut gamma = [0u8; 32];
+        if proto.gamma.len() == 32 {
+            gamma.copy_from_slice(&proto.gamma);
+        } else if !proto.gamma.is_empty() {
+            crate::log(&format!("[PROTO WARNING] Invalid gamma length: {}", proto.gamma.len()));
+        }
+
+        let mut c = [0u8; 32];
+        if proto.c.len() == 32 {
+            c.copy_from_slice(&proto.c);
+        } else if !proto.c.is_empty() {
+            crate::log(&format!("[PROTO WARNING] Invalid c length: {}", proto.c.len()));
+        }
+
+        let mut s = [0u8; 32];
+        if proto.s.len() == 32 {
+            s.copy_from_slice(&proto.s);
+        } else if !proto.s.is_empty() {
+            crate::log(&format!("[PROTO WARNING] Invalid s length: {}", proto.s.len()));
+        }
+
+        let mut output = [0u8; 32];
+        if proto.output.len() == 32 {
+            output.copy_from_slice(&proto.output);
+        } else if !proto.output.is_empty() {
+            crate::log(&format!("[PROTO WARNING] Invalid output length: {}", proto.output.len()));
+        }
+
+        VrfProof { gamma, c, s, output }
+    }
 }
 
 #[cfg(test)]

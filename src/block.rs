@@ -4,34 +4,37 @@ use crate::transaction::Transaction;
 use crate::vdf::VDFProof;
 use crate::vrf::VrfProof;
 use sha2::{Sha256, Digest};
+use crate::wasm_types::WasmU64;
 use crate::{constants::{GENESIS_TIMESTAMP_MS, GENESIS_BITCOIN_HASH, DEFAULT_VRF_THRESHOLD, INITIAL_VDF_ITERATIONS}, error::PluribitError};
+use crate::p2p;
 
 use crate::error::PluribitResult;
 use std::collections::HashSet;
 use crate::transaction::{TransactionInput, TransactionOutput, TransactionKernel};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Block {
-   pub height: u64,
+   pub height: WasmU64,
    pub prev_hash: String,
-   pub timestamp: u64,
+   pub timestamp: WasmU64,
    pub transactions: Vec<Transaction>,
    
    // SEQLOT Fields
-   pub lottery_nonce: u64,
+   pub lottery_nonce: WasmU64,
    pub vrf_proof: VrfProof,
    pub vdf_proof: VDFProof,
    pub miner_pubkey: [u8; 32],
    
    // NEW: Consensus-committed parameters
    pub vrf_threshold: [u8; 32],
-   pub vdf_iterations: u64,
+   pub vdf_iterations: WasmU64,
 
    // Merkle root
    pub tx_merkle_root: [u8; 32],
    
    //cumulative work
-   pub total_work: u64, 
+   pub total_work: WasmU64, 
    
    //  hash as a computed field during serialization
    #[serde(skip_deserializing)]
@@ -47,18 +50,18 @@ impl Block {
        let genesis_prev_hash = hex::encode(hasher.finalize());
 
        let mut block = Block {
-           height: 0,
+           height: WasmU64::from(0),
            prev_hash: genesis_prev_hash,
-           timestamp: GENESIS_TIMESTAMP_MS, 
+           timestamp: WasmU64::from(GENESIS_TIMESTAMP_MS), 
            transactions: vec![],
-           lottery_nonce: 0,
+           lottery_nonce: WasmU64::from(0),
            vrf_proof: VrfProof::default(),
            vdf_proof: VDFProof::default(),
            miner_pubkey: [0u8; 32],
            vrf_threshold: DEFAULT_VRF_THRESHOLD,
-           vdf_iterations: INITIAL_VDF_ITERATIONS,
+           vdf_iterations: WasmU64::from(INITIAL_VDF_ITERATIONS),
            tx_merkle_root: Sha256::digest(&[]).into(),
-           total_work: 0,
+           total_work: WasmU64::from(0),
            hash: String::new(), // Will be computed below
        };
        block.hash = block.compute_hash();
@@ -69,18 +72,18 @@ impl Block {
    pub fn compute_hash(&self) -> String {
        let mut hasher = Sha256::new();
        hasher.update(b"pluribit_block_v3"); // Version bump for replay protection
-       hasher.update(&self.height.to_le_bytes());
+       hasher.update(&self.height.0.to_le_bytes());
        hasher.update(self.prev_hash.as_bytes());
-       hasher.update(&self.timestamp.to_le_bytes());
+       hasher.update(&self.timestamp.0.to_le_bytes());
        hasher.update(&self.tx_merkle_root);
        // FIX #10: Include lottery nonce in hash to bind VDF to specific block height
-       hasher.update(&self.lottery_nonce.to_le_bytes());
+       hasher.update(&self.lottery_nonce.0.to_le_bytes());
        hasher.update(&self.vrf_proof.output);
        hasher.update(&self.vdf_proof.y);
        hasher.update(&self.miner_pubkey);
        // ADDED: Commit to consensus parameters
        hasher.update(&self.vrf_threshold);
-       hasher.update(&self.vdf_iterations.to_le_bytes());
+       hasher.update(&self.vdf_iterations.0.to_le_bytes());
        hex::encode(hasher.finalize())
    }
 
@@ -205,7 +208,7 @@ impl Block {
             inputs: external_inputs,
             outputs: unspent_outputs,
             kernels: all_kernels,
-            timestamp: self.transactions.last().map_or(0, |tx| tx.timestamp),
+            timestamp: self.transactions.last().map_or(WasmU64::from(0), |tx| tx.timestamp),
         };
 
         // 4. REBUILD TRANSACTION LIST
@@ -235,6 +238,71 @@ impl Block {
 
         let (_proofs, root) = crate::merkle::build_merkle_tree_with_proofs(&leaves);
         root
+    }
+}
+
+/// **Conversion from Protobuf to internal struct**
+impl From<p2p::Block> for Block {
+    fn from(proto: p2p::Block) -> Self {
+        let mut miner_pubkey = [0u8; 32];
+        if proto.miner_pubkey.len() == 32 {
+            miner_pubkey.copy_from_slice(&proto.miner_pubkey);
+        } else if !proto.miner_pubkey.is_empty() {
+            crate::log(&format!("[PROTO WARNING] Invalid miner_pubkey length: {}", proto.miner_pubkey.len()));
+        }
+        
+        let mut vrf_threshold = [0u8; 32];
+        if proto.vrf_threshold.len() == 32 {
+            vrf_threshold.copy_from_slice(&proto.vrf_threshold);
+        } else if !proto.vrf_threshold.is_empty() {
+            crate::log(&format!("[PROTO WARNING] Invalid vrf_threshold length: {}", proto.vrf_threshold.len()));
+        }
+        
+        let mut tx_merkle_root = [0u8; 32];
+        if proto.tx_merkle_root.len() == 32 {
+            tx_merkle_root.copy_from_slice(&proto.tx_merkle_root);
+        } else if !proto.tx_merkle_root.is_empty() {
+            crate::log(&format!("[PROTO WARNING] Invalid tx_merkle_root length: {}", proto.tx_merkle_root.len()));
+        }
+
+        Block {
+            height: WasmU64::from(proto.height),
+            prev_hash: proto.prev_hash,
+            timestamp: WasmU64::from(proto.timestamp),
+            transactions: proto.transactions.into_iter().map(Transaction::from).collect(),
+            lottery_nonce: WasmU64::from(proto.lottery_nonce),
+            vrf_proof: proto.vrf_proof.map(VrfProof::from).unwrap_or_default(),
+            vdf_proof: proto.vdf_proof.map(VDFProof::from).unwrap_or_default(),
+            miner_pubkey,
+            vrf_threshold,
+            vdf_iterations: WasmU64::from(proto.vdf_iterations),
+            tx_merkle_root,
+            // SECURITY: Never trust total_work from network - always recompute
+            total_work: WasmU64::from(0),
+            // SECURITY: Hash will be recomputed in ingest_block_bytes
+            hash: String::new(),
+        }
+    }
+}
+
+/// **Conversion from internal struct to Protobuf**
+impl From<Block> for p2p::Block {
+    fn from(block: Block) -> Self {
+        p2p::Block {
+            height: *block.height,
+            prev_hash: block.prev_hash,
+            timestamp: *block.timestamp,
+            transactions: block.transactions.into_iter().map(p2p::Transaction::from).collect(),
+            lottery_nonce: *block.lottery_nonce,
+            vrf_proof: Some(p2p::VrfProof::from(block.vrf_proof)),
+            vdf_proof: Some(p2p::VdfProof::from(block.vdf_proof)),
+            miner_pubkey: block.miner_pubkey.to_vec(),
+            vrf_threshold: block.vrf_threshold.to_vec(),
+            vdf_iterations: *block.vdf_iterations,
+            tx_merkle_root: block.tx_merkle_root.to_vec(),
+            total_work: *block.total_work,
+            hash: block.hash,
+        }
     }
 }
 

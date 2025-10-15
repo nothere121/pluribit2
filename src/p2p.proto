@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package p2p;
+
+// Rationale: This file defines the strict, language-agnostic contract for all
+// peer-to-peer messages. Using a binary format like Protobuf instead of JSON
+// completely eliminates text-based parsing vulnerabilities such as Prototype
+// Pollution and Regular Expression DoS (ReDoS).
+
+message VrfProof {
+  bytes gamma = 1;
+  bytes c = 2;
+  bytes s = 3;
+  bytes output = 4;
+}
+
+message VdfProof {
+  bytes y = 1;
+  bytes pi = 2;
+  bytes l = 3;
+  bytes r = 4;
+  uint64 iterations = 5;
+}
+message Challenge {
+    string challenge = 1;
+    string from = 2;
+}
+
+message ChallengeResponse {
+    string solution = 1;
+    string nonce = 2;
+    string from = 3;
+}
+
+message DirectBlockRequest {
+    string hash = 1;
+}
+
+// This wrapper allows the response to be either a block or an error message.
+message BlockTransferResponse {
+    oneof payload {
+        Block block_data = 1;
+        string error_reason = 2;
+    }
+}
+message TransactionInput {
+  bytes commitment = 1;
+  // Merkle proof is omitted for network transmission to save space.
+  uint64 source_height = 2;
+}
+
+message TransactionOutput {
+  bytes commitment = 1;
+  bytes range_proof = 2;
+  optional bytes ephemeral_key = 3;
+  optional bytes stealth_payload = 4;
+}
+
+message TransactionKernel {
+  bytes excess = 1;
+  bytes signature = 2;
+  uint64 fee = 3;
+  uint64 min_height = 4;
+  uint64 timestamp = 5;
+}
+
+message Transaction {
+  repeated TransactionInput inputs = 1;
+  repeated TransactionOutput outputs = 2;
+  repeated TransactionKernel kernels = 3;
+  uint64 timestamp = 4;
+}
+
+message Block {
+  uint64 height = 1;
+  string prev_hash = 2;
+  uint64 timestamp = 3;
+  repeated Transaction transactions = 4;
+  uint64 lottery_nonce = 5;
+  VrfProof vrf_proof = 6;
+  VdfProof vdf_proof = 7;
+  bytes miner_pubkey = 8;
+  bytes vrf_threshold = 9;
+  uint64 vdf_iterations = 10;
+  bytes tx_merkle_root = 11;
+  uint64 total_work = 12;
+  string hash = 13;
+}
+
+// Announce new blocks by hash to save bandwidth.
+message BlockAnnouncement {
+  string hash = 1;
+  uint64 height = 2;
+}
+
+// Request a block by its hash.
+message BlockRequest {
+  string hash = 1;
+}
+
+// Request block hashes for syncing.
+message GetHashesRequest {
+  uint64 start_height = 1;
+  string request_id = 2;
+}
+
+// Response containing a chunk of block hashes.
+message HashesResponse {
+  repeated string hashes = 1;
+  string request_id = 2;
+  bool final_chunk = 3;
+}
+
+// Announce chain tip during consensus discovery.
+message TipBroadcast {
+  string tip_hash = 1;
+  uint64 height = 2;
+  string total_work = 3; // Rationale: Use string for u64/BigInt safety.
+}
+
+// Top-level message wrapper.
+// Rationale: Using a 'oneof' ensures that each P2P message has exactly one
+// payload type. This provides a single, type-safe entry point for all network
+// traffic, simplifying the dispatch logic and preventing ambiguity.
+message P2pMessage {
+  oneof payload {
+    Block block = 1;
+    Transaction transaction = 2;
+    BlockAnnouncement block_announcement = 3;
+    BlockRequest block_request = 4;
+    GetHashesRequest get_hashes_request = 5;
+    HashesResponse hashes_response = 6;
+    TipBroadcast tip_broadcast = 7;
+  }
+}

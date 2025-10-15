@@ -8,6 +8,7 @@ use serde::{Serialize, Deserialize};
 use serde_json;
 use sha2::{Sha256, Digest};
 use curve25519_dalek::{ristretto::{CompressedRistretto, RistrettoPoint}, scalar::Scalar, traits::Identity};
+use prost::Message;
 
 use crate::blockchain::Blockchain;
 use crate::vrf::VrfProof;
@@ -20,14 +21,18 @@ use crate::blockchain::get_current_base_reward;
 use crate::transaction::{Transaction, TransactionOutput, TransactionKernel};
 use crate::block::Block; 
 use crate::constants::MAX_TX_POOL_SIZE;
+use crate::wasm_types::WasmU64;
 
 pub mod constants;
+pub mod wasm_types;
+
 pub mod error;
 pub mod utils;
 pub mod vdf;
 pub mod mimblewimble;
 pub mod transaction;
 pub mod block;
+pub mod p2p;
 pub mod blockchain;
 pub mod stealth;
 pub mod wallet;
@@ -525,7 +530,7 @@ pub fn perform_vdf_computation(input_str: String, iterations: u64) -> Result<JsV
     // 3. Call compute_with_proof
     //    This is a method on your VDF struct.
     log(&format!("[RUST] Calling vdf_instance.compute_with_proof for {} iterations...", iterations));
-    match vdf_instance.compute_with_proof(input_bytes, iterations) {
+    match vdf_instance.compute_with_proof(input_bytes, WasmU64::from(iterations)) {
         Ok(proof_data) => {
             log("[RUST] VDF computation successful. Serializing proof...");
             // Serialize the VDFProof struct to JsValue
@@ -651,9 +656,9 @@ pub async fn init_blockchain_from_db() -> Result<JsValue, JsValue> {
     if tip_height > 0 {
         if let Some(tip_block) = load_block_from_db(tip_height).await? {
             // Restore chain state from the tip block in the DB.
-            chain.current_height = tip_block.height;
+            *chain.current_height = *tip_block.height;
             chain.tip_hash = tip_block.hash();
-            chain.total_work = get_total_work_from_db().await?;
+            chain.total_work = WasmU64::from(get_total_work_from_db().await?);
 
             chain.current_vrf_threshold = tip_block.vrf_threshold;
             chain.current_vdf_iterations = tip_block.vdf_iterations;
@@ -785,24 +790,37 @@ fn get_block_any(hash: &str) -> Option<Block> {
 
  fn tip_hash_and_height() -> (String, u64) {
      let chain = BLOCKCHAIN.lock().unwrap();
-    (chain.tip_hash.clone(), chain.current_height)
+    (chain.tip_hash.clone(), *chain.current_height)
  }
 
 /// Unified entrypoint for all incoming blocks from the network.
 /// - If parent missing -> store on side + ask JS to fetch the parent.
 /// - Else -> valid side block; JS may ask for reorg via plan_reorg_for_tip.
-#[wasm_bindgen]
-pub async fn ingest_block(block_js: JsValue) -> Result<JsValue, JsValue> {
-    let mut block: Block = serde_wasm_bindgen::from_value(block_js)
-        .map_err(|e| JsValue::from_str(&format!("bad block: {e}")))?;
-    if block.hash.is_empty() {
-        block.hash = block.compute_hash();
+#[wasm_bindgen(js_name = "ingest_block_bytes")]
+pub async fn ingest_block_bytes(block_bytes: Vec<u8>) -> Result<JsValue, JsValue> {
+    use prost::Message;
+    let p2p_block = p2p::Block::decode(&block_bytes[..])
+        .map_err(|e| JsValue::from_str(&format!("bad block proto: {e}")))?;
+    let mut block: Block = Block::from(p2p_block);
+    // CRITICAL: Always recompute hash to ensure consistency across nodes
+    block.hash = block.compute_hash();
+    
+    // CRITICAL: Reject any genesis block that doesn't match canonical
+    if block.height == 0 {
+        if block.hash != crate::constants::CANONICAL_GENESIS_HASH {
+            let res = IngestResult::Invalid { 
+                reason: format!("Invalid genesis hash. Expected {}, got {}", 
+                    crate::constants::CANONICAL_GENESIS_HASH, block.hash) 
+            };
+            return serde_wasm_bindgen::to_value(&res).map_err(|e| e.into());
+        }
     }
+    
     
     // --- START: CORRECT DUPLICATE DETECTION LOGIC ---
     // RATIONALE: This logic performs an async database call to see if we already
     // have a canonical block at this height. This is the correct way to detect a common ancestor.
-    if let Some(db_block) = load_block_from_db(block.height).await? {
+    if let Some(db_block) = load_block_from_db(*block.height).await? {
         if db_block.hash() == block.hash() {
             let res = IngestResult::Invalid { reason: "Duplicate block".to_string() };
             return serde_wasm_bindgen::to_value(&res).map_err(|e| e.into());
@@ -834,7 +852,7 @@ pub async fn ingest_block(block_js: JsValue) -> Result<JsValue, JsValue> {
  
 
     // Parent present?
-    if load_block_from_db(block.height.saturating_sub(1)).await?.is_none() && block.height > 0 {
+    if load_block_from_db(block.height.saturating_sub(1)).await?.is_none() && *block.height > 0 {
         // Stash and request parent
         let parent = block.prev_hash.clone();
         let h = block.hash();
@@ -871,9 +889,9 @@ pub async fn ingest_block(block_js: JsValue) -> Result<JsValue, JsValue> {
                 (chain.current_vrf_threshold, chain.current_vdf_iterations)
             };
             
-            if block.height > constants::MTP_WINDOW as u64 {
+            if *block.height > constants::MTP_WINDOW as u64 {
                 let mut timestamps = Vec::new();
-                for i in (block.height - constants::MTP_WINDOW as u64)..block.height {
+                for i in (*block.height - constants::MTP_WINDOW as u64)..*block.height {
                     if let Some(b) = load_block_from_db(i).await? {
                         timestamps.push(b.timestamp);
                     }
@@ -895,8 +913,8 @@ pub async fn ingest_block(block_js: JsValue) -> Result<JsValue, JsValue> {
             chain.current_vrf_threshold = expected_vrf_threshold;
             chain.current_vdf_iterations = expected_vdf_iterations;
         }
-        save_block_to_db(block.clone()).await?;
-        save_total_work_to_db(BLOCKCHAIN.lock().unwrap().total_work).await?;
+        save_block_to_db(block.clone()).await?; 
+        save_total_work_to_db(*BLOCKCHAIN.lock().unwrap().total_work).await?;
         mempool_hygiene_after_block(&block);
         let res = IngestResult::AcceptedAndExtended;
         log("[RUST DEBUG] Returning AcceptedAndExtended");  
@@ -916,7 +934,7 @@ pub async fn ingest_block(block_js: JsValue) -> Result<JsValue, JsValue> {
         });
     }
         
-    let res = IngestResult::StoredOnSide { tip_hash: block.hash(), height: block.height };
+    let res = IngestResult::StoredOnSide { tip_hash: block.hash(), height: *block.height };
     log(&format!("[RUST DEBUG] Returning StoredOnSide for block {}", block.hash()));  
     serde_wasm_bindgen::to_value(&res).map_err(|e| e.into())
 }
@@ -935,7 +953,7 @@ pub fn get_side_blocks_info() -> Result<JsValue, JsValue> {
     let info: Vec<SideBlockInfo> = side.iter()
         .map(|(hash, block)| SideBlockInfo {
             hash: hash.clone(),
-            height: block.height,
+            height: *block.height,
         })
         .collect();
     
@@ -1046,7 +1064,6 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
     let mut fork_path: Vec<Block> = Vec::new();
     let mut missing_parents: Vec<String> = Vec::new();
     let mut common_height: Option<u64> = None;
-    // --- START: MODIFIED SECTION ---
     // RATIONALE: We must be able to find the starting block for the fork from either the
     // side-chain cache OR the canonical database (in the case of a reorg from genesis).
     let mut current_fork_block = match get_block_any(&tip_hash) {
@@ -1063,7 +1080,6 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
             }
         }
     };
-    // --- END: MODIFIED SECTION ---
 
     let mut iterations = 0;
     loop {
@@ -1073,26 +1089,41 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
             return Err(JsValue::from_str("Reorg depth exceeds maximum allowed"));
         }
 
-        if let Some(canon_hash) = canon_history.get(&current_fork_block.height) {
+        // CRITICAL FIX: Add block to fork_path BEFORE checking for common ancestor
+        // This ensures fork_path always contains at least the tip block when we proceed
+        let found_common_ancestor = if let Some(canon_hash) = canon_history.get(&*current_fork_block.height) {
             if canon_hash == &current_fork_block.hash() {
-                common_height = Some(current_fork_block.height);
-                break;
+                common_height = Some(*current_fork_block.height);
+                true  // Found common ancestor
+            } else {
+                false  // Different hash at this height
             }
+        } else {
+            false  // Height not in canonical history
+        };
+
+        // Push the current block BEFORE breaking
+        if !found_common_ancestor {
+            fork_path.push(current_fork_block.clone());
         }
 
-        fork_path.push(current_fork_block.clone());
+        // Break after we've added the block (if appropriate)
+        if found_common_ancestor {
+            break;
+        }
+
         if current_fork_block.height == 0 {
             break;
         }
 
         let parent_hash = current_fork_block.prev_hash.clone();
-        // --- START: MODIFIED SECTION ---
         // RATIONALE: When building the fork path, we must check both the side-chain cache
         // AND the database to find parent blocks.
         if let Some(parent_block) = get_block_any(&parent_hash) {
             current_fork_block = parent_block;
         } else if let Some(parent_block_from_db) = load_block_by_hash(&parent_hash).await? {
             current_fork_block = parent_block_from_db;
+            
         } else if let Some(parent_block_from_db) = load_block_from_db(current_fork_block.height - 1).await? {
             if parent_block_from_db.hash() == parent_hash {
                 current_fork_block = parent_block_from_db;
@@ -1105,7 +1136,6 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
                 break;
             }
         } else {
-        // --- END: MODIFIED SECTION ---
             missing_parents.push(parent_hash);
             if missing_parents.len() > 10 {
                 log("[REORG] Too many missing parents in fork, aborting plan");
@@ -1115,7 +1145,6 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
         }
     }
     
-    // ... THE REST OF THE FUNCTION REMAINS UNCHANGED ...
     if !missing_parents.is_empty() {
         let plan = ReorgPlan {
             detach: vec![],
@@ -1127,7 +1156,57 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
         return serde_wasm_bindgen::to_value(&plan).map_err(|e| e.into());
     }
 
-    let ancestor_h = common_height.expect("Logical error: common ancestor must be found");
+    // After the loop ends, if we still haven't found a common ancestor
+    // and we're at genesis, do one final check
+    if common_height.is_none() && !fork_path.is_empty() {
+        if let Some(last_fork_block) = fork_path.last() {
+            if last_fork_block.height == 0 {
+                if let Some(genesis_hash) = canon_history.get(&0) {
+                    if genesis_hash == &last_fork_block.hash() {
+                        common_height = Some(0);
+                    }
+                }
+            }
+        }
+    }
+
+    let ancestor_h = match common_height {
+        Some(h) => h,
+        None => {
+            log(&format!("[REORG] Could not find common ancestor for fork {}", &tip_hash[..12]));
+            log(&format!("[REORG] Fork path length: {}, Canon history size: {}", 
+                fork_path.len(), canon_history.len()));
+            
+            // Check if fork path is empty - this shouldn't happen
+            if fork_path.is_empty() {
+                log("[REORG] Fork path is empty, aborting reorg");
+                let plan = ReorgPlan {
+                    detach: vec![],
+                    attach: vec![],
+                    new_tip_hash: canon_tip_hash,
+                    new_height: canon_tip_height,
+                    requests: vec![],
+                };
+                return serde_wasm_bindgen::to_value(&plan).map_err(|e| e.into());
+            }
+            
+            // If we walked back to genesis without finding a match
+            if fork_path.last().unwrap().height == 0 {  // Safe now - we checked !is_empty above
+                log("[REORG] Using genesis as common ancestor");
+                0
+            } else {
+                log("[REORG] Missing parent blocks, aborting reorg");
+                let plan = ReorgPlan {
+                    detach: vec![],
+                    attach: vec![],
+                    new_tip_hash: canon_tip_hash,
+                    new_height: canon_tip_height,
+                    requests: missing_parents,
+                };
+                return serde_wasm_bindgen::to_value(&plan).map_err(|e| e.into());
+            }
+        }
+    };
     
     fork_path.reverse();
     let attach_hashes: Vec<String> = fork_path.iter().map(|b| b.hash()).collect();
@@ -1140,36 +1219,68 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
     }
     let detach_hashes: Vec<String> = detach_segment.iter().map(|b| b.hash()).collect();
     
-    // --- GHOST FORK-CHOICE RULE IMPLEMENTATION (SECURE VERSION) ---
-    log("[REORG] Calculating GHOST weights for competing chains...");
-    let (fork_weight, canon_weight) = {
-        // 1. Build a complete map of all relevant blocks and their relationships.
-        let mut block_map: HashMap<String, Block> = HashMap::new();
-        let mut children_map: HashMap<String, Vec<String>> = HashMap::new();
+        // --- GHOST FORK-CHOICE RULE IMPLEMENTATION (SECURE VERSION) ---
+        log("[REORG] Calculating GHOST weights for competing chains...");
+        let (fork_weight, canon_weight) = {
+            // 1. Build a complete map of all relevant blocks and their relationships.
+            let mut block_map: HashMap<String, Block> = HashMap::new();
+            let mut children_map: HashMap<String, Vec<String>> = HashMap::new();
 
-        // RATIONALE (Correctness): Add ALL blocks from the competing paths (canonical
-        // and fork) to the map to construct an accurate view of the block tree.
-        let all_relevant_blocks = [fork_path.clone(), detach_segment.clone()].concat();
-        for block in all_relevant_blocks {
-            children_map.entry(block.prev_hash.clone()).or_default().push(block.hash());
-            block_map.insert(block.hash(), block);
-        }
-        // Also include all known side-blocks to correctly weigh the subtrees.
-        for block in SIDE_BLOCKS.lock().unwrap().values() {
-            if !block_map.contains_key(&block.hash()) {
+            // Explicitly load and insert the canonical tip to ensure it's always in the map.
+            // This is the core fix for the "Canonical Weight=0" bug.
+            let canon_tip_block = load_block_from_db(canon_tip_height).await?
+                .ok_or_else(|| JsValue::from_str("Could not load canonical tip for GHOST calculation"))?;
+            //  Insert using BOTH the stored hash AND the recomputed hash (defensive)
+            block_map.insert(canon_tip_hash.clone(), canon_tip_block.clone());
+            block_map.insert(canon_tip_block.hash(), canon_tip_block);
+
+            let all_relevant_blocks = [fork_path.clone(), detach_segment.clone()].concat();
+            for block in all_relevant_blocks {
                 children_map.entry(block.prev_hash.clone()).or_default().push(block.hash());
-                block_map.insert(block.hash(), block.clone());
+                block_map.insert(block.hash(), block);
             }
-        }
-        
-        // 2. Calculate the proof-of-work weighted GHOST score for each chain.
-        let mut memo: HashMap<String, u64> = HashMap::new();
-        let fork_weight = calculate_ghost_weight(&tip_hash, &block_map, &children_map, &mut memo);
-        let canon_weight = calculate_ghost_weight(&canon_tip_hash, &block_map, &children_map, &mut memo);
-        (fork_weight, canon_weight)
-    };
-    log(&format!("[REORG] GHOST PoW Weights: Fork Weight={}, Canonical Weight={}", fork_weight, canon_weight));
+            // Also include all known side-blocks to correctly weigh the subtrees.
+            for block in SIDE_BLOCKS.lock().unwrap().values() {
+                if !block_map.contains_key(&block.hash()) {
+                    children_map.entry(block.prev_hash.clone()).or_default().push(block.hash());
+                    block_map.insert(block.hash(), block.clone());
+                }
+            }
 
+            // RATIONALE: Add the common ancestor block to the map to provide a complete
+            // tree structure for the GHOST weight calculation.
+            if let Some(ancestor_block) = load_block_from_db(ancestor_h).await? {
+                if !block_map.contains_key(&ancestor_block.hash()) {
+                     block_map.insert(ancestor_block.hash(), ancestor_block);
+                }
+            }
+
+            // The check below is now redundant due to the explicit load above, but is kept for safety.
+            if !block_map.contains_key(&canon_tip_hash) {
+                if let Some(tip_block) = load_block_from_db(canon_tip_height).await? {
+                    block_map.insert(tip_block.hash(), tip_block);
+                }
+            }
+
+            // 2. Calculate the proof-of-work weighted GHOST score for each chain.
+            let mut memo: HashMap<String, u64> = HashMap::new();
+            let fork_weight = calculate_ghost_weight(&tip_hash, &block_map, &children_map, &mut memo);
+            let canon_weight = calculate_ghost_weight(&canon_tip_hash, &block_map, &children_map, &mut memo);
+            
+            // DIAGNOSTIC: Log the context used for GHOST calculation BEFORE closing the scope
+            log(&format!("[GHOST DEBUG] block_map size: {}, canon_tip in map: {}, fork_tip in map: {}", 
+                block_map.len(), 
+                block_map.contains_key(&canon_tip_hash),
+                block_map.contains_key(&tip_hash)));
+            
+            (fork_weight, canon_weight)
+        };
+    
+    log(&format!("[REORG] GHOST PoW Weights: Fork Weight={}, Canonical Weight={}", fork_weight, canon_weight));
+    log(&format!("[GHOST DEBUG] fork_path length: {}, detach_segment length: {}", 
+        fork_path.len(), 
+        detach_segment.len()));
+    
     let should_switch = if fork_weight > canon_weight {
         true
     } else if fork_weight == canon_weight {
@@ -1180,13 +1291,29 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
        false
     };
     
+    // CRITICAL FIX: Add safety check for empty fork_path before attempting to switch
+    if should_switch && fork_path.is_empty() {
+        log(&format!("[REORG] ERROR: Attempting to switch to fork with empty fork_path. Fork hash: {}, Canon hash: {}", 
+            &tip_hash[..12], &canon_tip_hash[..12]));
+        log(&format!("[REORG] This indicates a logic error in fork path construction. Aborting reorg."));
+        let plan = ReorgPlan {
+            detach: vec![],
+            attach: vec![],
+            new_tip_hash: canon_tip_hash,
+            new_height: canon_tip_height,
+            requests: vec![],
+        };
+        return serde_wasm_bindgen::to_value(&plan).map_err(|e| e.into());
+    }
+    
     let (final_detach, final_attach, new_tip_hash, new_height) = if should_switch {
+        // Now safe because we checked fork_path is not empty above
         let new_tip = fork_path.last().unwrap();
-        (detach_hashes, attach_hashes, new_tip.hash(), new_tip.height)
+        (detach_hashes, attach_hashes, new_tip.hash(), *new_tip.height)
     } else {
         (vec![], vec![], canon_tip_hash, canon_tip_height)
     };
-
+    
     #[derive(Serialize)]
     struct PlanOut<'a> {
         detach: &'a [String],
@@ -1196,7 +1323,7 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
         requests: Vec<String>,
         should_switch: bool,
     }
-
+    
     let out = PlanOut {
         detach: &final_detach,
         attach: &final_attach,
@@ -1314,7 +1441,7 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
         for tx in &block.transactions {
             for input in &tx.inputs {
                 if !source_blocks.contains_key(&input.source_height) {
-                    let source_block = load_block_from_db(input.source_height).await?
+                    let source_block = load_block_from_db(*input.source_height).await?
                         .ok_or_else(|| JsValue::from_str(&format!("Missing source block #{}", input.source_height)))?;
                     source_blocks.insert(input.source_height, source_block);
                 }
@@ -1331,10 +1458,10 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
     let (original_tip_height, state_snapshot) = {
         let chain = BLOCKCHAIN.lock().unwrap();
         let snapshot = StateSnapshot {
-            current_height: chain.current_height,
+            current_height: *chain.current_height,
             current_tip_hash: chain.tip_hash.clone(),
             current_vrf_threshold: chain.current_vrf_threshold,
-            current_vdf_iterations: chain.current_vdf_iterations,
+            current_vdf_iterations: *chain.current_vdf_iterations,
         };
         (chain.current_height, snapshot)
     }; // Lock released immediately
@@ -1351,11 +1478,11 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
     }
     
     let marker = ReorgMarker {
-        original_tip_height,
+        original_tip_height: *original_tip_height,
         new_tip_height: plan.new_height,
         new_tip_hash: plan.new_tip_hash.clone(),
-        blocks_to_attach: plan.attach.clone(),
-        blocks_to_detach_heights: ((state_snapshot.current_height - blocks_to_detach.len() as u64 + 1)..=original_tip_height).collect(),
+        blocks_to_attach: plan.attach.clone(), 
+        blocks_to_detach_heights: ((state_snapshot.current_height - blocks_to_detach.len() as u64 + 1)..=*original_tip_height).collect(),
         timestamp: js_sys::Date::now() as u64,
     };
     
@@ -1376,7 +1503,7 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
     log(&format!("[REORG] Computing changes for {} detached blocks", blocks_to_detach.len()));
     
     for block in blocks_to_detach.iter().rev() {
-        if working_height != block.height {
+        if working_height != *block.height {
             return Err(JsValue::from_str(&format!(
                 "Reorg plan mismatch: expected height {}, got {}",
                 working_height, block.height
@@ -1427,7 +1554,7 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
                         
                         if is_coinbase {
                             changes.coinbase_changes.push(
-                                CoinbaseChange::Add(input.commitment.clone(), input.source_height)
+                                CoinbaseChange::Add(input.commitment.clone(), *input.source_height)
                             );
                         }
                     }
@@ -1479,7 +1606,7 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
                 changes.utxo_changes.push(UtxoChange::Add(out.commitment.clone(), out.clone()));
                 if is_coinbase {
                     changes.coinbase_changes.push(
-                        CoinbaseChange::Add(out.commitment.clone(), block.height)
+                        CoinbaseChange::Add(out.commitment.clone(), *block.height)
                     );
                 }
             }
@@ -1497,10 +1624,10 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
     
     if let Some(last_block) = blocks_to_attach.last() {
         changes.new_vrf_threshold = last_block.vrf_threshold;
-        changes.new_vdf_iterations = last_block.vdf_iterations;
+        changes.new_vdf_iterations = *last_block.vdf_iterations;
     } else {
         changes.new_vrf_threshold = ancestor_block.vrf_threshold;
-        changes.new_vdf_iterations = ancestor_block.vdf_iterations;
+        changes.new_vdf_iterations = *ancestor_block.vdf_iterations;
     }
 
     // Calculate work (expensive but lock-free)
@@ -1586,12 +1713,12 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
     
     // Step 4.5: Update blockchain metadata (final state update)
     {
-        let mut chain = BLOCKCHAIN.lock().unwrap();
-        chain.current_height = changes.new_height;
+        let mut chain = BLOCKCHAIN.lock().unwrap(); 
+        chain.current_height = WasmU64::from(changes.new_height);
         chain.tip_hash = changes.new_tip_hash.clone();
-        chain.total_work = changes.total_work;
+        chain.total_work = WasmU64::from(changes.total_work);
         chain.current_vrf_threshold = changes.new_vrf_threshold;
-        chain.current_vdf_iterations = changes.new_vdf_iterations;
+        chain.current_vdf_iterations = WasmU64::from(changes.new_vdf_iterations);
         
         log(&format!("[REORG] Chain state updated: height={}, work={}", 
             chain.current_height, chain.total_work));
@@ -1611,7 +1738,7 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
     // Step 5.2: Atomic commit operation (Fix #1)
     commit_staged_reorg(
         &blocks_to_attach,
-        &((changes.ancestor_height + 1)..=original_tip_height).collect::<Vec<_>>(),
+        &((changes.ancestor_height + 1)..=*original_tip_height).collect::<Vec<_>>(),
         changes.new_height,
         &changes.new_tip_hash
     ).await?;
@@ -1754,16 +1881,16 @@ pub fn get_tx_pool() -> Result<JsValue, JsValue> {
    // Mine just the header ticket (no transactions needed yet)
     for nonce in start_nonce..max_nonce {
         let mut test_block = Block::genesis();
-        test_block.height = height;
+        test_block.height = WasmU64::from(height);
         test_block.prev_hash = prev_hash.clone();
         test_block.miner_pubkey = miner_pubkey;
-        test_block.lottery_nonce = nonce;
+        test_block.lottery_nonce = WasmU64::from(nonce);
         
         // CRITICAL FIX #10: VDF ticket binds (height, prev_hash, miner_pubkey, nonce)
         // Including height prevents replay attacks across different blocks
         let vdf = VDF::new(2048).map_err(|e| JsValue::from_str(&e.to_string()))?;
         let vdf_input = format!("{}{}{}{}", height, prev_hash, hex::encode(miner_pubkey), nonce);
-        let vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), vdf_iterations)
+        let vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), WasmU64::from(vdf_iterations))
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
             
         // 2) VRF lottery over the VDF output (non-outsourcable per attempt)
@@ -1880,23 +2007,23 @@ pub fn complete_block_with_transactions(
     miner_pubkey.copy_from_slice(&miner_pubkey_bytes);
     
     let mut block = Block {
-        height,
+        height: WasmU64::from(height),
         prev_hash,
-        timestamp: js_sys::Date::now() as u64,
+        timestamp: WasmU64::from(js_sys::Date::now() as u64),
         transactions: selected,
-        lottery_nonce: nonce,
+        lottery_nonce: WasmU64::from(nonce),
         vrf_proof,
         vdf_proof,
-        miner_pubkey,
+        miner_pubkey: miner_pubkey,
         // Commit params into header
-        vdf_iterations,
+        vdf_iterations: WasmU64::from(vdf_iterations),
         vrf_threshold: {
             let mut t = [0u8; 32];
             t.copy_from_slice(&vrf_threshold_bytes);
             t
         },
         tx_merkle_root: [0u8; 32],
-        total_work: 0,
+        total_work: WasmU64::from(0),
         hash: String::new(),
     };
     
@@ -1931,9 +2058,9 @@ pub fn get_current_mining_params() -> Result<JsValue, JsValue> {
     
     let params = MiningParams {
         vrf_threshold: hex::encode(&chain.current_vrf_threshold),
-        vdf_iterations: chain.current_vdf_iterations,
-        current_height: chain.current_height,
-        total_work: chain.total_work,
+        vdf_iterations: *chain.current_vdf_iterations,
+        current_height: *chain.current_height,
+        total_work: *chain.total_work,
     };
     serde_wasm_bindgen::to_value(&params).map_err(|e| e.into())
 }
@@ -2267,7 +2394,7 @@ pub async fn rewind_block(block_js: JsValue) -> Result<(), JsValue> {
     let mut chain = BLOCKCHAIN.lock().unwrap();
 
     // Verify this is the tip of the chain before rewinding
-    if chain.current_height != block.height {
+    if *chain.current_height != *block.height {
         return Err(JsValue::from_str(&format!(
             "Can only rewind from tip. Current height: {}, block height: {}",
             chain.current_height, block.height
@@ -2317,7 +2444,7 @@ pub async fn rewind_block(block_js: JsValue) -> Result<(), JsValue> {
     chain.current_height -= 1;
     
     // Asynchronously load the new tip to restore its consensus parameters
-    if let Some(parent_block) = load_block_from_db(chain.current_height).await? {
+    if let Some(parent_block) = load_block_from_db(*chain.current_height).await? {
         chain.tip_hash = parent_block.hash();
         chain.current_vrf_threshold = parent_block.vrf_threshold;
         chain.current_vdf_iterations = parent_block.vdf_iterations;

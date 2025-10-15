@@ -5,7 +5,7 @@ use crate::load_block_from_db;
 use crate::error::{PluribitError, PluribitResult};
 use crate::vrf;
 use crate::constants;
-
+use crate::wasm_types::WasmU64;
 use crate::mimblewimble;
 use crate::log;
 use bulletproofs::RangeProof; // Added for range proof verification
@@ -36,12 +36,12 @@ pub struct Blockchain {
     pub tip_hash: String,
     
     // KEPT: These fields represent the current state of the chain tip.
-    pub current_height: u64,
+    pub current_height: WasmU64,
     
     // difficulty and work tracking
-    pub total_work: u64,
+    pub total_work: WasmU64,
     pub current_vrf_threshold: [u8; 32],
-    pub current_vdf_iterations: u64,
+    pub current_vdf_iterations: WasmU64,
 }
 
 impl Blockchain {
@@ -55,10 +55,10 @@ impl Blockchain {
             tip_hash: genesis.hash(),
             
             // KEPT: Initialize state with genesis values.
-            current_height: 0,
-            total_work: 0,
+            current_height: WasmU64::from(0),
+            total_work: WasmU64::from(0),
             current_vrf_threshold:  DEFAULT_VRF_THRESHOLD,
-            current_vdf_iterations: INITIAL_VDF_ITERATIONS,
+            current_vdf_iterations: WasmU64::from(INITIAL_VDF_ITERATIONS),
         }
     }
     
@@ -112,8 +112,8 @@ impl Blockchain {
         total_u128.min(u128::from(u64::MAX)) as u64
     }
 
-    pub fn get_total_work(&self) -> u64 {
-        self.total_work
+    pub fn get_total_work(&self) -> WasmU64 {
+        self.total_work.clone()
     }
     
 
@@ -164,26 +164,26 @@ impl Blockchain {
 
 
 
-    pub async fn add_block(&mut self, mut block: Block, expected_vrf_threshold: [u8; 32], expected_vdf_iterations: u64) -> PluribitResult<()> {
+    pub async fn add_block(&mut self, mut block: Block, expected_vrf_threshold: [u8; 32], expected_vdf_iterations: WasmU64) -> PluribitResult<()> {
         // Ensure hash is computed
         if block.hash.is_empty() {
             block.hash = block.compute_hash();
         }
         
         // === 1. Basic Validation ===
-        if block.height != self.current_height + 1 {
-            return Err(PluribitError::InvalidBlock(format!("Expected height {}, got {}", self.current_height + 1, block.height)));
+        if *block.height != *self.current_height + 1 {
+            return Err(PluribitError::InvalidBlock(format!("Expected height {}, got {}", *self.current_height + 1, *block.height)));
         }
         if block.prev_hash != self.tip_hash {
             return Err(PluribitError::InvalidBlock("Parent hash mismatch".into()));
         }
 
         // Enhanced timestamp validation - ensure monotonic time
-        if block.height > 0 {
-            let parent_result = load_block_from_db(block.height - 1).await
+        if *block.height > 0 {
+            let parent_result = load_block_from_db(*block.height - 1).await
                 .map_err(|e| PluribitError::StateError(format!("DB error loading parent: {:?}", e)));
             if let Some(parent_block) = parent_result? {
-                if block.timestamp <= parent_block.timestamp {
+                if *block.timestamp <= *parent_block.timestamp {
                     return Err(PluribitError::InvalidBlock(
                         "Block timestamp must be greater than parent".into()
                     ));
@@ -192,9 +192,12 @@ impl Blockchain {
         }
 
         let now_ms = js_sys::Date::now() as u64;
-        if block.timestamp > now_ms.saturating_add(MAX_FUTURE_DRIFT_MS) {
+        if *block.timestamp > now_ms.saturating_add(MAX_FUTURE_DRIFT_MS) {
             return Err(PluribitError::InvalidBlock("Block timestamp too far in the future".into()));
         }
+
+        // This ensures the block is in its canonical, compact form before validation.
+        block.apply_cut_through()?;
 
         // === 1b. Merkle root consistency ===
         let expected_root = block.calculate_tx_merkle_root();
@@ -211,14 +214,14 @@ impl Blockchain {
             }
             
             // Transactions must be ordered by timestamp
-            if tx.timestamp < prev_tx_timestamp {
+            if *tx.timestamp < prev_tx_timestamp {
                 return Err(PluribitError::InvalidBlock(
                     format!("Transaction {} has timestamp {} before previous transaction {}",
-                        idx, tx.timestamp, prev_tx_timestamp)
+                        idx, *tx.timestamp, prev_tx_timestamp)
                 ));
             }
             
-            prev_tx_timestamp = tx.timestamp;
+            prev_tx_timestamp = *tx.timestamp;
         }
 
 
@@ -241,7 +244,7 @@ impl Blockchain {
         if block.vdf_iterations != expected_vdf_iterations {
             return Err(PluribitError::InvalidBlock(format!(
                 "Invalid VDF iterations. Expected {}, got {}",
-                expected_vdf_iterations, block.vdf_iterations
+                *expected_vdf_iterations, *block.vdf_iterations
             )));
         }
 
@@ -259,7 +262,7 @@ impl Blockchain {
         // CRITICAL FIX #10: Verify VDF input binds to this specific block height
         let vdf = crate::vdf::VDF::new_with_default_modulus()?;
         let vdf_input = format!("{}{}{}{}", 
-            block.height,           // FIX #10: Include height
+            *block.height,           // FIX #10: Include height
             block.prev_hash, 
             hex::encode(&block.miner_pubkey), 
             block.lottery_nonce
@@ -269,7 +272,7 @@ impl Blockchain {
         }
 
         // UPDATED: Enforce VDF iterations equal to the block's *committed* setting.
-        if block.vdf_proof.iterations != block.vdf_iterations {
+        if *block.vdf_proof.iterations != *block.vdf_iterations {
             return Err(PluribitError::InvalidBlock("Unexpected VDF iterations for this block".into()));
         }
         
@@ -331,9 +334,9 @@ impl Blockchain {
                     
                     {
                         let cb = crate::blockchain::COINBASE_INDEX.lock().unwrap();
-                        if let Some(&born_at) = cb.get(&inp.commitment) {
-                            let spend_height = block.height;
-                            let need = born_at + COINBASE_MATURITY;
+                        if let Some(born_at) = cb.get(&inp.commitment) {
+                            let spend_height = *block.height;
+                            let need = *born_at + COINBASE_MATURITY;
                             if spend_height < need {
                                 return Err(PluribitError::InvalidBlock("Coinbase spend immature".into()));
                             }
@@ -378,12 +381,12 @@ impl Blockchain {
                 for out in &tx.outputs {
                     utxos_to_add.push(out.clone());
                     if is_coinbase_tx {
-                        coinbase_to_add.push((out.commitment.clone(), block.height));
+                        coinbase_to_add.push((out.commitment.clone(), *block.height));
                     }
                 }
             }
 
-            let base_reward = get_current_base_reward(block.height);
+            let base_reward = get_current_base_reward(*block.height);
 
             let total_reward = base_reward + total_fees;
             let reward_commitment = mimblewimble::commit(total_reward, &Scalar::from(0u64))?;
@@ -434,17 +437,17 @@ impl Blockchain {
         // so we don't need to accumulate it here. 
         // MODIFIED: Update the state variables without adding the block to a Vec.
         self.tip_hash = block.hash();
-        self.total_work += Self::get_chain_work(&[block.clone()]); // Accumulate work
+        self.total_work = WasmU64::from(*self.total_work + Self::get_chain_work(&[block.clone()])); // Accumulate work
 
         // Store cumulative work in the block itself for quick comparison
         block.total_work = self.total_work;
 
-        self.current_height += 1;
+        self.current_height = WasmU64::from(*self.current_height + 1);
 
         // === 5. Difficulty Adjustment ===
         // NOTE: This check is now handled externally by an async function that fetches
         // the required blocks from the DB before calling `adjust_difficulty`.
-        if self.current_height > 0 && self.current_height % constants::DIFFICULTY_ADJUSTMENT_INTERVAL == 0 {
+        if *self.current_height > 0 && *self.current_height % constants::DIFFICULTY_ADJUSTMENT_INTERVAL == 0 {
            // The actual call to adjust_difficulty will happen in lib.rs
         }
 
@@ -478,13 +481,13 @@ impl Blockchain {
         end_block: &Block,
         start_block: &Block,
         current_vrf_threshold: [u8; 32],
-        current_vdf_iterations: u64,
-    ) -> ([u8; 32], u64) {
+        current_vdf_iterations: WasmU64,
+    ) -> ([u8; 32], WasmU64) {
         use crate::constants::{TARGET_BLOCK_TIME, DIFFICULTY_ADJUSTMENT_INTERVAL};
         use num_bigint::BigUint;
         use num_traits::ToPrimitive;
         
-        let actual_timespan = end_block.timestamp.saturating_sub(start_block.timestamp);
+        let actual_timespan = (*end_block.timestamp).saturating_sub(*start_block.timestamp);
         let target_timespan = (DIFFICULTY_ADJUSTMENT_INTERVAL * TARGET_BLOCK_TIME * 1000) as u64;
 
         // RATIONALE: Clamp adjustment factor to prevent extreme difficulty swings
@@ -492,9 +495,9 @@ impl Blockchain {
         let actual_timespan = actual_timespan.max(target_timespan / 4).min(target_timespan * 4);
 
         // --- Adjust VDF iterations ---
-        let vdf_iter_biguint = BigUint::from(current_vdf_iterations);
+        let vdf_iter_biguint = BigUint::from(*current_vdf_iterations);
         let new_vdf_iter_biguint = (vdf_iter_biguint * target_timespan) / actual_timespan;
-        let new_vdf_iterations = new_vdf_iter_biguint.to_u64().unwrap_or(current_vdf_iterations)
+        let new_vdf_iterations = new_vdf_iter_biguint.to_u64().unwrap_or(*current_vdf_iterations)
             .max(constants::MIN_VDF_ITERATIONS)
             .min(constants::MAX_VDF_ITERATIONS);
 
@@ -524,17 +527,17 @@ impl Blockchain {
         log(&format!("[DIFFICULTY] Timespan: {}ms. New VDF: {}, New VRF: {}",
             actual_timespan, new_vdf_iterations, hex::encode(&new_vrf_threshold[..4])));
 
-        (new_vrf_threshold, new_vdf_iterations)
+        (new_vrf_threshold, WasmU64::from(new_vdf_iterations))
     }
 
 
     
     pub fn can_accept_block(&self, block: &Block) -> Result<(), PluribitError> {
-        if block.height != self.current_height + 1 {
+       if *block.height != *self.current_height + 1 {
             return Err(PluribitError::InvalidBlock(format!(
                 "Expected height {}, got {}",
-                self.current_height + 1,
-                block.height
+                *self.current_height + 1,
+                *block.height
             )));
         }
         

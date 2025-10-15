@@ -9,16 +9,20 @@ use sha2::{Digest, Sha256};
 use crate::mimblewimble;
 use curve25519_dalek::traits::Identity;
 use crate::log;
+use crate::p2p;
+use crate::wasm_types::WasmU64;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct TransactionInput {
     pub commitment: Vec<u8>,
     pub merkle_proof: Option<crate::merkle::MerkleProof>,
-    pub source_height: u64, 
+    pub source_height: WasmU64, 
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct TransactionOutput {
     pub commitment: Vec<u8>,
     pub range_proof: Vec<u8>,
@@ -27,20 +31,22 @@ pub struct TransactionOutput {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct TransactionKernel {
     pub excess: Vec<u8>,
     pub signature: Vec<u8>,
-    pub fee: u64,
-    pub min_height: u64,
-    pub timestamp: u64, // CRITICAL FIX #8: Add timestamp for ordering
+    pub fee: WasmU64,
+    pub min_height: WasmU64,
+    pub timestamp: WasmU64, // CRITICAL FIX #8: Add timestamp for ordering
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct Transaction {
     pub inputs: Vec<TransactionInput>,
     pub outputs: Vec<TransactionOutput>,
     pub kernels: Vec<TransactionKernel>,
-    pub timestamp: u64, // CRITICAL FIX #8: Transaction creation time
+    pub timestamp: WasmU64, // CRITICAL FIX #8: Transaction creation time
 }
 
 
@@ -55,7 +61,8 @@ impl TransactionKernel {
 
         // Reconstruct the public key (blinding*G) used for the signature.
         // This is done by subtracting the commitment to the fee (fee*H) from the excess.
-        let fee_commitment = mimblewimble::PC_GENS.commit(Scalar::from(self.fee), Scalar::from(0u64));
+        let fee_commitment = mimblewimble::PC_GENS.commit(Scalar::from(*self.fee), Scalar::from(0u64));
+
         let public_key = excess_point - fee_commitment;
 
         // The message that was signed is the hash of the fee and min_height.
@@ -63,9 +70,9 @@ impl TransactionKernel {
         // Add domain separation
         hasher.update(b"pluribit_kernel_v1");
         hasher.update(&16u64.to_le_bytes());
-        hasher.update(&self.fee.to_be_bytes());
-        hasher.update(&self.min_height.to_be_bytes());
-        hasher.update(&self.timestamp.to_be_bytes());
+        hasher.update(&self.fee.0.to_be_bytes());
+        hasher.update(&self.min_height.0.to_be_bytes());
+        hasher.update(&self.timestamp.0.to_be_bytes());
         let msg_hash: [u8; 32] = hasher.finalize().into();
         
         // Parse the signature from the kernel.
@@ -112,9 +119,9 @@ pub fn new(blinding: Scalar, fee: u64, min_height: u64, timestamp: u64) -> Resul
     Ok(TransactionKernel {
         excess: excess_point.compress().to_bytes().to_vec(),
         signature,
-        fee,
-        min_height,
-        timestamp,
+        fee: WasmU64::from(fee),
+        min_height: WasmU64::from(min_height),
+        timestamp: WasmU64::from(timestamp),
     })
 }
     
@@ -138,7 +145,8 @@ impl Transaction {
             .expect("Time went backwards")
             .as_millis() as u64;
 
-        if self.timestamp > now_ms + crate::constants::MAX_FUTURE_DRIFT_MS {
+        if *self.timestamp > now_ms + crate::constants::MAX_FUTURE_DRIFT_MS {
+
             return Err(PluribitError::ValidationError(
                 "Transaction timestamp too far in the future".to_string()
             ));
@@ -146,7 +154,8 @@ impl Transaction {
         
         // Timestamp should be somewhat recent (not from years ago)
         const MAX_TX_AGE_MS: u64 = 24 * 60 * 60 * 1000; // 24 hours
-        if self.timestamp + MAX_TX_AGE_MS < now_ms {
+        if *self.timestamp + MAX_TX_AGE_MS < now_ms {
+
             return Err(PluribitError::ValidationError(
                 "Transaction timestamp too old".to_string()
             ));
@@ -287,7 +296,7 @@ impl Transaction {
         inputs: vec![],
         outputs,
         kernels: vec![kernel],
-        timestamp,
+        timestamp: WasmU64::from(timestamp),
     })
 }
     
@@ -301,7 +310,7 @@ impl Transaction {
     }
     
     pub fn total_fee(&self) -> u64 {
-        self.kernels.iter().fold(0u64, |acc, k| acc.saturating_add(k.fee))
+        self.kernels.iter().fold(0u64, |acc, k| acc.saturating_add(*k.fee))
     }
     
     pub fn hash(&self) -> String {
@@ -329,12 +338,108 @@ impl Transaction {
         for k in ks {
             hasher.update(&k.excess);
             hasher.update(&k.signature);
-            hasher.update(&k.fee.to_le_bytes());
-            hasher.update(&k.min_height.to_le_bytes());
+            hasher.update(&k.fee.0.to_le_bytes());
+            hasher.update(&k.min_height.0.to_le_bytes());
         }
         hex::encode(hasher.finalize())
     }
 }
+
+/// **Protobuf Conversion: Internal -> p2p**
+impl From<TransactionInput> for p2p::TransactionInput {
+    fn from(input: TransactionInput) -> Self {
+        p2p::TransactionInput {
+            commitment: input.commitment,
+            source_height: *input.source_height,  // Convert WasmU64 to u64
+        }
+    }
+}
+
+/// **Protobuf Conversion: p2p -> Internal**
+impl From<p2p::TransactionInput> for TransactionInput {
+    fn from(proto: p2p::TransactionInput) -> Self {
+        TransactionInput {
+            commitment: proto.commitment,
+            merkle_proof: None,
+            source_height: WasmU64::from(proto.source_height),  // Convert u64 to WasmU64
+        }
+    }
+}
+
+/// **Protobuf Conversion: Internal -> p2p**
+impl From<TransactionOutput> for p2p::TransactionOutput {
+    fn from(output: TransactionOutput) -> Self {
+        p2p::TransactionOutput {
+            commitment: output.commitment,
+            range_proof: output.range_proof,
+            ephemeral_key: output.ephemeral_key,
+            stealth_payload: output.stealth_payload,
+        }
+    }
+}
+
+/// **Protobuf Conversion: p2p -> Internal**
+impl From<p2p::TransactionOutput> for TransactionOutput {
+    fn from(proto: p2p::TransactionOutput) -> Self {
+        TransactionOutput {
+            commitment: proto.commitment,
+            range_proof: proto.range_proof,
+            ephemeral_key: proto.ephemeral_key,
+            stealth_payload: proto.stealth_payload,
+        }
+    }
+}
+
+/// **Protobuf Conversion: Internal -> p2p**
+impl From<TransactionKernel> for p2p::TransactionKernel {
+    fn from(kernel: TransactionKernel) -> Self {
+        p2p::TransactionKernel {
+            excess: kernel.excess,
+            signature: kernel.signature,
+            fee: *kernel.fee,
+            min_height: *kernel.min_height,
+            timestamp: *kernel.timestamp,
+        }
+    }
+}
+
+/// **Protobuf Conversion: p2p -> Internal**
+impl From<p2p::TransactionKernel> for TransactionKernel {
+    fn from(proto: p2p::TransactionKernel) -> Self {
+        TransactionKernel {
+            excess: proto.excess,
+            signature: proto.signature,
+            fee: WasmU64::from(proto.fee),
+            min_height: WasmU64::from(proto.min_height),
+            timestamp: WasmU64::from(proto.timestamp),
+        }
+    }
+}
+
+/// **Protobuf Conversion: Internal -> p2p**
+impl From<Transaction> for p2p::Transaction {
+    fn from(tx: Transaction) -> Self {
+        p2p::Transaction {
+            inputs: tx.inputs.into_iter().map(p2p::TransactionInput::from).collect(),
+            outputs: tx.outputs.into_iter().map(p2p::TransactionOutput::from).collect(),
+            kernels: tx.kernels.into_iter().map(p2p::TransactionKernel::from).collect(),
+            timestamp: *tx.timestamp,
+        }
+    }
+}
+
+/// **Protobuf Conversion: p2p -> Internal**
+impl From<p2p::Transaction> for Transaction {
+    fn from(proto: p2p::Transaction) -> Self {
+        Transaction {
+            inputs: proto.inputs.into_iter().map(TransactionInput::from).collect(),
+            outputs: proto.outputs.into_iter().map(TransactionOutput::from).collect(),
+            kernels: proto.kernels.into_iter().map(TransactionKernel::from).collect(),
+            timestamp: WasmU64::from(proto.timestamp),
+        }
+    }
+}
+
 
 
 #[cfg(test)]
@@ -577,11 +682,12 @@ mod tests {
     
     #[wasm_bindgen_test]
     async fn test_transaction_hash() {
-        let tx1 = Transaction { inputs: vec![], outputs: vec![], kernels: vec![TransactionKernel { excess: vec![1, 2, 3], signature: vec![4, 5, 6], fee: 10, min_height: 0, timestamp: 1 }], timestamp: 1 };
-        let tx2 = Transaction { inputs: vec![], outputs: vec![], kernels: vec![TransactionKernel { excess: vec![1, 2, 3], signature: vec![4, 5, 6], fee: 10, min_height: 0, timestamp: 1 }], timestamp: 1 };
+        let tx1 = Transaction { inputs: vec![], outputs: vec![], kernels: vec![TransactionKernel { excess: vec![1, 2, 3], signature: vec![4, 5, 6], fee: WasmU64::from(10), min_height: WasmU64::from(0), timestamp: WasmU64::from(1) }], timestamp: WasmU64::from(1) };
+        let tx2 = Transaction { inputs: vec![], outputs: vec![], kernels: vec![TransactionKernel { excess: vec![1, 2, 3], signature: vec![4, 5, 6], fee: WasmU64::from(10), min_height: WasmU64::from(0), timestamp: WasmU64::from(1) }], timestamp: WasmU64::from(1) };
         assert_eq!(tx1.hash(), tx2.hash());
         let mut tx3 = tx1.clone();
-        tx3.kernels[0].fee = 20;
+        tx3.kernels[0].fee = WasmU64::from(20);
+
         assert_ne!(tx1.hash(), tx3.hash());
     }
 

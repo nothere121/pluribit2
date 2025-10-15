@@ -8,6 +8,7 @@ use rand::rngs::OsRng;
 use crate::merkle;
 use lazy_static::lazy_static;
 use std::sync::Mutex;
+use crate::WasmU64;
 lazy_static! {
     static ref PENDING_UTXOS: Mutex<HashSet<Vec<u8>>> = Mutex::new(HashSet::new());
 }
@@ -165,7 +166,7 @@ impl Wallet {
                                         value,
                                         blinding,
                                         commitment: CompressedRistretto::from_slice(&commitment_bytes).unwrap(),
-                                        block_height: block.height,
+                                        block_height: *block.height,
                                         merkle_proof: None,
                                     });
                                 }
@@ -223,7 +224,7 @@ pub fn create_transaction(
                 inputs_to_spend.push(TransactionInput {
                     commitment: utxo.commitment.to_bytes().to_vec(),
                     merkle_proof: None,
-                    source_height: utxo.block_height,
+                    source_height: WasmU64::from(utxo.block_height),
                 });
                 input_utxos.push(utxo.clone());
                 false // Remove from wallet
@@ -303,7 +304,7 @@ pub fn create_transaction(
                 .expect("Time went backwards")
                 .as_millis() as u64;
             let kernel_blinding = blinding_sum_in - blinding_sum_out;
-            let kernel = TransactionKernel::new(kernel_blinding, fee, current_height, timestamp)
+            let kernel = TransactionKernel::new(kernel_blinding, fee, *current_height, timestamp)
                 .map_err(|e| {
                     // Transaction creation failed - clear pending marks
                     let mut pending = PENDING_UTXOS.lock().unwrap();
@@ -324,7 +325,7 @@ pub fn create_transaction(
                 inputs: inputs_to_spend,
                 outputs,
                 kernels: vec![kernel],
-                timestamp,
+                timestamp: WasmU64::from(timestamp),
             };
             // Note: UTXOs remain marked as pending until:
             // - Transaction is mined (they're spent, so removed from UTXO set)

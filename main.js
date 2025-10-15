@@ -113,7 +113,10 @@ worker.on('message', (event) => {
 
         case 'totalSupply': 
             console.log(chalk.yellow(`\nTotal Supply: ${payload.supply} bits`));
-            console.log(`   (Which is ${(Number(payload.supply) / 100_000_000).toFixed(8)} PLB)`);
+            // Use BigInt for the division to maintain precision
+            const supplyAsBigInt = BigInt(payload.supply);
+            const coins = (supplyAsBigInt / 100_000_000n).toString();
+            console.log(`   (Which is ${coins} PLB)`);
             rl.prompt(true);
             break;
 

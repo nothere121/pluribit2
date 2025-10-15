@@ -13,7 +13,6 @@ import { CID } from 'multiformats/cid';
 import { sha256 } from 'multiformats/hashes/sha2';
 import * as raw from 'multiformats/codecs/raw';
 import { pipe } from 'it-pipe';
-
 import { kadDHT } from '@libp2p/kad-dht';
 import { gossipsub } from '@chainsafe/libp2p-gossipsub';
 import { bootstrap } from '@libp2p/bootstrap';
@@ -23,12 +22,22 @@ import { createEd25519PeerId, createFromPubKey } from '@libp2p/peer-id-factory';
 import { fromString as uint8ArrayFromString } from 'uint8arrays/from-string';
 import { toString as uint8ArrayToString } from 'uint8arrays/to-string';
 import bridge from './js_bridge.cjs';
-const { JSONStringifyWithBigInt, JSONParseWithBigInt } = bridge;
-
 import crypto from 'crypto';
 import nacl from 'tweetnacl';
 import fs from 'fs/promises';
 import path from 'path';
+
+// Rationale: In an ES Module project, CommonJS files must be loaded using `createRequire`.
+// By naming the generated file with a .cjs extension, we ensure Node.js always
+// treats it as a CommonJS module, making the require() call succeed.
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { p2p } = require('./src/p2p_pb.cjs');
+const { Block } = p2p;
+export { Block as P2PBlock, p2p };
+
+
+
 
 // ---- Signing helpers (stable stringify + sha256) ----
 function stableStringify(obj) {
@@ -166,70 +175,55 @@ _updateVerificationState(peerId, { powSolved, isSubscribed }) {
 }
 
 
-// Add this new method to the PluribitP2P class
+// send challenge to peer
 async sendDirectChallenge(peerId) {
     try {
         const challenge = crypto.randomBytes(32).toString('hex');
         
-        // Store challenge for verification
         this._peerChallenges.set(peerId, {
             challenge,
             timestamp: Date.now(),
             attempts: 0
         });
         
-        // Open a stream to the peer
         const connection = this.node.getConnections(peerId)[0];
-        if (!connection) {
-            throw new Error('No connection to peer');
-        }
+        if (!connection) throw new Error('No connection to peer');
         
         const stream = await connection.newStream('/pluribit/challenge/1.0.0');
         
-        const message = JSON.stringify({
-            type: 'CHALLENGE',
-            challenge,
-            from: this.node.peerId.toString()
-        });
+        const message = p2p.Challenge.create({ challenge, from: this.node.peerId.toString() });
+        const encodedMessage = p2p.Challenge.encode(message).finish();
         
-        await pipe(
-            [new TextEncoder().encode(message)],
-            stream.sink
-        );
+        await pipe([encodedMessage], stream.sink);
         
-        // Listen for response
         const chunks = [];
         for await (const chunk of stream.source) {
-            // Convert to a standard Uint8Array to prevent type errors
             chunks.push(chunk.subarray());
         }
-        const response = JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)));
+        const response = p2p.ChallengeResponse.decode(Buffer.concat(chunks));
         
-        if (response.type === 'CHALLENGE_RESPONSE') {
-            // Verify the solution
-            const verify = crypto.createHash('sha256')
-                .update(challenge)
-                .update(response.nonce)
-                .digest('hex');
-            
-            if (verify === response.solution && response.solution.startsWith(this._challengeDifficulty)) {
-                this._updateVerificationState(peerId, { powSolved: true });
-                this._peerChallenges.delete(peerId);
-                this.log(`[P2P] ✓ Peer ${peerId} solved challenge`, 'success');
-                return true;
-            }
+        const verify = crypto.createHash('sha256')
+            .update(challenge)
+            .update(response.nonce)
+            .digest('hex');
+        
+        if (verify === response.solution && response.solution.startsWith(this._challengeDifficulty)) {
+            this._updateVerificationState(peerId, { powSolved: true });
+            this._peerChallenges.delete(peerId);
+            this.log(`[P2P] ✓ Peer ${peerId} solved challenge`, 'success');
+            return true;
         }
         
         return false;
     } catch (e) {
         const msg = e?.message || '';
-        // Treat both "protocol selection failed" and "No connection" as expected, non-critical events
         const isExpected = /protocol selection failed|No connection to peer/i.test(msg);
         const logLevel = isExpected ? 'debug' : 'error';
         this.log(`[P2P] Failed to send challenge to ${peerId}: ${msg}`, logLevel);
         return false;
     }
-} // <-- close sendDirectChallenge method
+}
+
 
 
 async _addToAddressBookCompat(id, multiaddrs) {
@@ -487,57 +481,51 @@ async _findProvidersCompat(cid, opts) {
         // Register custom protocol for direct challenge-response
         const CHALLENGE_PROTOCOL = '/pluribit/challenge/1.0.0';
 
-        await this.node.handle(CHALLENGE_PROTOCOL, async ({ stream, connection }) => {
+         await this.node.handle(CHALLENGE_PROTOCOL, async ({ stream, connection }) => {
             try {
                 const chunks = [];
                 for await (const chunk of stream.source) {
-                    // Convert to a standard Uint8Array to prevent type errors
                     chunks.push(chunk.subarray());
                 }
-                const data = JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)));
+                // Decode the Protobuf 'Challenge' message
+                const data = p2p.Challenge.decode(Buffer.concat(chunks));
                 
-                if (data.type === 'CHALLENGE') {
-                    // Solve the challenge
-                    const { challenge, from } = data;
-                    const difficulty = this._challengeDifficulty;
-                    let nonce = 0;
-                    let solution = '';
-                    
-                    while (true) {
-                        solution = crypto.createHash('sha256')
-                            .update(challenge)
-                            .update(String(nonce))
-                            .digest('hex');
-                        if (solution.startsWith(difficulty)) {
-                            break;
-                        }
-                        nonce++;
+                const { challenge, from } = data;
+                const difficulty = this._challengeDifficulty;
+                let nonce = 0;
+                let solution = '';
+                
+                while (true) {
+                    solution = crypto.createHash('sha256')
+                        .update(challenge)
+                        .update(String(nonce))
+                        .digest('hex');
+                    if (solution.startsWith(difficulty)) {
+                        break;
                     }
-                    
-                    // Send response back through the same stream
-                    const response = JSON.stringify({
-                        type: 'CHALLENGE_RESPONSE',
-                        solution,
-                        nonce: String(nonce),
-                        from: this.node.peerId.toString()
-                    });
-                    
-                    await pipe(
-                        [new TextEncoder().encode(response)],
-                        stream.sink
-                    );
-                    
-                    this.log(`[P2P] Solved challenge from ${from} with nonce ${nonce}`, 'info');
+                    nonce++;
                 }
+                
+                // Create and encode the Protobuf 'ChallengeResponse' message
+                const response = p2p.ChallengeResponse.create({
+                    solution,
+                    nonce: String(nonce),
+                    from: this.node.peerId.toString()
+                });
+                const encodedResponse = p2p.ChallengeResponse.encode(response).finish();
+                
+                await pipe([encodedResponse], stream.sink);
+                
+                // We can use 'from' directly from the message payload
+                this.log(`[P22P] Solved challenge from ${from} with nonce ${nonce}`, 'info');
             } catch (e) {
                 this.log(`[P2P] Error handling challenge protocol: ${e.message}`, 'error');
             }
-        });        
+        });      
         
                 // Register protocol for direct block transfers
         const BLOCK_TRANSFER_PROTOCOL = `/pluribit/${NET}/block-transfer/1.0.0`;
         await this.node.handle(BLOCK_TRANSFER_PROTOCOL, async ({ stream, connection }) => {
-
             try {
                 const peerId = connection.remotePeer.toString();
                 
@@ -554,50 +542,35 @@ async _findProvidersCompat(cid, opts) {
                     try { await stream.close(); } catch {}
                     return;
                 }
-                
+                        
                 const chunks = [];
                 for await (const chunk of stream.source) {
                     chunks.push(chunk.subarray());
                 }
-                const request = JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)));
+                const request = p2p.DirectBlockRequest.decode(Buffer.concat(chunks));
                 
-                // Input validation
-                if (!request.hash || typeof request.hash !== 'string') {
-                    this.log(`[P2P] Invalid block request from ${peerId}`, 'warn');
-                    const resp = JSON.stringify({ type: 'ERROR', reason: 'BAD_REQUEST' });
-                    await pipe([new TextEncoder().encode(resp)], stream.sink);
+                if (!request.hash || !/^[0-9a-f]{64}$/i.test(request.hash)) {
+                    const errResp = p2p.BlockTransferResponse.create({ errorReason: 'INVALID_HASH' });
+                    await pipe([p2p.BlockTransferResponse.encode(errResp).finish()], stream.sink);
                     return;
                 }
                 
-                // Validate hash format (64 hex characters)
-                if (!/^[0-9a-f]{64}$/i.test(request.hash)) {
-                    this.log(`[P2P] Invalid block hash format from ${peerId}`, 'warn');
-                    const resp = JSON.stringify({ type: 'ERROR', reason: 'INVALID_HASH' });
-                    await pipe([new TextEncoder().encode(resp)], stream.sink);
-                    return;
-                }
-                
-                if (request.type === 'GET_BLOCK' && request.hash) {
-                    // This request is now handled by the 'main' worker's logic
-                    // We just need to proxy it through.
-                    // We'll use our existing handlers map.
-                    const handlers = this.handlers.get(BLOCK_TRANSFER_PROTOCOL) || [];
-                    for (const handler of handlers) {
-                        const block = await handler(request.hash);
-                        if (block) {
-                            const response = JSONStringifyWithBigInt({ type: 'BLOCK_DATA', payload: block });
-                            await pipe([new TextEncoder().encode(response)], stream.sink);
-                            return; // End after sending
-                        }
+                const handlers = this.handlers.get(BLOCK_TRANSFER_PROTOCOL) || [];
+                for (const handler of handlers) {
+                    const block = await handler(request.hash);
+                    if (block) {
+                        // Protobuf.js handles BigInts correctly when creating the message
+                        const response = p2p.BlockTransferResponse.create({ blockData: block });
+                        const encodedResponse = p2p.BlockTransferResponse.encode(response).finish();
+                        await pipe([encodedResponse], stream.sink);
+                        return;
                     }
-                    // Not found
-                    const resp = JSON.stringify({ type: 'ERROR', reason: 'NOT_FOUND' });
-                    await pipe([new TextEncoder().encode(resp)], stream.sink);
-                    return;
                 }
-                // Bad request type
-                const resp = JSON.stringify({ type: 'ERROR', reason: 'BAD_REQUEST' });
-                await pipe([new TextEncoder().encode(resp)], stream.sink);
+                
+                // Not found
+                const errResp = p2p.BlockTransferResponse.create({ errorReason: 'NOT_FOUND' });
+                await pipe([p2p.BlockTransferResponse.encode(errResp).finish()], stream.sink);
+
             } catch (e) {
                 this.log(`[P2P] Error handling block transfer protocol: ${e.message}`, 'error');
             }
@@ -772,6 +745,9 @@ async _findProvidersCompat(cid, opts) {
 async handleGossipMessage(msg) {
     try {
         const from = msg.from?.toString?.() ?? String(msg.from);
+        if (from === this.node.peerId.toString()) {
+            return; // Ignore messages from self
+        }
         this.log(`[P2P RAW] Received message on topic ${msg.topic} from ${from}`, 'debug');
         // CRITICAL: Verify ALL peers (including self for loopback)
         if (!this.isPeerVerified(from)) {
@@ -794,39 +770,35 @@ async handleGossipMessage(msg) {
             return;
         }
 
-        const data = JSONParseWithBigInt(uint8ArrayToString(msg.data));
-        
-        const schema = MESSAGE_SCHEMAS[msg.topic];
-        if (schema) {
-            for (const field of (schema.required || [])) {
-                if (!(field in data)) {
-                    this.log(`[P2P] Missing required field '${field}' in ${msg.topic} from ${from}`, 'warn');
-                    return;
-                }
-            }
-            for (const [field, expectedType] of Object.entries(schema.types || {})) {
-                if (field in data && typeof data[field] !== expectedType) {
-                    this.log(`[P2P] Invalid type for field '${field}' from ${from}: expected ${expectedType}, got ${typeof data[field]}`, 'warn');
-                    return;
-                }
-            }
-        }
+        // The `P2PMessage.decode`
+        // function will throw an error if the received binary data does not
+        // perfectly match the schema (e.g., wrong types, missing fields),
+        // which we catch below. 
+        const p2pMessage = p2p.P2pMessage.decode(msg.data);
+        const payloadType = p2pMessage.payload;
+        const data = p2pMessage[payloadType];
 
+        // Rationale: We now dispatch based on the `oneof` payload type defined
+        // in our schema. This is more explicit and safer than relying on a
+        // string topic from the network.
         const handlers = this.handlers.get(msg.topic) || [];
         for (const handler of handlers) {
             try {
-                await handler(data, { from, topic: msg.topic });
+                // Rationale: Pass the raw bytes along with the decoded data.
+                // Handlers that interface with WASM (like block ingestion) can use
+                // the raw bytes for maximum performance and security, while other
+                // handlers can use the convenient decoded JS object.
+                await handler(data, { from, topic: msg.topic, rawData: msg.data });
             } catch (e) {
                 this.log(`[P2P] Handler error for ${msg.topic}: ${e.message}`, 'error');
             }
         }
     } catch (e) {
-        // Catch JSON parsing errors specifically for better debugging.
-        if (e instanceof SyntaxError) {
-            this.log(`[P2P] Failed to parse JSON message: ${e.message}`, 'error');
-        } else {
-            this.log(`[P2P] Error in message handler: ${e.message}`, 'error');
-        }
+        // Rationale: Catching errors from `P2PMessage.decode` is our primary
+        // defense. If an attacker sends malformed binary data, the decoder
+        // will throw, we'll log it, and drop the message, protecting the rest
+        // of the application. This prevents crashes from invalid data.
+        this.log(`[P2P] Failed to decode Protobuf message or handle it: ${e.message}`, 'error');
     }
 }
 
@@ -842,15 +814,24 @@ async handleGossipMessage(msg) {
     this.handlers.get(topic).push(handler);
   }
 
-  async publish(topic, data) {
-    // RATIONALE: Always stringify objects using the BigInt-safe method to prevent data loss and ensure consistency.
-    const payloadString = JSONStringifyWithBigInt(data);
-    const bytes = uint8ArrayFromString(payloadString);
-
-    if (bytes.byteLength > CONFIG.MAX_MESSAGE_SIZE) {
-      throw new Error(`Refusing to publish >MAX_MESSAGE_SIZE on ${topic}`);
+async publish(topic, data) {
+    // Rationale: We replace JSON serialization with Protobuf serialization.
+    // 1. Determine the payload type based on the topic.
+    // 2. Create a P2PMessage object with the correct `oneof` field set.
+    // 3. Encode it into a binary Uint8Array.
+    // This process is type-safe and produces a compact binary message.
+    const payloadType = this._getPayloadTypeForTopic(topic);
+    if (!payloadType) {
+      throw new Error(`No Protobuf payload type for topic ${topic}`);
     }
-    await this.node.services.pubsub.publish(topic, bytes);
+
+        const message = p2p.P2pMessage.create({ [payloadType]: data });
+        const bytes = p2p.P2pMessage.encode(message).finish();
+
+        if (bytes.byteLength > CONFIG.MAX_MESSAGE_SIZE) {
+            throw new Error(`Refusing to publish >MAX_MESSAGE_SIZE on ${topic}`);
+        }
+        await this.node.services.pubsub.publish(topic, bytes);
   }
 
   // ---- DHT: Signed write ----
@@ -997,4 +978,19 @@ async stop() {
   }
   await this.node.stop();
 }
+
+// Helper to map topics to Protobuf oneof field names.
+  _getPayloadTypeForTopic(topic) {
+    switch (topic) {
+      case TOPICS.BLOCKS: return 'block';
+      case TOPICS.TRANSACTIONS: return 'transaction';
+      case TOPICS.BLOCK_ANNOUNCEMENTS: return 'blockAnnouncement';
+      case TOPICS.BLOCK_REQUEST: return 'blockRequest';
+      case TOPICS.GET_HASHES_REQUEST: return 'getHashesRequest';
+      case TOPICS.HASHES_RESPONSE: return 'hashesResponse';
+      case TOPICS.SYNC: return 'tipBroadcast'; // Assuming TIP_RESPONSE maps to this
+      default: return null;
+    }
+  }
+
 }

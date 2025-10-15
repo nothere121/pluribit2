@@ -2,6 +2,7 @@
 use sha2::{Sha256, Digest};
 use serde::{Serialize, Deserialize};
 use crate::error::{PluribitResult, PluribitError};
+use crate::wasm_types::WasmU64;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MerkleProof {
@@ -10,14 +11,14 @@ pub struct MerkleProof {
     /// The sibling hashes needed to reconstruct the root
     pub siblings: Vec<[u8; 32]>,
     /// The position of the leaf in the tree (for ordering)
-    pub leaf_index: u64,
+    pub leaf_index: WasmU64,
 }
 
 impl MerkleProof {
     /// Verify this proof against a given root
     pub fn verify(&self, root: &[u8; 32]) -> bool {
         let mut current_hash = self.leaf_hash;
-        let mut index = self.leaf_index;
+        let mut index = *self.leaf_index;
         
         for sibling in &self.siblings {
             let mut hasher = Sha256::new();
@@ -42,7 +43,7 @@ impl MerkleProof {
     /// Reconstruct the root hash from the proof for debugging.
     pub fn reconstruct_root(&self) -> [u8; 32] {
         let mut current_hash = self.leaf_hash;
-        let mut index = self.leaf_index;
+        let mut index = *self.leaf_index;
         
         for sibling in &self.siblings {
             let mut hasher = Sha256::new();
@@ -113,7 +114,7 @@ pub fn build_merkle_tree_with_proofs(leaves: &[[u8; 32]]) -> (Vec<MerkleProof>, 
         proofs.push(MerkleProof {
             leaf_hash: *leaf_hash,
             siblings,
-            leaf_index: leaf_idx as u64,
+            leaf_index: WasmU64::from(leaf_idx as u64),
         });
     }
     

@@ -14,12 +14,10 @@ const fs = require('fs');
 // These variables will hold the single instances and their initialization promises.
 let chainDbInstance = null;
 let walletDbInstance = null;
-let metaDbInstance = null;
 let deferredDbInstance = null;
 
 let chainDbPromise = null;
 let walletDbPromise = null;
-let metaDbPromise = null;
 let deferredDbPromise = null;
 
 // UTXO DB singleton
@@ -93,30 +91,7 @@ async function getWalletDb() {
   return walletDbPromise;
 }
 
-/**
- * Lazily initializes and opens the metadata database instance.
- * @private
- * @returns {Promise<Level>} A promise that resolves with the open meta DB instance.
- */
-async function getMetaDb() {
-  if (metaDbInstance && metaDbInstance.status === 'open') {
-    return metaDbInstance;
-  }
 
-  if (metaDbPromise) {
-    return metaDbPromise;
-  }
-  
-  metaDbPromise = (async () => {
-    const db = new Level(path.join(DB_PATH, 'meta'), { valueEncoding: 'json' });
-    await db.open();
-    metaDbInstance = db;
-    // console.log('[DB] Meta database opened successfully'); // Optional: Add log if desired
-    return db;
-  })();
-  
-  return metaDbPromise;
-}
 
 
 /**
@@ -168,7 +143,7 @@ async function getUtxoDb() {
  * @returns {Promise<void>} A promise that resolves when all databases are open and ready.
  */
 async function initializeDatabase() {
-  await Promise.all([getChainDb(), getWalletDb(), getMetaDb(), getDeferredDb()]);
+  await Promise.all([getChainDb(), getWalletDb(), getDeferredDb()]);
 }
 
 
@@ -180,11 +155,11 @@ async function initializeDatabase() {
 function __setDbs(testChainDb, testWalletDb, testMetaDb) {
   chainDbInstance = testChainDb;
   walletDbInstance = testWalletDb;
-  metaDbInstance = testMetaDb || metaDbInstance;
+  // metaDbInstance is deprecated - ignore testMetaDb parameter
   // Mark promises as resolved to prevent re-initialization
   chainDbPromise = Promise.resolve(testChainDb);
   walletDbPromise = Promise.resolve(testWalletDb);
-  if (testMetaDb) metaDbPromise = Promise.resolve(testMetaDb);
+  // metaDbPromise no longer used
 }
 
 
@@ -192,7 +167,10 @@ function __setDbs(testChainDb, testWalletDb, testMetaDb) {
 
 const replacer = (_, v) => {
   if (typeof v === 'bigint') return v.toString();
-  if (ArrayBuffer.isView(v) && !(v instanceof DataView)) return Array.from(v); // Uint8Array -> number[]
+  // Correctly serialize Uint8Array to the format the reviver expects
+  if (v instanceof Uint8Array) {
+    return { __type: 'Uint8Array', value: Buffer.from(v).toString('base64') };
+  }
   return v;
 };
 const stringify = (x) => JSON.stringify(x, replacer);
@@ -257,13 +235,13 @@ function decryptWallet(envelopeStr, passphrase) {
  * @returns {Promise<void>} A promise that resolves when the save operation is complete.
  */
 async function saveBlock(block) {
-  const h = Number(block.height);
+  const h = block.height.toString(); // Use BigInt's toString()
   console.log(`[DB] Saving block #${h} to database`);
-  const [chainDb, metaDb] = await Promise.all([getChainDb(), getMetaDb()]);
-  await chainDb.put(h.toString(), stringify(block));
+  const chainDb = await getChainDb();
+  await chainDb.put(h, stringify(block));
   const currentTip = await getTipHeight();
-  if (h >= currentTip) {
-    await metaDb.put('tip_height', h);
+  if (block.height >= currentTip) { // Compare BigInts directly
+    await chainDb.put('meta:tip_height', h);
   }
 }
 
@@ -292,12 +270,12 @@ async function loadBlock(height) {
  * @returns {Promise<number>} A promise resolving to the tip height.
  */
 async function getTipHeight() {
-  const metaDb = await getMetaDb();
+  const chainDb = await getChainDb();
   try {
-    const h = await metaDb.get('tip_height');
-    return Number.isFinite(h) ? h : 0;
+    const h = await chainDb.get('meta:tip_height');
+    return BigInt(h); // Parse string back to BigInt
   } catch (error) {
-    if (error.code === 'LEVEL_NOT_FOUND') return 0;
+    if (error.code === 'LEVEL_NOT_FOUND') return 0n; // Return BigInt zero
     throw error;
   }
 }
@@ -321,12 +299,11 @@ async function getChainTip() {
  */
 async function loadBlocks(startHeight, endHeight) {
   const blocks = [];
-  // Convert BigInt arguments to standard Numbers before use
-  const start = Number(startHeight);
-  
-  // Ensure we don't try to read an invalid range
-  const end = Math.max(start, Number(endHeight));
-  for (let i = startHeight; i <= end; i++) {
+  // Arguments from Rust are already BigInts
+  const start = startHeight;
+  const end = endHeight > start ? endHeight : start;
+
+  for (let i = start; i <= end; i++) { // Loop using BigInts
     const block = await loadBlock(i);
     if (block) blocks.push(block);
   }
@@ -475,8 +452,8 @@ async function walletExists(walletId) {
  * @returns {Promise<void>} A promise that resolves when saved.
  */
 async function saveTotalWork(work) {
-  const metaDb = await getMetaDb();
-  await metaDb.put('total_work', work.toString());
+  const chainDb = await getChainDb();
+  await chainDb.put('meta:total_work', work.toString());
 }
 
 /**
@@ -486,9 +463,9 @@ async function saveTotalWork(work) {
  * @returns {Promise<string>} A promise resolving to the total work as a string.
  */
 async function loadTotalWork() {
-  const metaDb = await getMetaDb();
+  const chainDb = await getChainDb();
   try {
-    const w = await metaDb.get('total_work');
+    const w = await chainDb.get('meta:total_work');
     return w;
   } catch (error) {
     if (error.code === 'LEVEL_NOT_FOUND') return '0';
@@ -621,19 +598,17 @@ async function clear_all_utxos() {
  * Saves a block indexed by both height AND hash
  */
 async function saveBlockWithHash(block) {
-  const h = Number(block.height);
-  const [chainDb, metaDb] = await Promise.all([getChainDb(), getMetaDb()]);
+  const h = block.height.toString(); // Use BigInt's toString()
+  const chainDb = await getChainDb();
   
   // Save by height (for canonical chain)
-  await chainDb.put(h.toString(), stringify(block));
-  
+  await chainDb.put(h, stringify(block));
   // ALSO save by hash (for forks/side chains) 
   await chainDb.put(`hash:${block.hash}`, stringify(block));
-  
   // Update tip if needed
   const currentTip = await getTipHeight();
-  if (h >= currentTip) {
-    await metaDb.put('tip_height', h);
+  if (block.height >= currentTip) { // Compare BigInts directly
+    await chainDb.put('meta:tip_height', h);
   }
 }
 
@@ -669,17 +644,17 @@ async function deleteCanonicalBlock(height) {
  * Save a reorg marker for crash recovery
  */
 async function save_reorg_marker(marker) {
-  const metaDb = await getMetaDb();
-  await metaDb.put('reorg_in_progress', marker);
+  const chainDb = await getChainDb();
+  await chainDb.put('meta:reorg_in_progress', marker);
 }
 
 /**
  * Clear the reorg marker after successful completion
  */
 async function clear_reorg_marker() {
-  const metaDb = await getMetaDb();
+  const chainDb = await getChainDb();
   try {
-    await metaDb.del('reorg_in_progress');
+    await chainDb.del('meta:reorg_in_progress');
   } catch (e) {
     if (e.code !== 'LEVEL_NOT_FOUND') throw e;
   }
@@ -689,9 +664,9 @@ async function clear_reorg_marker() {
  * Check for incomplete reorg on startup
  */
 async function check_incomplete_reorg() {
-  const metaDb = await getMetaDb();
+  const chainDb = await getChainDb();
   try {
-    return await metaDb.get('reorg_in_progress');
+    return await chainDb.get('meta:reorg_in_progress');
   } catch (e) {
     if (e.code === 'LEVEL_NOT_FOUND') return null;
     throw e;
@@ -703,9 +678,9 @@ async function check_incomplete_reorg() {
  * Set the chain tip metadata atomically
  */
 async function setTipMetadata(height, hash) {
-  const metaDb = await getMetaDb();
-  await metaDb.put('tip_height', height);
-  await metaDb.put('tip_hash', hash);
+  const chainDb = await getChainDb();
+  await chainDb.put('meta:tip_height', height);
+  await chainDb.put('meta:tip_hash', hash);
 }
 
 /**
@@ -724,43 +699,28 @@ async function save_block_to_staging(block) {
  */
 async function commit_staged_reorg(blocks, oldHeights, newTipHeight, newTipHash) {
   const chainDb = await getChainDb();
-  const metaDb = await getMetaDb();
-  
-  // Use leveldb batch for atomic multi-key operations
   const batch = chainDb.batch();
-  const metaBatch = metaDb.batch();
-  
-  // Move staged blocks to canonical locations
+
   for (const block of blocks) {
     const stagingKey = `staging:${block.height}`;
-    const canonicalKey = block.height.toString();
+    const canonicalKey = block.height.toString(); // Use toString()
     const hashKey = `hash:${block.hash}`;
 
-    // FIX: Use JSONStringifyWithBigInt instead of stringify
     const blockStr = JSONStringifyWithBigInt(block);
-
-    // Add canonical entries
     batch.put(canonicalKey, blockStr);
     batch.put(hashKey, blockStr);
     
-    // Remove staging entry
     batch.del(stagingKey);
   }
   
-  // Delete old canonical blocks
   for (const height of oldHeights) {
-    batch.del(height.toString());
-    // Note: We keep hash: entries for historical queries
+    batch.del(height.toString()); // Use toString()
   }
   
-    // Update metadata
-    metaBatch.put('tip_height', Number(newTipHeight));  // Convert BigInt to Number
-    metaBatch.put('tip_hash', newTipHash);
+  batch.put('meta:tip_height', newTipHeight.toString()); // Use toString()
+  batch.put('meta:tip_hash', newTipHash);
   
-  // Execute both batches (atomic within each DB)
   await batch.write();
-  await metaBatch.write();
-  
   console.log('[DB] Atomic reorg commit completed');
 }
 

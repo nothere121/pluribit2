@@ -9,7 +9,8 @@ use rand::thread_rng;
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant, SystemTime};
 use serde::{Serialize, Deserialize};
-
+use crate::wasm_types::WasmU64;
+use crate::p2p;
 
 // VDF proof for efficient verification using Wesolowski's construction
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -18,7 +19,7 @@ pub struct VDFProof {
     pub pi: Vec<u8>,    // Proof π = x^q mod N
     pub l: Vec<u8>,     // Prime l (serialized as bytes)
     pub r: Vec<u8>,     // Remainder r = 2^t mod l (serialized as bytes)
-    pub iterations: u64,
+    pub iterations: WasmU64,
 }
 
 // A single tick from the VDF clock
@@ -27,13 +28,13 @@ pub struct VDFProof {
 pub struct VDFClockTick {
     pub output_y: Vec<u8>,      // VDF output
     pub proof: VDFProof,        // VDF proof
-    pub sequence_number: u64,   // Increasing sequence number
+    pub sequence_number: WasmU64,   // Increasing sequence number
     pub prev_output_hash: String, // Hash of previous output
     #[serde(skip)]
     pub timestamp: Instant,     // Wall clock time
   //  #[serde(with = "crate::merkle::timestamp_serde")]//
     pub system_time: SystemTime, // System time
-    pub iterations: u64,        // Store difficulty used for this tick
+    pub iterations: WasmU64,        // Store difficulty used for this tick
 }
 
 impl Default for VDFClockTick {
@@ -45,13 +46,13 @@ impl Default for VDFClockTick {
                 pi: Vec::new(),
                 l: Vec::new(),
                 r: Vec::new(),
-                iterations: 0, 
+                iterations: WasmU64::from(0),
             },
-            sequence_number: 0,
+            sequence_number: WasmU64::from(0),
             prev_output_hash: String::new(),
             timestamp: Instant::now(),
             system_time: SystemTime::now(),
-            iterations: INITIAL_VDF_ITERATIONS, // Initialize with default
+            iterations: WasmU64::from(INITIAL_VDF_ITERATIONS), // Initialize with default
         }
     }
 }
@@ -64,17 +65,6 @@ pub struct VDF {
 }
 
 impl VDF {
-    /*
-    pub fn new(_bit_length: usize) -> PluribitResult<Self> {
-        // Use standardized RSA modulus instead of generating p*q
-        let modulus_hex = "C7970CEEDCC3B0754490201A7AA613CD73911081C790F5F1A8726F463550BB5B7FF0DB8E1EA1189EC72F93D1650011BD721AEEACC2ACDE32A04107F0648C2813A31F5B0B7765FF8B44B4B6FFC93384B646EB09C7CF5E8592D40EA33C80039F35B4F14A04B51F7BFD781BE4D1673164BA8EB991C2C4D730BBBE35F592BDEF524AF7E8DAEFD26C66FC02C479AF89D64D373F442709439DE66CEB955F3EA37D5159F6135809F85334B5CB1813ADDC80CD05609F10AC6A95AD65872C909525BDAD32BC729592642920F24C61DC5B3C3B7923E56B16A4D9D373D8721F24A3FC0F1B3131F55615172866BCCC30F95054C824E733A5EB6817F7BC16399D48C6361CC7E5";
-        
-        // Convert hex to BigUint
-        match BigUint::parse_bytes(modulus_hex.as_bytes(), 16) {
-            Some(modulus) => Ok(VDF { modulus: Arc::new(modulus) }),
-            None => Err(PluribitError::VdfError("Failed to parse standardized RSA modulus".to_string()))
-        }
-    }*/
     
     pub fn new_with_default_modulus() -> Result<Self, crate::error::PluribitError> {
         let bytes = hex::decode(VDF_RSA_MODULUS_HEX)
@@ -145,10 +135,10 @@ impl VDF {
     }
 
     // Compute the VDF with Wesolowski proof: x^(2^t) mod N
-    pub fn compute_with_proof(&self, input: &[u8], iterations: u64) -> PluribitResult<VDFProof> {
-        if iterations > MAX_VDF_ITERATIONS {
+    pub fn compute_with_proof(&self, input: &[u8], iterations: WasmU64) -> PluribitResult<VDFProof> {
+        if *iterations > MAX_VDF_ITERATIONS {
             return Err(PluribitError::ValidationError(format!(
-                "Iterations {} exceeds maximum allowed {}", iterations, MAX_VDF_ITERATIONS
+                "Iterations {} exceeds maximum allowed {}", *iterations, MAX_VDF_ITERATIONS
             )));
         }
     
@@ -168,11 +158,11 @@ impl VDF {
         };
 
         // Calculate r = 2^t mod l
-        let r = BigUint::from(2u32).modpow(&BigUint::from(iterations), &l);
-
+        let r = BigUint::from(2u32).modpow(&BigUint::from(*iterations), &l);
+        
         // Calculate y = x^(2^t) mod N (iterative squaring)
         let mut y = x.clone();
-        for _ in 0..iterations {
+        for _ in 0..*iterations {
             y = (&y * &y) % modulus;
         }
 
@@ -180,7 +170,7 @@ impl VDF {
         let two_t_mod_l = BigUint::from(2u32).modpow(&BigUint::from(iterations), &l);
         
         // For large t, calculate q = floor((2^t - (2^t mod l)) / l) carefully
-        let power = match calculate_power_safely(iterations) {
+        let power = match calculate_power_safely(*iterations) {
             Ok(p) => p,
             Err(e) => return Err(PluribitError::VdfError(e))
         };
@@ -271,6 +261,33 @@ impl VDF {
    
 }
 
+/// **Protobuf Conversion: Internal -> p2p**
+impl From<VDFProof> for p2p::VdfProof {
+    fn from(proof: VDFProof) -> Self {
+        p2p::VdfProof {
+            y: proof.y,
+            pi: proof.pi,
+            l: proof.l,
+            r: proof.r,
+            iterations: *proof.iterations,
+        }
+    }
+}
+
+/// **Protobuf Conversion: p2p -> Internal**
+impl From<p2p::VdfProof> for VDFProof {
+    fn from(proto: p2p::VdfProof) -> Self {
+        VDFProof {
+            y: proto.y,
+            pi: proto.pi,
+            l: proto.l,
+            r: proto.r,
+            iterations: WasmU64::from(proto.iterations),
+        }
+    }
+}
+
+
 // Miller-Rabin primality test
 pub fn is_prime(n: &BigUint, k: usize) -> bool {
     if n <= &BigUint::one() {
@@ -333,7 +350,7 @@ impl Default for VDFProof {
             pi: vec![],
             l: vec![],
             r: vec![],
-            iterations: 0, 
+            iterations: WasmU64::from(0),
         }
     }
 }
@@ -395,9 +412,12 @@ pub fn compute_vdf_proof(input: &[u8], iterations: u64, modulus: &BigUint) -> Re
         pi: pi.to_bytes_be(),
         l: l.to_bytes_be(),
         r: r.to_bytes_be(),
-        iterations,
+        iterations: WasmU64::from(iterations),
     })
 }
+
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1038,7 +1038,7 @@ app.get('/', (req, res) => {
                 const colors = getChartColors(theme);
                 
                 const vrfData = metrics.map(m => {
-                    const bytes = new Uint8Array(m.vrf_threshold);
+                    const bytes = new Uint8Array(m.vrfThreshold);
                     return parseInt(Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 8), 16);
                 });
                 
@@ -1060,7 +1060,7 @@ app.get('/', (req, res) => {
                             },
                             {
                                 label: 'VDF Iterations',
-                                data: metrics.map(m => m.vdf_iterations),
+                                data: metrics.map(m => m.vdfIterations),
                                 borderColor: '#f59e0b',
                                 backgroundColor: 'rgba(245, 158, 11, 0.1)',
                                 yAxisID: 'y1',
@@ -1378,7 +1378,7 @@ app.get('/', (req, res) => {
                             '</div>' +
                             '<div class="detail-row">' +
                                 '<div class="detail-key">Previous Hash</div>' +
-                                '<div class="detail-val">' + block.prev_hash + '</div>' +
+                                '<div class="detail-val">' + block.prevHash + '</div>' +
                             '</div>' +
                             '<div class="detail-row">' +
                                 '<div class="detail-key">Timestamp</div>' +
@@ -1395,15 +1395,15 @@ app.get('/', (req, res) => {
                         '<div class="detail-grid">' +
                             '<div class="detail-row">' +
                                 '<div class="detail-key">VDF Iterations</div>' +
-                                '<div class="detail-val">' + (block.vdf_iterations ? block.vdf_iterations.toLocaleString() : 'N/A') + '</div>' +
+                                '<div class="detail-val">' + (block.vdfIterations ? block.vdfIterations.toLocaleString() : 'N/A') + '</div>' +
                             '</div>' +
                             '<div class="detail-row">' +
                                 '<div class="detail-key">VRF Threshold</div>' +
-                                '<div class="detail-val">' + (block.vrf_threshold ? truncateHash(JSON.stringify(block.vrf_threshold)) : 'N/A') + '</div>' +
+                                '<div class="detail-val">' + (block.vrfThreshold ? truncateHash(JSON.stringify(block.vrfThreshold)) : 'N/A') + '</div>' +
                             '</div>' +
                             '<div class="detail-row">' +
                                 '<div class="detail-key">Lottery Nonce</div>' +
-                                '<div class="detail-val">' + (block.lottery_nonce || 'N/A') + '</div>' +
+                                '<div class="detail-val">' + (block.lotteryNonce || 'N/A') + '</div>' +
                             '</div>' +
                         '</div>' +
                     '</div>' +
