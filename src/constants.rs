@@ -3,10 +3,10 @@
 // ─── Consensus timing ──────────────────────────────────────────────────────────
 
 /// Target block time (seconds).
-pub const TARGET_BLOCK_TIME: u64 = 120; // 2 minutes
+pub const TARGET_BLOCK_TIME: u64 = 300; // 5 minutes
 
-/// Retarget window (≈ 13 days @ 2 min/blk).
-pub const DIFFICULTY_ADJUSTMENT_INTERVAL: u64 = 9_360;
+/// Retarget window (≈ 1 hour @ 5 min/blk).
+pub const DIFFICULTY_ADJUSTMENT_INTERVAL: u64 = 12;
 
 /// Median-Time-Past window used to sanity-check block timestamps.
 pub const MTP_WINDOW: usize = 11;
@@ -67,7 +67,7 @@ pub const MIN_VDF_ITERATIONS: u64 = 10_000;
 pub const MAX_VDF_ITERATIONS: u64 = 1_000_000_000;
 
 /// Default VDF iterations at startup 
-pub const INITIAL_VDF_ITERATIONS: u64 = 100_000;
+pub const INITIAL_VDF_ITERATIONS: u64 = 500_000;
 
 pub const VDF_RSA_MODULUS_HEX: &str =
 "C7970CEEDCC3B0754490201A7AA613CD73911081C790F5F1A8726F463550BB5B7FF0DB8E1EA1189EC72F93D1650011BD721AEEACC2ACDE32A04107F0648C2813A31F5B0B7765FF8B44B4B6FFC93384B646EB09C7CF5E8592D40EA33C80039F35B4F14A04B51F7BFD781BE4D1673164BA8EB991C2C4D730BBBE35F592BDEF524AF7E8DAEFD26C66FC02C479AF89D64D373F442709439DE66CEB955F3EA37D5159F6135809F85334B5CB1813ADDC80CD05609F10AC6A95AD65872C909525BDAD32BC729592642920F24C61DC5B3C3B7923E56B16A4D9D373D8721F24A3FC0F1B3131F55615172866BCCC30F95054C824E733A5EB6817F7BC16399D48C6361CC7E5";
@@ -102,7 +102,7 @@ pub const VRF_MAX_THRESHOLD: [u8; 32] = [0xFF; 32];
 // ─── Spending rules ────────────────────────────────────────────────────────────
 
 /// Confirmations required before a coinbase output is spendable.
-pub const COINBASE_MATURITY: u64 = 1;// 210000; // blocks ~ 10-11 weeks
+pub const COINBASE_MATURITY: u64 = 696; // blocks ~ 2.5 days
 
 // ─── Domain separation tags (single source of truth) ───────────────────────────
 
