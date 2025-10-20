@@ -101,7 +101,7 @@ export class PluribitP2P {
         this.isBootstrap = options.isBootstrap || false;
         this._peerChallenges = new Map(); // peer -> {challenge, timestamp, attempts}
         this._maxChallengeAttempts = 3;
-        this._challengeDifficulty = '000'; // Require 3 leading zeros in PoW (i.e. 1 in 16^5, or 1 in 1,048,576 hashes)
+        this._challengeDifficulty = '00000'; // Require 5 leading zeros in PoW (i.e. 1 in 16^5, or 1 in 1,048,576 hashes)
         // Periodic cleanup of stale challenges to prevent memory leak
         this._challengeGcTimer = setInterval(() => {
             const now = Date.now();
