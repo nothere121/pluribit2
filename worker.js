@@ -1163,6 +1163,25 @@ async function startPoSTMining() {
         
         // Get current chain state
         const chain = await pluribit.get_blockchain_state();
+        const currentHeight = BigInt(chain.current_height);
+        const nextHeight = currentHeight + 1n;
+
+        // --- START: MODIFIED DIFFICULTY PARAMETER LOGIC ---
+        let vrfThresholdToUse;
+        let vdfIterationsToUse;
+
+        // Call the new Rust function to get parameters for the *next* block
+        try {
+            const nextParams = await pluribit.calculate_next_difficulty_params(currentHeight); // Pass current height
+            vrfThresholdToUse = Array.from(nextParams.vrf_threshold); // Convert Vec<u8> from Rust
+            vdfIterationsToUse = BigInt(nextParams.vdf_iterations); // Convert u64 from Rust
+            log(`[MINING] Using difficulty params for block #${nextHeight}: VRF=${Buffer.from(vrfThresholdToUse).toString('hex').substring(0,8)}..., VDF=${vdfIterationsToUse}`);
+        } catch (e) {
+             log(`[MINING] Error calculating next difficulty params: ${e?.message || e}. Falling back to current params.`, 'error');
+             // Fallback to current params if calculation fails
+             vrfThresholdToUse = Array.from(chain.current_vrf_threshold); 
+             vdfIterationsToUse = BigInt(chain.current_vdf_iterations); 
+        }        
         
         // Get the miner's secret key
         const minerSecretKey = await pluribit.wallet_session_get_spend_privkey(workerState.minerId);
@@ -1178,8 +1197,8 @@ async function startPoSTMining() {
             minerPubkey: await pluribit.wallet_session_get_spend_pubkey(workerState.minerId),
             minerSecretKey: minerSecretKey,
             prevHash: await pluribit.get_latest_block_hash(),
-            vrfThreshold: Array.from(chain.current_vrf_threshold),
-            vdfIterations: chain.current_vdf_iterations
+            vrfThreshold: vrfThresholdToUse,
+            vdfIterations: vdfIterationsToUse
         });
     } finally {
         // Always release the lock when the function is done

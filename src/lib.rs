@@ -414,7 +414,64 @@ pub async fn wallet_session_scan_chain(wallet_id: &str) -> Result<(), JsValue> {
     Ok(())
 }
 
+#[wasm_bindgen]
+pub async fn calculate_next_difficulty_params(current_height_js: JsValue) -> Result<JsValue, JsValue> {
+    let current_height_wasm: WasmU64 = serde_wasm_bindgen::from_value(current_height_js)?;
+    let current_height = *current_height_wasm;
+    let next_height = current_height + 1;
 
+    // Fetch current parameters as a fallback or if no adjustment is needed
+    let (current_vrf_threshold, current_vdf_iterations) = {
+        if let Some(tip_block) = load_block_from_db(current_height).await? {
+            (tip_block.vrf_threshold, tip_block.vdf_iterations)
+        } else if current_height == 0 {
+             // Special case for genesis
+             let genesis = Block::genesis();
+             (genesis.vrf_threshold, genesis.vdf_iterations)
+        }
+         else {
+            // Fallback if tip block is missing (should ideally not happen)
+             log(&format!("[WARN] Could not load tip block {} to get current difficulty params", current_height));
+             (crate::constants::DEFAULT_VRF_THRESHOLD, WasmU64::from(crate::constants::INITIAL_VDF_ITERATIONS))
+         }
+    };
+
+    let (next_vrf_threshold, next_vdf_iterations) = if next_height > 0 && next_height % DIFFICULTY_ADJUSTMENT_INTERVAL == 0 {
+        log(&format!("[DIFFICULTY] Calculating adjustment for upcoming block #{}", next_height));
+        // Adjustment needed for the *next* block
+        let start_height = next_height.saturating_sub(DIFFICULTY_ADJUSTMENT_INTERVAL); // Start of the interval just completed
+        let end_height = next_height - 1; // End of the interval (the current tip)
+
+        let start_block = load_block_from_db(start_height).await?
+            .ok_or_else(|| JsValue::from_str(&format!("Missing start block {} for difficulty adjustment", start_height)))?;
+        let end_block = load_block_from_db(end_height).await?
+             .ok_or_else(|| JsValue::from_str(&format!("Missing end block {} for difficulty adjustment", end_height)))?; // Should be the current tip block
+
+        // Use the pure calculation function
+        Blockchain::calculate_next_difficulty(
+            &end_block,
+            &start_block,
+            current_vrf_threshold, // Pass the params used during the interval
+            current_vdf_iterations
+        )
+    } else {
+        // No adjustment needed, use current parameters
+        (current_vrf_threshold, current_vdf_iterations)
+    };
+
+    #[derive(Serialize)]
+    struct NextParams {
+        vrf_threshold: Vec<u8>,
+        vdf_iterations: u64,
+    }
+
+    let params = NextParams {
+        vrf_threshold: next_vrf_threshold.to_vec(),
+        vdf_iterations: *next_vdf_iterations,
+    };
+
+    serde_wasm_bindgen::to_value(&params).map_err(|e| e.into())
+}
 
 /// Create a tx from a session wallet to a stealth address, update session state, return tx.
 #[wasm_bindgen]
@@ -868,17 +925,26 @@ pub async fn ingest_block_bytes(block_bytes: Vec<u8>) -> Result<JsValue, JsValue
         {
             let mut chain = BLOCKCHAIN.lock().unwrap();
             
-            let (expected_vrf_threshold, expected_vdf_iterations) = if block.height > 0 && block.height % DIFFICULTY_ADJUSTMENT_INTERVAL == 0 {
-                let start_height = block.height - (DIFFICULTY_ADJUSTMENT_INTERVAL - 1);
-                match load_block_from_db(start_height).await? {
-                    Some(start_block) => {
-                        let end_block = load_block_from_db(block.height - 1).await?
-                            .ok_or_else(|| JsValue::from_str("Could not load parent block for difficulty adjustment"))?;
-                        
-                        Blockchain::calculate_next_difficulty(&end_block, &start_block, chain.current_vrf_threshold, chain.current_vdf_iterations) 
-                    }
-                    None => return Err(JsValue::from_str(&format!("CRITICAL: Missing start block {} for difficulty adjustment.", start_height))),
-                }
+        let (expected_vrf_threshold, expected_vdf_iterations) = if block.height > 0 && block.height % DIFFICULTY_ADJUSTMENT_INTERVAL == 0 {
+            let start_height = block.height.saturating_sub(DIFFICULTY_ADJUSTMENT_INTERVAL);  
+            let end_height = block.height - 1;
+            
+            log(&format!("[DIFFICULTY Check] Adjustment for block {}. Using interval start={}, end={}", block.height, start_height, end_height));
+            
+            let start_block = load_block_from_db(start_height).await?
+                .ok_or_else(|| JsValue::from_str(&format!("Missing start block {} for difficulty adjustment", start_height)))?;
+            let end_block = load_block_from_db(end_height).await?
+                .ok_or_else(|| JsValue::from_str(&format!("Missing end block {} for difficulty adjustment", end_height)))?;
+            
+            // Get the parameters effective at the END of the interval (from end_block)
+            let params_at_interval_end = (end_block.vrf_threshold, end_block.vdf_iterations);
+
+            Blockchain::calculate_next_difficulty(
+                &end_block, 
+                &start_block, 
+                params_at_interval_end.0, 
+                params_at_interval_end.1)
+
             } else {
                 (chain.current_vrf_threshold, chain.current_vdf_iterations)
             };
