@@ -1874,6 +1874,30 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
             chain.current_height, chain.total_work));
     } // Chain lock released
 
+    log("[REORG] Phase 4 complete. Re-validating tip before commit...");
+    let (current_tip_hash_before_commit, current_height_before_commit) = {
+        let chain_now = BLOCKCHAIN.lock().unwrap();
+        (chain_now.tip_hash.clone(), *chain_now.current_height)
+    };
+
+    // Compare against the state snapshotted *after* applying changes in memory (Phase 4)
+    if current_tip_hash_before_commit != changes.new_tip_hash || current_height_before_commit != changes.new_height {
+        log(&format!(
+            "[REORG] CRITICAL: Chain state changed unexpectedly during reorg application!\n\
+             Expected Tip after Phase 4: #{} ({}) \n\
+             Actual Tip before Phase 5:   #{} ({})\n\
+             Aborting commit phase to prevent inconsistency.",
+            changes.new_height, &changes.new_tip_hash[..12],
+            current_height_before_commit, &current_tip_hash_before_commit[..12]
+        ));
+        // CRITICAL: We MUST clear the reorg marker here because the reorg failed before commit
+        clear_reorg_marker().await?;
+        log("[REORG] Cleared recovery marker due to pre-commit state mismatch.");
+        return Err(JsValue::from_str("Reorg aborted: Chain state changed during execution"));
+    }
+    log("[REORG] ✓ Pre-commit tip validation passed.");
+
+
     // ============================================================================
     // PHASE 5: PERSISTENCE (ASYNC, NO LOCKS) - Uses Fix #1's atomic commit
     // ============================================================================
@@ -1898,7 +1922,60 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
     
     // Step 5.4: Clear the reorg marker (reorg completed successfully) - Fix #1
     clear_reorg_marker().await?;
+    
+    // === VALIDATION: Ensure database matches in-memory state ===
+    log("[REORG] Validating database consistency post-commit...");
 
+    // Verify the new tip exists in the database
+    match load_block_from_db(changes.new_height).await? {
+        Some(db_block) => {
+            let db_hash = db_block.hash();
+            if db_hash != changes.new_tip_hash {
+                let error_msg = format!(
+                    "CRITICAL DATABASE INCONSISTENCY DETECTED!\n\
+                     Expected tip hash: {}...\n\
+                     Database has:      {}...\n\
+                     Height: {}\n\
+                     This indicates the reorg committed to memory but not to database.\n\
+                     Manual recovery required!",
+                    &changes.new_tip_hash[..16],
+                    &db_hash[..16],
+                    changes.new_height
+                );
+                log(&error_msg);
+                return Err(JsValue::from_str(&error_msg));
+            }
+            
+            log(&format!(
+                "[REORG] ✓ Database validation passed - tip matches at height {}", 
+                changes.new_height
+            ));
+        },
+        None => {
+            let error_msg = format!(
+                "CRITICAL: New tip block at height {} not found in database after reorg!",
+                changes.new_height
+            );
+            log(&error_msg);
+            return Err(JsValue::from_str(&error_msg));
+        }
+    }
+
+    // Optionally verify a few blocks before the tip as well
+    if changes.new_height > 2 {
+        let check_height = changes.new_height - 1;
+        if load_block_from_db(check_height).await?.is_none() {
+            let error_msg = format!(
+                "CRITICAL: Block at height {} (one before tip) not found after reorg!",
+                check_height
+            );
+            log(&error_msg);
+            return Err(JsValue::from_str(&error_msg));
+        }
+    }
+
+    log("[REORG] ✓ All validation checks passed");
+    
     log(&format!("[REORG] Completed successfully. New tip: #{} ({}...), total work: {}",
         changes.new_height, &changes.new_tip_hash[..12], changes.total_work));
     

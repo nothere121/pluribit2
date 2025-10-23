@@ -229,6 +229,7 @@ export const workerState = {
     // RATIONALE (Peer Scoring): A graduated penalty system is better than an immediate ban.
     // Peers start with a score of 100 and lose points for bad behavior.
     peerScores: new Map(), // peerId -> score
+    processingCandidateHeight: null,
 };
 
 // === HTTP API Server for Block Explorer ===
@@ -257,7 +258,7 @@ function startApiServer() {
                     utxoCount: utxoSetSize,
                     tipHash: tipBlock?.hash || 'N/A',
                     timestamp: tipBlock?.timestamp || 0,
-                    vdfIterations: tipBlock?.vdf_iterations || 0
+                    vdfIterations: tipBlock?.vdfIterations || 0
                 }));
             }
             
@@ -342,7 +343,7 @@ function startApiServer() {
                         metrics.push({
                             height: block.height,
                             vrfThreshold: Array.from(block.vrfThreshold).slice(0, 4),
-                            vdfIterations: block.vdf_iterations,
+                            vdfIterations: block.vdfIterations,
                             timestamp: block.timestamp
                         });
                     }
@@ -397,7 +398,7 @@ function startApiServer() {
                     annualIssuance += reward;
                 }
                 
-                const stockToFlow = annualIssuance > 0n ? Number(totalSupply * 1000n / annualIssuance) / 1000 : 0;
+                const stockToFlow = annualIssuance > 0n ? (Number(totalSupply) * 1000) / (Number(annualIssuance) / 1000) : 0;
 
                 // Function to safely convert smallest unit (BigInt) to a decimal string
                 const toCoinString = (bigintValue) => {
@@ -414,8 +415,8 @@ function startApiServer() {
                     totalSupply,
                     annualIssuance,
                     stockToFlow,
-                    supplyInCoins: toCoinString(totalSupply),
-                    annualIssuanceInCoins: toCoinString(annualIssuance)
+                    supplyInCoins: parseFloat(toCoinString(totalSupply)),
+                    annualIssuanceInCoins: parseFloat(toCoinString(annualIssuance))
                 }));
             }
             else {
@@ -476,7 +477,79 @@ function log(message, level = 'info') {
     }
 }
 
-
+/**
+ * Check for and recover from incomplete reorgs
+ * Call this during worker initialization before any mining starts
+ */
+async function checkAndRecoverFromIncompleteReorg() {
+    try {
+        const markerStr = await db.check_incomplete_reorg();
+        if (!markerStr) {
+            log('[RECOVERY] No incomplete reorg detected', 'debug');
+            return;
+        }
+        
+        const marker = JSONParseWithBigInt(markerStr);
+        log('[RECOVERY] ⚠️  Incomplete reorg detected from previous session!', 'error');
+        log(`[RECOVERY] Original tip: height ${marker.original_tip_height}`, 'error');
+        log(`[RECOVERY] Attempted new tip: height ${marker.new_tip_height}, hash ${marker.new_tip_hash.substring(0,12)}...`, 'error');
+        
+        // Strategy: Rollback to the original tip since the reorg didn't complete
+        log(`[RECOVERY] Attempting rollback to height ${marker.original_tip_height}...`, 'warn');
+        
+        // Load the original tip from database
+        const originalTipBlock = await db.loadBlock(marker.original_tip_height);
+        if (!originalTipBlock) {
+            log(`[RECOVERY] ✗ FATAL: Cannot find original tip block at height ${marker.original_tip_height}!`, 'error');
+            log('[RECOVERY] Manual database inspection and repair required.', 'error');
+            log('[RECOVERY] Consider restoring from backup or resyncing from genesis.', 'error');
+            process.exit(1);
+        }
+        
+        log(`[RECOVERY] Found original tip: ${originalTipBlock.hash.substring(0,12)}...`, 'info');
+        
+        // Force reset the Rust in-memory state to match the database
+        // You may need to add this function to lib.rs if it doesn't exist
+        try {
+            await pluribit.force_reset_to_height(
+                marker.original_tip_height, 
+                originalTipBlock.hash
+            );
+            log(`[RECOVERY] ✓ Rust state reset to height ${marker.original_tip_height}`, 'success');
+        } catch (e) {
+            // If force_reset_to_height doesn't exist, try loading blocks to resync
+            log('[RECOVERY] Attempting to resync chain state...', 'warn');
+            
+            // Clear and rebuild UTXO set by replaying the chain
+            await pluribit.clear_utxo_set();
+            for (let h = 0n; h <= marker.original_tip_height; h++) {
+                const block = await db.loadBlock(h);
+                if (block) {
+                    await pluribit.process_block_for_recovery(block);
+                }
+            }
+            log('[RECOVERY] ✓ Chain state reconstructed', 'success');
+        }
+        
+        // Clear the reorg marker now that we've recovered
+        await db.clear_reorg_marker();
+        log('[RECOVERY] ✓ Recovery complete - reorg marker cleared', 'success');
+        
+        // Verify consistency
+        const dbTipHeight = await db.getTipHeight();
+        const rustState = await pluribit.get_blockchain_state();
+        if (dbTipHeight.toString() !== rustState.current_height.toString()) {
+            log(`[RECOVERY] ✗ WARNING: Heights still don't match! DB=${dbTipHeight}, Rust=${rustState.current_height}`, 'error');
+        } else {
+            log('[RECOVERY] ✓ Database and memory state now consistent', 'success');
+        }
+        
+    } catch (error) {
+        log(`[RECOVERY] ✗ Recovery failed: ${error.message}`, 'error');
+        log('[RECOVERY] The node may be in an inconsistent state. Manual intervention required.', 'error');
+        // Don't exit - let the operator decide what to do
+    }
+}
 
 
 // --- MAIN EXECUTION ---
@@ -861,19 +934,66 @@ async function triggerReorgPlan(blockHash) {
         if (plan.should_switch) {
             log(`[REORG] Fork is heavier. Applying reorg: -${plan.detach?.length||0} +${plan.attach?.length||0}`, 'warn');
             workerState.wasMinerActiveBeforeReorg = workerState.minerActive;
-            const __resumeMining = workerState.minerActive;
+            let __resumeMining = workerState.minerActive;
 
             await abortCurrentMiningJob();
             workerState.isReorging = true;
+            
             try {
+                // Attempt the reorg
                 await pluribit.atomic_reorg(plan_js);
+                log('[REORG] ✓ Atomic reorg completed successfully', 'success');
+                
+                // Verify database consistency after reorg
+                const dbTip = await db.getTipHeight();
+                const rustState = await pluribit.get_blockchain_state();
+                
+                if (dbTip.toString() !== rustState.current_height.toString()) {
+                    throw new Error(
+                        `Reorg completed but states don't match! DB=${dbTip}, Rust=${rustState.current_height}`
+                    );
+                }
+                
+                log('[REORG] ✓ Post-reorg validation passed', 'success');
+                
+            } catch (reorgError) {
+                log(`[REORG] ✗ CRITICAL: Reorg failed: ${reorgError.message}`, 'error');
+                
+                // Attempt recovery by resetting to database state
+                try {
+                    log('[REORG] Attempting emergency recovery...', 'warn');
+                    const dbTipHeight = await db.getTipHeight();
+                    const dbTipBlock = await db.loadBlock(dbTipHeight);
+                    
+                    if (dbTipBlock) {
+                        // Reset Rust state to match database
+                        await pluribit.force_reset_to_height(dbTipHeight, dbTipBlock.hash);
+                        log(`[REORG] ✓ Recovered: reset to DB state (height ${dbTipHeight})`, 'success');
+                    } else {
+                        log('[REORG] ✗ Recovery impossible - database corrupted', 'error');
+                    }
+                } catch (recoveryError) {
+                    log(`[REORG] ✗ Recovery also failed: ${recoveryError.message}`, 'error');
+                }
+                
+                // Don't try to resume mining after a failed reorg
+                __resumeMining = false;
+                
+                // Re-throw the error so it's visible
+                throw reorgError;
+                
             } finally {
                 workerState.isReorging = false;
             }
 
             if (__resumeMining) {
                 workerState.minerActive = true;
-                await startPoSTMining();
+                try {
+                    await startPoSTMining();
+                    log('[REORG] ✓ Mining resumed after reorg', 'success');
+                } catch (miningError) {
+                    log(`[REORG] ✗ Failed to restart mining: ${miningError.message}`, 'error');
+                }
             }
             workerState.wasMinerActiveBeforeReorg = false;
         } else {
@@ -1150,19 +1270,49 @@ async function syncForward(targetHeight, targetHash, trustedPeers) {
 
 
 async function startPoSTMining() {
-    // Acquire the lock at the beginning of the function
     const release = await globalMutex.acquire(); 
     try {
         if (!workerState.minerActive) return;
+
+        // === NEW: Validate state consistency before mining ===
+        const dbTipHeight = await db.getTipHeight();
+        let chain = await pluribit.get_blockchain_state();  // Use 'let' so we can reassign
+        const rustTipHeight = BigInt(chain.current_height);
         
+        if (dbTipHeight !== rustTipHeight) {
+            log(`[MINING] ✗ State inconsistency detected!`, 'error');
+            log(`[MINING]    Database tip height: ${dbTipHeight}`, 'error');
+            log(`[MINING]    Rust memory tip height: ${rustTipHeight}`, 'error');
+            
+            const dbTipBlock = await db.loadBlock(dbTipHeight);
+            if (dbTipBlock) {
+                log(`[MINING]    Database tip hash: ${dbTipBlock.hash.substring(0,12)}...`, 'error');
+            }
+            log(`[MINING]    Rust tip hash: ${chain.tip_hash.substring(0,12)}...`, 'error');
+            
+            log(`[MINING] Attempting to resync state...`, 'warn');
+            
+            try {
+                await pluribit.force_reset_to_height(dbTipHeight, dbTipBlock.hash);
+                log('[MINING] ✓ State resynced from database', 'success');
+                
+                // ONLY reload after resync
+                chain = await pluribit.get_blockchain_state();
+            } catch (resyncError) {
+                log(`[MINING] ✗ Resync failed: ${resyncError.message}`, 'error');
+                log('[MINING] Cannot start mining - manual recovery required', 'error');
+                return;
+            }
+        }
+        // === END NEW CODE ===
+
         // Ensure mining worker exists
         if (!workerState.miningWorker) {
             workerState.miningWorker = new ThreadWorker(new URL('./mining-worker.js', import.meta.url));
             attachMiningWorkerHandlers(workerState.miningWorker);
         }
         
-        // Get current chain state
-        const chain = await pluribit.get_blockchain_state();
+        // Reuse the chain variable - no need to reload!
         const currentHeight = BigInt(chain.current_height);
         const nextHeight = currentHeight + 1n;
 
@@ -1221,26 +1371,39 @@ async function handleMiningCandidate(candidate, jobId) {
         log(`[MINING] Ignoring stale candidate from old job #${jobId}`, 'debug');
         return;
     }
+    // If we are already busy processing a candidate for this specific height, ignore the new one.
+    if (candidate.height === workerState.processingCandidateHeight) {
+        log(`[MINING] Ignoring duplicate candidate for height ${candidate.height} while another is processing.`, 'warn');
+        return;
+    }
+    workerState.processingCandidateHeight = candidate.height; 
+    try {
+        // The candidate already won the lottery in the worker!
+        log(`[MINING] ✨ Received winning block candidate from worker!`, 'success');
 
-    // The candidate already won the lottery in the worker!
-    log(`[MINING] ✨ Received winning block candidate from worker!`, 'success');
+        // Assemble the full block
+        const block = await pluribit.complete_block_with_transactions(
+            BigInt(candidate.height),
+            candidate.prevHash,
+            BigInt(candidate.nonce),
+            candidate.miner_pubkey,
+            await pluribit.wallet_session_get_scan_pubkey(workerState.minerId),
+            candidate.vrf_proof,  // VRF proof already computed in worker
+            candidate.vdf_proof,
+            candidate.vrfThreshold,
+            BigInt(candidate.vdfIterations),
+            null
+        );
 
-    // Assemble the full block
-    const block = await pluribit.complete_block_with_transactions(
-        BigInt(candidate.height),
-        candidate.prevHash,
-        BigInt(candidate.nonce),
-        candidate.miner_pubkey,
-        await pluribit.wallet_session_get_scan_pubkey(workerState.minerId),
-        candidate.vrf_proof,  // VRF proof already computed in worker
-        candidate.vdf_proof,
-        candidate.vrfThreshold,
-        BigInt(candidate.vdfIterations),
-        null
-    );
-
-    // Process the new block
-    await handleRemoteBlockDownloaded({ block });
+        // Process the new block
+        await handleRemoteBlockDownloaded({ block });
+    } catch (error) {
+        log(`[MINING] Error processing candidate for height ${candidate.height}: ${error.message}`, 'error');
+        // Clear the flag ONLY if an error occurs *within this function* before handleRemoteBlockDownloaded takes over
+        if (candidate.height === workerState.processingCandidateHeight) {
+             workerState.processingCandidateHeight = null;
+        }
+    }
 }
 
 
@@ -1411,6 +1574,11 @@ async function handleRemoteBlockDownloaded({ block }) {
             log(`Failed to process downloaded block: ${e.stack || e.message || e}`, 'error');
         }
     } finally {
+        // Clear the processing flag if this block matches the one we were processing
+        if (block.height === workerState.processingCandidateHeight) {
+            log(`[MINING DEBUG] Clearing processing flag for height ${blockHeight}`, 'debug');
+            workerState.processingCandidateHeight = null;
+        }
         release();
         // This ensures the miner restarts with the latest chain state
         // after any block attempt, success or failure.
@@ -1468,27 +1636,11 @@ setInterval(safe(debugReorgState), 60000); // Every 60 seconds
     
     // Now it's safe to initialize database
     await db.initializeDatabase();
+    
+    await checkAndRecoverFromIncompleteReorg();
 
-    // CRITICAL: Check for incomplete reorg before doing anything else
-    const incompleteReorg = await db.check_incomplete_reorg();
-    if (incompleteReorg) {
-        log('[RECOVERY] Found incomplete reorg marker. Attempting to complete...', 'warn');
-        try {
-            // Reconstruct the reorg plan and complete it
-            const plan = {
-                attach: incompleteReorg.blocks_to_attach,
-                new_tip_hash: incompleteReorg.new_tip_hash,
-                new_height: incompleteReorg.new_tip_height,
-                requests: [], // Already have all blocks
-            };
-            await pluribit.atomic_reorg(plan);
 
-            log('[RECOVERY] Incomplete reorg completed successfully', 'success');
-        } catch (e) {
-            log(`[RECOVERY] Failed to complete reorg: ${e.message}`, 'error');
-            return process.exit(1); // Cannot continue with inconsistent state
-        }
-    }
+
 
 
     // --- DATABASE AND RUST STATE INITIALIZATION ---

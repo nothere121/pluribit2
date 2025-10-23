@@ -12,3 +12,4 @@ package-lock.json
 ccfiles.sh
 concatenated_output.txt
 cleanup.sh
+/pluribit-data

@@ -807,33 +807,86 @@ async function save_block_to_staging(block) {
 }
 
 /**
- * Atomically commit a staged reorg
- * This uses a batch operation to ensure atomicity
- * @param {Array<Block>} blocks
- * @param {Array<bigint>} oldHeights
- * @param {bigint} newTipHeight
- * @param {string} newTipHash
+ * Atomically commit a staged reorg with improved error handling
+ * @param {Array<Block>} blocks - New blocks to add to canonical chain
+ * @param {Array<bigint>} oldHeights - Heights of old blocks to remove
+ * @param {bigint} newTipHeight - New chain tip height
+ * @param {string} newTipHash - New chain tip hash
  * @returns {Promise<void>}
  */
 async function commit_staged_reorg(blocks, oldHeights, newTipHeight, newTipHash) {
   const chainDb = await getChainDb();
-  const batch = chainDb.batch();
-
-  for (const block of blocks) {
-    const blockStr = stringify(block);
-    batch.put(`block:${block.hash}`, blockStr);
-    batch.put(`height:${block.height.toString()}`, block.hash);
-    batch.del(`staging:${block.hash}`);
+  
+  console.log('[DB-REORG] Starting atomic commit');
+  console.log(`[DB-REORG] New blocks: ${blocks.map(b => `#${b.height}:${b.hash.substring(0,8)}`).join(', ')}`);
+  console.log(`[DB-REORG] Old heights to delete: ${oldHeights.join(', ')}`);
+  console.log(`[DB-REORG] New tip: #${newTipHeight} (${newTipHash.substring(0,12)}...)`);
+  
+  try {
+    // Step 1: Load old block hashes before deletion
+    const oldBlockHashes = [];
+    for (const height of oldHeights) {
+      try {
+        const oldHash = await chainDb.get(`height:${height.toString()}`);
+        if (oldHash) {
+          oldBlockHashes.push(oldHash);
+          console.log(`[DB-REORG] Will delete old block at height ${height}: ${oldHash.substring(0,12)}...`);
+        }
+      } catch (e) {
+        if (e.code !== 'LEVEL_NOT_FOUND') {
+          console.error(`[DB-REORG] Error reading old height ${height}:`, e);
+          throw e;
+        }
+      }
+    }
+    
+    // Step 2: Build atomic batch operation
+    const batch = chainDb.batch();
+    
+    // Add new blocks to canonical chain
+    for (const block of blocks) {
+      const blockStr = stringify(block);
+      batch.put(`block:${block.hash}`, blockStr);
+      batch.put(`height:${block.height.toString()}`, block.hash);
+      batch.del(`staging:${block.hash}`);
+      console.log(`[DB-REORG] Batch: Add block #${block.height} (${block.hash.substring(0,12)}...)`);
+    }
+    
+    // Remove old canonical height mappings
+    for (const height of oldHeights) {
+      batch.del(`height:${height.toString()}`);
+      console.log(`[DB-REORG] Batch: Delete height mapping ${height}`);
+    }
+    
+    // Clean up old block data to prevent orphans
+    for (const oldHash of oldBlockHashes) {
+      batch.del(`block:${oldHash}`);
+      console.log(`[DB-REORG] Batch: Delete orphaned block data ${oldHash.substring(0,12)}...`);
+    }
+    
+    // Update tip metadata
+    batch.put('meta:tip_height', newTipHeight.toString());
+    batch.put('meta:tip_hash', newTipHash);
+    console.log(`[DB-REORG] Batch: Update tip metadata`);
+    
+    // Step 3: Execute atomic commit
+    console.log('[DB-REORG] Executing batch write...');
+    await batch.write();
+    console.log('[DB-REORG] ✓ Batch write successful');
+    
+    // Step 4: Verify the write
+    const verifyHash = await chainDb.get(`height:${newTipHeight.toString()}`);
+    if (verifyHash !== newTipHash) {
+      throw new Error(`Verification failed: Expected ${newTipHash.substring(0,12)} at height ${newTipHeight}, got ${verifyHash.substring(0,12)}`);
+    }
+    console.log(`[DB-REORG] ✓ Verification passed`);
+    
+  } catch (error) {
+    console.error('[DB-REORG] ✗ CRITICAL: Batch write FAILED:', error);
+    console.error('[DB-REORG] ✗ Database may be in inconsistent state!');
+    // Re-throw with more context
+    throw new Error(`Reorg database commit failed: ${error.message}. Manual recovery may be required.`);
   }
-  
-  for (const height of oldHeights) {
-    batch.del(`height:${height.toString()}`);
-  }
-  
-  batch.put('meta:tip_height', newTipHeight.toString());
-  batch.put('meta:tip_hash', newTipHash);
-  
-  await batch.write();
 }
 
 // --- MODULE EXPORTS ---

@@ -1610,7 +1610,7 @@ app.get('/', (req, res) => {
                 const colors = getChartColors(theme);
                 
                 const vrfData = metrics.map(m => {
-                    const bytes = new Uint8Array(m.vrfThreshold);
+                    const bytes = new parseUint8Array(m.vrfThreshold);
                     return parseInt(Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 8), 16);
                 });
                 
@@ -1726,7 +1726,7 @@ app.get('/', (req, res) => {
                         labels: rewards.map(r => '#' + r.height),
                         datasets: [{
                             label: 'Block Reward (ƀ)',
-                            data: rewards.map(r => Number(r.reward / 100_000_000n)),
+                            data: rewards.map(r => Number(r.reward) / 100_000_000),
                             borderColor: '#8b5cf6',
                             backgroundColor: 'rgba(139, 92, 246, 0.1)',
                             tension: 0.1,
