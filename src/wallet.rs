@@ -8,7 +8,11 @@ use rand::rngs::OsRng;
 use crate::merkle;
 use lazy_static::lazy_static;
 use std::sync::Mutex;
+use crate::blockchain::COINBASE_INDEX; 
+use crate::constants::COINBASE_MATURITY; 
 use crate::WasmU64;
+use std::collections::HashMap;
+
 lazy_static! {
     static ref PENDING_UTXOS: Mutex<HashSet<Vec<u8>>> = Mutex::new(HashSet::new());
 }
@@ -182,76 +186,120 @@ impl Wallet {
 
 
     /// Creates a transaction to send a specified amount to a recipient.
-    pub fn create_transaction(
-        &mut self,
-        amount: u64,
-        fee: u64,
-        recipient_scan_pub: &RistrettoPoint,
-    ) -> Result<Transaction, String> {
-        log("=== CREATE_TRANSACTION DEBUG ===");
-        let total_needed = amount.checked_add(fee).ok_or("Amount plus fee overflowed")?;
-        log(&format!("[WALLET] Amount={}, Fee={}", amount, fee));
-        log(&format!("[WALLET] Selecting UTXOs to cover {}...", total_needed));
-        log(&format!("[WALLET] Available UTXOs before selection: {}", self.owned_utxos.len()));
+/// Creates a transaction to send a specified amount to a recipient.
+     pub fn create_transaction(
+         &mut self,
+         amount: u64,
+         fee: u64,
+         recipient_scan_pub: &RistrettoPoint,
+     ) -> Result<Transaction, String> {
+         log("=== CREATE_TRANSACTION DEBUG ===");
+         let total_needed = amount.checked_add(fee).ok_or("Amount plus fee overflowed")?;
+         log(&format!("[WALLET] Amount={}, Fee={}", amount, fee));
+         log(&format!("[WALLET] Selecting UTXOs to cover {}...", total_needed));
+         log(&format!("[WALLET] Available UTXOs before selection: {}", self.owned_utxos.len()));
 
-        // --- START: ATOMIC COIN SELECTION WITH LOCK ORDERING ---
+         // --- START: ATOMIC COIN SELECTION WITH LOCK ORDERING ---
 
-        // 1. Acquire UTXO_SET lock first to get a snapshot of valid UTXOs.
-        let valid_commitments: HashSet<Vec<u8>> = {
-            let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap();
-            utxo_set.keys().cloned().collect()
-        }; // Lock is released immediately after snapshot is created.
+         // 1. Acquire necessary snapshots BEFORE locking PENDING_UTXOS
+         let (valid_commitments, coinbase_creation_heights, current_tip_height): (HashSet<Vec<u8>>, HashMap<Vec<u8>, u64>, u64) = {
+             // Lock UTXO_SET first
+             let utxo_set = crate::blockchain::UTXO_SET.lock().unwrap(); // 
+             let commitments = utxo_set.keys().cloned().collect();
+             // Lock COINBASE_INDEX next
+             let coinbase_index = COINBASE_INDEX.lock().unwrap(); // 
+             let heights = coinbase_index.clone(); // Clone the map for the snapshot
+             // Lock BLOCKCHAIN last
+             let chain = crate::BLOCKCHAIN.lock().unwrap(); // 
+             let height = *chain.current_height; // [cite: 1418]
 
-        let mut selected_inputs = Vec::new();
-        let mut selected_utxos = Vec::new();
-        let mut input_blinding_sum = Scalar::default();
-        let mut total_from_selected: u64 = 0;
+             (commitments, heights, height) // Return tuple, locks are released here
+         }; // Snapshots created, locks released
 
-        // 2. Now acquire the PENDING_UTXOS lock to perform the atomic selection.
-        let mut pending = PENDING_UTXOS.lock().unwrap();
-        
-        self.owned_utxos.retain_mut(|utxo| {
-            if total_from_selected >= total_needed {
-                return true; // Keep this UTXO, we have enough.
-            }
+         let mut selected_inputs = Vec::new();
+         let mut selected_utxos = Vec::new();
+         let mut input_blinding_sum = Scalar::default();
+         let mut total_from_selected: u64 = 0;
 
-            let commitment_bytes = utxo.commitment.to_bytes().to_vec();
+         // 2. Now acquire the PENDING_UTXOS lock to perform the atomic selection.
+         let mut pending = PENDING_UTXOS.lock().unwrap(); // 
 
-            // Check against the snapshot (NO nested lock!) and the pending set.
-            if valid_commitments.contains(&commitment_bytes) && !pending.contains(&commitment_bytes) {
-                // Select this UTXO
-                log(&format!("[WALLET] Selected UTXO: value={}, commitment={}", utxo.value, hex::encode(&utxo.commitment.to_bytes()[..8])));
-                total_from_selected += utxo.value;
-                input_blinding_sum += utxo.blinding;
-                log(&format!("[WALLET] Total selected so far: {}", total_from_selected));
-                
-                selected_inputs.push(TransactionInput {
-                    commitment: commitment_bytes.clone(),
-                    merkle_proof: None,
-                    source_height: WasmU64::from(utxo.block_height),
-                });
-                selected_utxos.push(utxo.clone());
+         self.owned_utxos.retain_mut(|utxo| {
+             if total_from_selected >= total_needed {
+                 return true; // Keep this UTXO, we have enough.
+             }
 
-                // Immediately mark as pending to prevent other concurrent calls from selecting it.
-                pending.insert(commitment_bytes);
+             let commitment_bytes = utxo.commitment.to_bytes().to_vec();
 
-                return false; // Remove this UTXO from owned_utxos for this transaction.
-            }
+             // Check against the UTXO set snapshot (NO nested lock!)
+             if !valid_commitments.contains(&commitment_bytes) {
+                 log(&format!("[WALLET] Skipping UTXO not in global set: {}", hex::encode(&commitment_bytes[..8])));
+                 return true; // Keep UTXO if it's invalid (maybe reorg happened)
+             }
 
-            true // Keep UTXO if it's invalid, pending, or not needed.
-        });
+             // Check against the pending set.
+             if pending.contains(&commitment_bytes) {
+                 log(&format!("[WALLET] Skipping already pending UTXO: {}", hex::encode(&commitment_bytes[..8])));
+                 return true; // Keep UTXO if already pending
+             }
 
-        // --- END: ATOMIC COIN SELECTION ---
+             if let Some(&creation_height) = coinbase_creation_heights.get(&commitment_bytes) {
+                 // It's a coinbase UTXO, check maturity
+                 let required_height = creation_height.saturating_add(COINBASE_MATURITY); // [cite: 1490, 1745]
+                 // Transaction will be included in the *next* block (tip + 1)
+                 let spend_height = current_tip_height.saturating_add(1);
+
+                 if spend_height < required_height {
+                     let needed_confs = COINBASE_MATURITY;
+                     let current_confs = spend_height.saturating_sub(creation_height);
+                     log(&format!(
+                         "[WALLET] Skipping immature coinbase UTXO {} (created at {}, needs height {}, current+1 is {}, {}/{} confs)",
+                         hex::encode(&commitment_bytes[..8]),
+                         creation_height,
+                         required_height,
+                         spend_height,
+                         current_confs,
+                         needed_confs
+                     ));
+                     return true; // Keep UTXO, it's immature
+                 }
+                 log(&format!("[WALLET] Coinbase UTXO {} is mature.", hex::encode(&commitment_bytes[..8])));
+             }
+
+
+             // Select this UTXO (passed all checks)
+             log(&format!("[WALLET] Selected UTXO: value={}, commitment={}", utxo.value, hex::encode(&utxo.commitment.to_bytes()[..8])));
+             total_from_selected += utxo.value;
+             input_blinding_sum += utxo.blinding;
+             log(&format!("[WALLET] Total selected so far: {}", total_from_selected));
+
+             selected_inputs.push(TransactionInput {
+                 commitment: commitment_bytes.clone(),
+                 merkle_proof: None, // Proofs are not stored in wallet, only used in tx verification
+                 source_height: WasmU64::from(utxo.block_height), 
+             });
+             selected_utxos.push(utxo.clone());
+
+             // Immediately mark as pending to prevent other concurrent calls from selecting it.
+             pending.insert(commitment_bytes);
+
+             return false; // Remove this UTXO from owned_utxos for this transaction.
+         }); // PENDING_UTXOS lock released here
+
+         // --- END: ATOMIC COIN SELECTION ---
         
         if total_from_selected < total_needed {
-            // If we don't have enough funds, revert the changes.
-            log("[WALLET] Insufficient funds.");
-            self.owned_utxos.extend(selected_utxos); // Add the UTXOs back.
-            for input in selected_inputs {
-                pending.remove(&input.commitment); // Un-mark as pending.
-            }
-            return Err("Insufficient funds after excluding invalid/pending UTXOs".to_string());
-        }
+             // If we don't have enough funds, revert the changes.
+             log("[WALLET] Insufficient funds.");
+             self.owned_utxos.extend(selected_utxos); // Add the UTXOs back.
+             // --- Need to re-acquire pending lock to unmark ---
+             let mut pending_revert = PENDING_UTXOS.lock().unwrap(); // Acquire lock again
+             for input in selected_inputs {
+                 pending_revert.remove(&input.commitment); // Un-mark as pending.
+             }
+             // Lock released automatically when pending_revert goes out of scope
+             return Err("Insufficient funds after excluding invalid/pending UTXOs".to_string());
+         }
 
         // 3. Create Outputs
         log(&format!("[WALLET] Creating outputs..."));
@@ -291,9 +339,11 @@ impl Wallet {
             .map_err(|e| {
                 // If kernel creation fails, we must also revert
                 self.owned_utxos.extend(selected_utxos);
-                for input in &selected_inputs { // Use a borrow (&) instead of moving
-                    pending.remove(&input.commitment);
-                }
+                // --- Need to re-acquire pending lock to unmark ---
+                  let mut pending_revert = PENDING_UTXOS.lock().unwrap(); // Acquire lock again
+                  for input in &selected_inputs { // Use a borrow (&) instead of moving 
+                      pending_revert.remove(&input.commitment); 
+                  }
                 e
             })?;
             
