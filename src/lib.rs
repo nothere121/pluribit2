@@ -280,9 +280,12 @@ async fn save_total_work_to_db(work: u64) -> Result<(), JsValue> {
 async fn get_total_work_from_db() -> Result<u64, JsValue> {
     let promise = get_total_work_from_db_raw();
     let result_js = wasm_bindgen_futures::JsFuture::from(promise).await?;
-    let work_str = result_js.as_string().unwrap_or_else(|| "0".to_string());
-    // Parse the string from JS into a u64 for Rust
-    work_str.parse::<u64>().map_err(|e| JsValue::from_str(&e.to_string()))
+
+    // Use serde_wasm_bindgen to deserialize flexibly from String, Number, or BigInt
+    let wasm_u64: WasmU64 = serde_wasm_bindgen::from_value(result_js)
+        .map_err(|e| JsValue::from_str(&format!("Failed to deserialize total_work: {}", e)))?; // Add error context [cite: 2072]
+
+    Ok(*wasm_u64) // Dereference WasmU64 to get the inner u64 [cite: 2072]
 }
 
 async fn clear_all_utxos_from_db() -> Result<(), JsValue> {

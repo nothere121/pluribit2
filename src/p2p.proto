@@ -54,7 +54,7 @@ message TransactionOutput {
   bytes range_proof = 2;
   optional bytes ephemeral_key = 3;
   optional bytes stealth_payload = 4;
-  optional bytes view_tag = 5;
+  optional bytes viewTag = 5;
 }
 
 message TransactionKernel {

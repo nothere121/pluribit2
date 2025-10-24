@@ -1,7 +1,7 @@
 // src/stealth.rs
 // Wallet-layer stealth subaddress primitives for Pluriƀit
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_TABLE;
-
+use crate::log;
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use sha2::{Sha256, Digest};
@@ -98,12 +98,25 @@ pub fn decrypt_stealth_output(
     R: &RistrettoPoint,
     data: &[u8],
 ) -> Option<(u64, Scalar)> {
-    if data.len() < 24 { return None; }
+    // --- ADD LOGGING ---
+    let r_hex = hex::encode(R.compress().to_bytes());
+    log(&format!("[DECRYPT] Entered. R={}, data_len={}", &r_hex[..8], data.len()));
+    // --- END LOGGING ---
+
+    if data.len() < 24 {
+        // --- ADD LOGGING ---
+        log("[DECRYPT] Failed: Data length < 24.");
+        // --- END LOGGING ---
+        return None;
+    }
     let (nonce_bytes, ct) = data.split_at(24);
 
     // Compute shared secret S' = Hs("Stealth" || scan_priv * R)
     let apr = (R * scan_priv).compress().to_bytes();
     let s = hash_to_scalar(b"Stealth", &apr);
+    // --- ADD LOGGING ---
+    log(&format!("[DECRYPT] Calculated shared secret s': {}", hex::encode(s.to_bytes())));
+    // --- END LOGGING ---
 
     // Derive key
     let key = Key::from_slice(s.as_bytes());
@@ -111,28 +124,63 @@ pub fn decrypt_stealth_output(
     let nonce = XNonce::from_slice(nonce_bytes);
 
     // Decrypt
-    let pt = cipher.decrypt(nonce, ct).ok()?;
-    if pt.len() != 40 { return None; }
+    // --- ADD LOGGING ---
+    log("[DECRYPT] Attempting cipher.decrypt...");
+    // --- END LOGGING ---
+    let pt = match cipher.decrypt(nonce, ct) {
+        Ok(plaintext) => {
+            // --- ADD LOGGING ---
+            log(&format!("[DECRYPT] Decryption successful. Plaintext len={}", plaintext.len()));
+            // --- END LOGGING ---
+            plaintext
+        },
+        Err(e) => {
+            // --- ADD LOGGING ---
+            log(&format!("[DECRYPT] Decryption FAILED: {}", e));
+            // --- END LOGGING ---
+            return None;
+        }
+    };
+
+    if pt.len() != 40 {
+        // --- ADD LOGGING ---
+        log(&format!("[DECRYPT] Failed: Plaintext length != 40 (was {}).", pt.len()));
+        // --- END LOGGING ---
+        return None;
+    }
 
     // Parse
     let mut amt_bytes = [0u8; 8];
     amt_bytes.copy_from_slice(&pt[..8]);
     let value = u64::from_be_bytes(amt_bytes);
-    
+
     let mut blind_bytes = [0u8; 32];
     blind_bytes.copy_from_slice(&pt[8..40]);
 
+    // --- ADD LOGGING ---
+    log(&format!("[DECRYPT] Parsed value: {}", value));
+    log(&format!("[DECRYPT] Parsed blinding bytes: {}", hex::encode(blind_bytes)));
+    log("[DECRYPT] Checking if blinding bytes are canonical scalar...");
+    // --- END LOGGING ---
+
     // Use canonical scalar representation only
-    // This prevents malleability attacks where multiple scalar representations
-    // could create the same commitment
     let blinding = if let Some(scalar) = Scalar::from_canonical_bytes(blind_bytes).into() {
+        // --- ADD LOGGING ---
+        log("[DECRYPT] Blinding bytes ARE canonical.");
+        // --- END LOGGING ---
         scalar
     } else {
+        // --- ADD LOGGING ---
+        log("[DECRYPT] Blinding bytes ARE NOT canonical. Decryption fails.");
+        // --- END LOGGING ---
         return None;
     };
 
     // Verification that the reconstructed commitment matches the on-chain one
     // must be performed by the calling function.
+    // --- ADD LOGGING ---
+    log("[DECRYPT] Returning Some((value, blinding)).");
+    // --- END LOGGING ---
     Some((value, blinding))
 }
 #[cfg(test)]

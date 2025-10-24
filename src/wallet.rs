@@ -14,7 +14,7 @@ use crate::WasmU64;
 use std::collections::HashMap;
 use sha2::{Sha256, Digest};
 use bip39::Mnemonic;
-
+use crate::log;
 
 lazy_static! {
     static ref PENDING_UTXOS: Mutex<HashSet<Vec<u8>>> = Mutex::new(HashSet::new());
@@ -60,7 +60,6 @@ use crate::{
     stealth,      // For stealth address primitives
     transaction::{Transaction, TransactionInput, TransactionOutput, TransactionKernel},
 };
-use crate::log;
 
 /// Represents a UTXO that the wallet owns and can spend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,82 +221,135 @@ impl Wallet {
     }
 
     /// Scans a block for outputs belonging to this wallet using the stealth protocol.
-  pub fn scan_block(&mut self, block: &Block) {
-        // STEP 1: Remove spent inputs ONCE at the start
-        for tx in &block.transactions {
-            for input in &tx.inputs {
-                self.owned_utxos.retain(|u| u.commitment.to_bytes() != *input.commitment);
-            }
-        }
-        
-        // STEP 2: Add new outputs (simplified logic)
-        for tx in &block.transactions {
-            for output in &tx.outputs {
-                // Check if all necessary fields are present for stealth check
-                if let (Some(r_bytes), Some(payload), Some(output_view_tag)) =
-                       (&output.ephemeral_key, &output.stealth_payload, output.view_tag) {
+  // In src/wallet.rs
 
-                    if let Ok(compressed_point) = CompressedRistretto::from_slice(r_bytes) {
-                        if let Some(r_point) = compressed_point.decompress() {
+ pub fn scan_block(&mut self, block: &Block) {
+     log(&format!("[RUST SCAN_BLOCK] Block #{}, Coinbase Output 0 view_tag: {:?}",
+            block.height,
+            block.transactions.get(0).and_then(|tx| tx.outputs.get(0)).map(|out| out.view_tag.as_ref().and_then(|v| v.first().cloned())) // Adjusted logging slightly for Vec<u8>
+        )); // <-- Log line updated
+     // STEP 1: Remove spent inputs ONCE at the start
+     for tx in &block.transactions {
+         for input in &tx.inputs {
+             let initial_len = self.owned_utxos.len();
+             self.owned_utxos.retain(|u| u.commitment.to_bytes() != *input.commitment);
+             if self.owned_utxos.len() < initial_len {
+                 log(&format!("[SCAN_BLOCK] Removed spent input: {}", hex::encode(&input.commitment[..8])));
+             }
+         }
+     }
 
-                            // --- VIEW TAG CHECK ---
-                            // Compute the expected shared secret s' = Hs("Stealth" || scan_priv * R)
-                            let apr = (&r_point * &self.scan_priv).compress().to_bytes();
-                            let s_prime = stealth::hash_to_scalar(b"Stealth", &apr);
-                            // Compute the expected view tag H("view_tag" || s'.to_bytes())[0]
-                            let expected_view_tag = stealth::derive_view_tag(&s_prime);
+     // STEP 2: Add new outputs (simplified logic)
+     for (tx_idx, tx) in block.transactions.iter().enumerate() {
+         for (out_idx, output) in tx.outputs.iter().enumerate() {
+             let out_commitment_hex = hex::encode(&output.commitment[..8]);
+             log(&format!("[SCAN_BLOCK] Tx #{}, Output #{}: Checking output {}", tx_idx, out_idx, out_commitment_hex));
 
-                            // Compare tags before attempting decryption
-                            if expected_view_tag == output_view_tag {
-                                // TAG MATCH! Now attempt full decryption
-                                if let Some((value, blinding)) = stealth::decrypt_stealth_output(&self.scan_priv, &r_point, payload) {
-    
-                                    // Verify commitment matches
-                                    let commitment = mimblewimble::commit(value, &blinding).unwrap();
-                                    let commitment_bytes = commitment.compress().to_bytes().to_vec();
-                                    
-                                    if commitment_bytes != output.commitment {
-                                        log(&format!("[WALLET] View tag matched but commitment mismatch for output {}", hex::encode(&output.commitment[..8]))); 
-                                        continue;
-                                    }
-                                    
-                                    // Verify range proof
-                                    let proof = match RangeProof::from_bytes(&output.range_proof) {
-                                        Ok(p) => p,
-                                        Err(_) => {
-                                            log(&format!("[WALLET] Invalid range proof format for output {}", 
-                                                hex::encode(&output.commitment[..8])));
-                                            continue;
-                                        }
-                                    };
-                                    
-                                    if !mimblewimble::verify_range_proof(&proof, &CompressedRistretto::from_slice(&output.commitment).unwrap()) {
-                                        log(&format!("[WALLET] Range proof verification failed for output {}", 
-                                            hex::encode(&output.commitment[..8])));
-                                        continue;
-                                    }
-                                    
-                                    // ✅ SIMPLIFIED: Just check if we don't already have it
-                                    if !self.owned_utxos.iter().any(|u| u.commitment.to_bytes() == commitment_bytes.as_slice()) {
-                                        log(&format!("[WALLET] Found incoming UTXO! Value: {}", value));
-                                        self.owned_utxos.push(WalletUtxo {
-                                            value,
-                                            blinding,
-                                            commitment: CompressedRistretto::from_slice(&commitment_bytes).unwrap(),
-                                            block_height: *block.height,
-                                            merkle_proof: None,
-                                        });
-                                    }
-                                } else {
-                                     log(&format!("[WALLET] View tag matched but decryption failed for output {}", hex::encode(&output.commitment[..8]))); // Log false positive
-                                }
-                            } // else: view tag mismatch, skip expensive decryption
-                        }
-                    }
-                }
-            }
-        }
-    }
+             // Check if all necessary fields are present for stealth check
+             // CORRECTED if let pattern: binds Option<Vec<u8>>
+             if let (Some(r_bytes), Some(payload), Some(view_tag_bytes)) =
+                    (&output.ephemeral_key, &output.stealth_payload, &output.view_tag)
+             {
+                 // CORRECTED: Nested if let to extract the u8 from Vec<u8>
+                 if let Some(&output_view_tag) = view_tag_bytes.first() {
+                     // Now 'output_view_tag' is the u8 value we need
+
+                     log(&format!("[SCAN_BLOCK] Output {}: Has ephemeral_key, payload, and view_tag ({})", out_commitment_hex, output_view_tag));
+
+                     if let Ok(compressed_point) = CompressedRistretto::from_slice(r_bytes) {
+                         if let Some(r_point) = compressed_point.decompress() {
+
+                             // --- VIEW TAG CHECK ---
+                             // Compute the expected shared secret s' = Hs("Stealth" || scan_priv * R)
+                             let apr = (&r_point * &self.scan_priv).compress().to_bytes();
+                             let s_prime = stealth::hash_to_scalar(b"Stealth", &apr);
+                             // Compute the expected view tag H("view_tag" || s'.to_bytes())[0]
+                             let expected_view_tag = stealth::derive_view_tag(&s_prime);
+
+                             // Use the extracted u8 tag for comparison
+                             log(&format!("[SCAN_BLOCK] Output {}: Comparing tags - Expected={}, Output={}", out_commitment_hex, expected_view_tag, output_view_tag));
+
+                             // Use the extracted u8 tag for comparison
+                             if expected_view_tag == output_view_tag {
+                                 log(&format!("[SCAN_BLOCK] Output {}: View tag MATCH! Attempting decryption...", out_commitment_hex));
+                                 // TAG MATCH! Now attempt full decryption
+                                 if let Some((value, blinding)) = stealth::decrypt_stealth_output(&self.scan_priv, &r_point, payload) {
+                                     log(&format!("[SCAN_BLOCK] Output {}: Decryption SUCCESS! Value={}, Blinding={}", out_commitment_hex, value, hex::encode(blinding.to_bytes())));
+                                     // Verify commitment matches
+                                     let commitment = mimblewimble::commit(value, &blinding).unwrap();
+                                     let commitment_bytes = commitment.compress().to_bytes().to_vec();
+
+                                     log(&format!("[SCAN_BLOCK] Output {}: Comparing commitments - Recalculated={}, Stored={}",
+                                         out_commitment_hex,
+                                         hex::encode(&commitment_bytes[..8]),
+                                         hex::encode(&output.commitment[..8])));
+
+                                     if commitment_bytes != output.commitment {
+                                         log(&format!("[SCAN_BLOCK] Output {}: View tag matched but commitment mismatch!", out_commitment_hex));
+                                         continue;
+                                     }
+                                     log(&format!("[SCAN_BLOCK] Output {}: Commitment MATCH! Verifying range proof...", out_commitment_hex));
+                                     // Verify range proof
+                                     let proof = match RangeProof::from_bytes(&output.range_proof) {
+                                         Ok(p) => p,
+                                         Err(_) => {
+                                             log(&format!("[WALLET] Invalid range proof format for output {}",
+                                                 hex::encode(&output.commitment[..8])));
+                                             continue;
+                                         }
+                                     };
+
+                                     let rp_verified = mimblewimble::verify_range_proof(&proof, &CompressedRistretto::from_slice(&output.commitment).unwrap());
+                                     log(&format!("[SCAN_BLOCK] Output {}: Range proof verification result: {}", out_commitment_hex, rp_verified));
+
+                                     if !rp_verified {
+                                         log(&format!("[SCAN_BLOCK] Output {}: Range proof verification FAILED!", out_commitment_hex));
+                                         continue;
+                                     }
+
+                                     // ✅ SIMPLIFIED: Just check if we don't already have it
+                                     let already_owned = self.owned_utxos.iter().any(|u| u.commitment.to_bytes() == commitment_bytes.as_slice());
+                                     log(&format!("[SCAN_BLOCK] Output {}: Already owned? {}", out_commitment_hex, already_owned));
+
+                                     if !already_owned {
+                                         log(&format!("[SCAN_BLOCK] Found incoming UTXO! Adding: Value={}, Commitment={}", value, out_commitment_hex));
+                                         self.owned_utxos.push(WalletUtxo {
+                                             value,
+                                             blinding,
+                                             commitment: CompressedRistretto::from_slice(&commitment_bytes).unwrap(),
+                                             block_height: *block.height,
+                                             merkle_proof: None, // Proofs aren't stored long-term in wallet
+                                         });
+                                     }
+                                 } else {
+                                      log(&format!("[SCAN_BLOCK] Output {}: View tag matched but decryption FAILED.", out_commitment_hex));
+                                 }
+                             } else { // View tag mismatch
+                                 log(&format!("[SCAN_BLOCK] Output {}: View tag MISMATCH.", out_commitment_hex));
+                             }
+                         } else {
+                              log(&format!("[SCAN_BLOCK] Output {}: Failed to decompress ephemeral key R point.", out_commitment_hex));
+                         }
+                     } else {
+                          log(&format!("[SCAN_BLOCK] Output {}: Failed to parse ephemeral key R bytes.", out_commitment_hex));
+                     }
+                 // CORRECTED: Added else for empty view_tag_bytes case
+                 } else { // view_tag_bytes was empty
+                     log(&format!("[SCAN_BLOCK] Output {}: view_tag field was present but empty.", out_commitment_hex));
+                 }
+             } else { // Missing one of the required fields
+                 // CORRECTED: Adjusted missing fields check
+                 let missing = [
+                     (output.ephemeral_key.is_none(), "ephemeral_key"),
+                     (output.stealth_payload.is_none(), "stealth_payload"),
+                     (output.view_tag.is_none(), "view_tag") // Check the Option<Vec<u8>>
+                 ].iter().filter(|(is_missing, _)| *is_missing).map(|(_, name)| *name).collect::<Vec<_>>().join(", ");
+                 log(&format!("[SCAN_BLOCK] Output {}: Skipping stealth check, missing fields: [{}]", out_commitment_hex, missing));
+             }
+         }
+     }
+     log(&format!("[SCAN_BLOCK] Finished block #{}. Owned UTXOs: {}", block.height, self.owned_utxos.len()));
+ }
 
     
 
@@ -507,7 +559,7 @@ pub fn create_stealth_output(
             range_proof: range_proof.to_bytes(),
             ephemeral_key: Some(ephemeral_key.compress().to_bytes().to_vec()),
             stealth_payload: Some(payload),
-            view_tag: Some(view_tag),
+             view_tag: Some(vec![view_tag]),
         },
         blinding,
     ))

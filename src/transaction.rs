@@ -28,7 +28,7 @@ pub struct TransactionOutput {
     pub range_proof: Vec<u8>,
     pub ephemeral_key: Option<Vec<u8>>, // Stores the sender's ephemeral public key R
     pub stealth_payload: Option<Vec<u8>>, // Stores the encrypted nonce || cipher
-    pub view_tag: Option<u8>,
+    pub view_tag: Option<Vec<u8>>, // Now matches Protobuf 'bytes' type
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -271,7 +271,7 @@ impl Transaction {
             range_proof: proof.to_bytes(),
             ephemeral_key: Some(ephemeral_key.compress().to_bytes().to_vec()),
             stealth_payload: Some(payload),
-            view_tag: Some(view_tag),
+             view_tag: Some(vec![view_tag]),
         });
         
         blinding_sum += blinding;
@@ -294,7 +294,7 @@ impl Transaction {
         .map_err(|e| PluribitError::ComputationError(e.to_string()))?;
         
     log(&format!("[CREATE_COINBASE] Kernel excess={}", hex::encode(&kernel.excess)));
-    
+    log(&format!("[CREATE_COINBASE] Final outputs before return: {:?}", outputs)); // <-- ADD THIS LINE
     Ok(Transaction {
         inputs: vec![],
         outputs,
@@ -377,8 +377,7 @@ impl From<TransactionOutput> for p2p::TransactionOutput {
             range_proof: output.range_proof,
             ephemeral_key: output.ephemeral_key,
             stealth_payload: output.stealth_payload,
-            // Convert Option<u8> to Option<Vec<u8>> containing one byte
-            view_tag: output.view_tag.map(|tag| vec![tag]),
+            view_tag: output.view_tag,
         }
     }
 }
@@ -392,7 +391,7 @@ impl From<p2p::TransactionOutput> for TransactionOutput {
             ephemeral_key: proto.ephemeral_key,
             stealth_payload: proto.stealth_payload,
             // Convert Option<Vec<u8>> (expecting one byte) back to Option<u8>
-            view_tag: proto.view_tag.and_then(|bytes| bytes.first().cloned()), 
+            view_tag: proto.view_tag,
         }
     }
 }

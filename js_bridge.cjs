@@ -10,6 +10,7 @@ const { Level } = require('level');
 const path = require('path');
 const { webcrypto: crypto, randomBytes, scryptSync, createCipheriv, createDecipheriv } = require('crypto');
 const fs = require('fs');
+const { p2p } = require('./src/p2p_pb.cjs');
 
 /**
  * @typedef {import('level').Level<string, string>} LevelDB
@@ -100,7 +101,10 @@ async function getChainDb() {
   
   // Create and store the promise. This IIFE will now only run once.
   chainDbPromise = (async () => {
-    const db = new Level(path.join(DB_PATH, 'chain'), { valueEncoding: 'utf8' });
+const db = new Level(path.join(DB_PATH, 'chain'), {
+        valueEncoding: 'buffer', // Use buffer for binary Protobuf data
+        keyEncoding: 'utf8' // Keep keys as strings
+    });
     
     // This is all that's needed. If open() fails, it throws an error.
     // If it succeeds, the DB is guaranteed to be ready.
@@ -145,19 +149,22 @@ async function getWalletDb() {
  * @returns {Promise<LevelDB>} A promise that resolves with the open deferred DB instance.
  */
 async function getDeferredDb() {
-  if (deferredDbInstance && deferredDbInstance.status === 'open') {
-    return deferredDbInstance;
-  }
-  if (deferredDbPromise) {
+    if (deferredDbInstance && deferredDbInstance.status === 'open') {
+        return deferredDbInstance;
+    }
+    if (deferredDbPromise) {
+        return deferredDbPromise;
+    }
+    deferredDbPromise = (async () => {
+        const db = new Level(path.join(DB_PATH, 'deferred'), {
+            keyEncoding: 'utf8',
+            valueEncoding: 'buffer' // Use buffer for binary Protobuf data
+        });
+        await db.open();
+        deferredDbInstance = db;
+        return db;
+    })();
     return deferredDbPromise;
-  }
-  deferredDbPromise = (async () => {
-    const db = new Level(path.join(DB_PATH, 'deferred'), { keyEncoding: 'utf8', valueEncoding: 'utf8' });
-    await db.open();
-    deferredDbInstance = db;
-    return db;
-  })();
-  return deferredDbPromise;
 }
 
 // --- UTXO DATABASE SINGLETON ---
@@ -188,6 +195,37 @@ async function getUtxoDb() {
  */
 async function initializeDatabase() {
   await Promise.all([getChainDb(), getWalletDb(), getDeferredDb()]);
+}
+
+
+// --- BigInt Conversion for Protobuf.js Long objects ---
+function convertLongsToBigInts(obj) {
+if (obj instanceof Uint8Array || Buffer.isBuffer(obj)) { // Added Buffer check
+        return obj;
+    }
+
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+
+  // Check if it's a Long.js object
+  if (typeof obj.low === 'number' && typeof obj.high === 'number' && typeof obj.unsigned === 'boolean') {
+    // Correctly convert unsigned 64-bit Long to BigInt
+    // The '>>> 0' trick ensures the low bits are treated as unsigned.
+    return (BigInt(obj.high) << 32n) + BigInt(obj.low >>> 0);
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(convertLongsToBigInts);
+  }
+
+  const newObj = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      newObj[key] = convertLongsToBigInts(obj[key]);
+    }
+  }
+  return newObj;
 }
 
 /**
@@ -302,7 +340,7 @@ function decryptWallet(envelopeStr, passphrase) {
 // --- BLOCK FUNCTIONS ---
 
 /**
- * Saves a block to the database. Also updates the chain tip if the block is the new highest.
+ * Saves a block to the database (Protobuf encoded). Also updates the chain tip if the block is the new highest.
  * @pre The `block` object must have a valid `height` property.
  * @post The block is stored in the database, keyed by its height. The 'tip_height' in the meta DB is updated if necessary.
  * @param {Block} block - The block object to save.
@@ -310,11 +348,18 @@ function decryptWallet(envelopeStr, passphrase) {
  */
 async function saveBlock(block, isCanonical = true) {
   const chainDb = await getChainDb();
-  await chainDb.put(`block:${block.hash}`, stringify(block));
-  
+  const blockProto = p2p.Block.create(block); // Ensure JS object matches proto structure
+  const buffer = p2p.Block.encode(blockProto).finish();
+
+  // Save block data by hash key
+  await chainDb.put(`block:${block.hash}`, Buffer.from(buffer)); // Use Node.js Buffer
+
   if (isCanonical) {
     const h = block.height.toString();
-    await chainDb.put(`height:${h}`, block.hash);
+    // Update height mapping
+    await chainDb.put(`height:${h}`, block.hash); // Keep height mapping as hash string
+
+    // Update tip metadata (these remain strings)
     const currentTip = await getTipHeight();
     if (block.height >= currentTip) {
       await chainDb.put('meta:tip_height', h);
@@ -324,7 +369,7 @@ async function saveBlock(block, isCanonical = true) {
 }
 
 /**
- * Loads a block from the database by its height.
+ * Loads a block (Protobuf encoded) from the database by its height.
  * @pre `height` must be a non-negative integer.
  * @post Returns the parsed block object if found, otherwise returns null.
  * @param {bigint} height - The height of the block to load.
@@ -333,9 +378,16 @@ async function saveBlock(block, isCanonical = true) {
 async function loadBlock(height) {
   const chainDb = await getChainDb();
   try {
+    // Height mapping remains string -> string (hash)
     const hash = await chainDb.get(`height:${height.toString()}`);
-    const blockData = await chainDb.get(`block:${hash}`);
-    return parse(blockData);
+    // Block data is now hash -> buffer
+    const buffer = await chainDb.get(`block:${hash}`);
+
+    const blockProto = p2p.Block.decode(buffer);
+    // Convert Long.js objects potentially created by protobuf.js to BigInts
+    const block = convertLongsToBigInts(blockProto);
+    return block;
+
   } catch (error) {
     if (error.code === 'LEVEL_NOT_FOUND') return null;
     throw error;
@@ -416,9 +468,11 @@ async function getAllBlocks() {
  */
 async function saveDeferredBlock(block) {
     const db = await getDeferredDb();
-    // Pad the height to ensure lexicographical sorting by height.
     const key = block.height.toString().padStart(16, '0');
-    await db.put(key, stringify(block));
+    // *** Encode block using Protobuf ***
+    const blockProto = p2p.Block.create(block);
+    const buffer = p2p.Block.encode(blockProto).finish();
+    await db.put(key, Buffer.from(buffer)); // Use Node.js Buffer
 }
 
 /**
@@ -428,7 +482,12 @@ async function saveDeferredBlock(block) {
 async function loadAllDeferredBlocks() {
     const db = await getDeferredDb();
     const entries = await db.iterator().all();
-    return entries.map(([key, value]) => parse(value));
+    return entries.map(([key, buffer]) => {
+        // *** Decode block using Protobuf ***
+        const blockProto = p2p.Block.decode(buffer);
+        const block = convertLongsToBigInts(blockProto);
+        return block;
+    });
 }
 
 /**
@@ -546,10 +605,12 @@ async function saveTotalWork(work) {
 async function loadTotalWork() {
   const chainDb = await getChainDb();
   try {
-    const w = await chainDb.get('meta:total_work');
-    return w;
+    const buffer = await chainDb.get('meta:total_work'); // Reads the value as a Buffer
+    // *** Convert the Buffer back to a string before returning ***
+    const w = buffer.toString('utf8');
+    return w; // Return the string representation
   } catch (/** @type {any} */ error) {
-    if (error.code === 'LEVEL_NOT_FOUND') return '0';
+    if (error.code === 'LEVEL_NOT_FOUND') return '0'; // Still return string '0' if not found
     throw error;
   }
 }
@@ -713,7 +774,10 @@ async function clear_all_utxos() {
  */
 async function saveBlockWithHash(block) {
   const chainDb = await getChainDb();
-  await chainDb.put(`block:${block.hash}`, stringify(block));
+  // ***  Encode block using Protobuf ***
+  const blockProto = p2p.Block.create(block);
+  const buffer = p2p.Block.encode(blockProto).finish();
+  await chainDb.put(`block:${block.hash}`, Buffer.from(buffer)); // Use Node.js Buffer
 }
 
 /**
@@ -724,8 +788,11 @@ async function saveBlockWithHash(block) {
 async function loadBlockByHash(hash) {
   const chainDb = await getChainDb();
   try {
-    const blockData = await chainDb.get(`block:${hash}`);
-    return parse(blockData);
+    const buffer = await chainDb.get(`block:${hash}`);
+    // ***  Decode block using Protobuf ***
+    const blockProto = p2p.Block.decode(buffer);
+    const block = convertLongsToBigInts(blockProto);
+    return block;
   } catch (error) {
     if (error.code === 'LEVEL_NOT_FOUND') return null;
     throw error;
@@ -803,11 +870,14 @@ async function setTipMetadata(height, hash) {
  */
 async function save_block_to_staging(block) {
   const chainDb = await getChainDb();
-  await chainDb.put(`staging:${block.hash}`, stringify(block));
+  // *** Encode block using Protobuf ***
+  const blockProto = p2p.Block.create(block);
+  const buffer = p2p.Block.encode(blockProto).finish();
+  await chainDb.put(`staging:${block.hash}`, Buffer.from(buffer)); // Use Node.js Buffer
 }
 
 /**
- * Atomically commit a staged reorg with improved error handling
+ * Atomically commit a staged reorg (using Protobuf for blocks) with improved error handling
  * @param {Array<Block>} blocks - New blocks to add to canonical chain
  * @param {Array<bigint>} oldHeights - Heights of old blocks to remove
  * @param {bigint} newTipHeight - New chain tip height
@@ -845,10 +915,11 @@ async function commit_staged_reorg(blocks, oldHeights, newTipHeight, newTipHash)
     
     // Add new blocks to canonical chain
     for (const block of blocks) {
-      const blockStr = stringify(block);
-      batch.put(`block:${block.hash}`, blockStr);
+      const blockProto = p2p.Block.create(block);
+      const buffer = p2p.Block.encode(blockProto).finish();
+      batch.put(`block:${block.hash}`, Buffer.from(buffer)); // Use Node.js Buffer
       batch.put(`height:${block.height.toString()}`, block.hash);
-      batch.del(`staging:${block.hash}`);
+      batch.del(`staging:${block.hash}`); // Delete from staging
       console.log(`[DB-REORG] Batch: Add block #${block.height} (${block.hash.substring(0,12)}...)`);
     }
     
@@ -894,7 +965,8 @@ async function commit_staged_reorg(blocks, oldHeights, newTipHeight, newTipHash)
 module.exports = {
   // Management
   initializeDatabase,
-
+  convertLongsToBigInts,
+  
   // Functions for Rust
   load_block_from_db,
   get_tip_height_from_db,

@@ -19,7 +19,7 @@ if (typeof Promise.withResolvers !== 'function') {
   };
 }
 import bridge from './js_bridge.cjs';
-const { JSONStringifyWithBigInt, JSONParseWithBigInt } = bridge;
+const { JSONStringifyWithBigInt, JSONParseWithBigInt, convertLongsToBigInts } = bridge; 
 import { pipe } from 'it-pipe';
 import http from 'http';
 
@@ -71,34 +71,7 @@ import { PluribitP2P, TOPICS, P2PBlock, p2p } from './libp2p-node.js';
 
 const walletOperationQueues = new Map(); // walletId -> Promise chain
 
-function convertLongsToBigInts(obj) {
-    if (obj instanceof Uint8Array) { // Add this check
-        return obj;
-    }
 
-  if (obj === null || typeof obj !== 'object') {
-    return obj;
-  }
-
-  // Check if it's a Long.js object
-  if (typeof obj.low === 'number' && typeof obj.high === 'number' && typeof obj.unsigned === 'boolean') {
-    // Correctly convert unsigned 64-bit Long to BigInt
-    // The '>>> 0' trick ensures the low bits are treated as unsigned.
-    return (BigInt(obj.high) << 32n) + BigInt(obj.low >>> 0);
-  }
-
-  if (Array.isArray(obj)) {
-    return obj.map(convertLongsToBigInts);
-  }
-
-  const newObj = {};
-  for (const key in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, key)) {
-      newObj[key] = convertLongsToBigInts(obj[key]);
-    }
-  }
-  return newObj;
-}
 
 process.on('uncaughtException', (err) => {
   const msg = err?.stack || err?.message || String(err);
@@ -1395,7 +1368,7 @@ async function handleMiningCandidate(candidate, jobId) {
             BigInt(candidate.vdfIterations),
             null
         );
-
+log(`[JS PRE-SAVE MINED] Block #${block?.height} Coinbase output 0 viewTag: ${block?.transactions?.[0]?.outputs?.[0]?.viewTag ?? 'N/A'}`, 'debug'); // <-- ADD THIS LINE
         // Process the new block
         await handleRemoteBlockDownloaded({ block });
     } catch (error) {
@@ -1410,6 +1383,7 @@ async function handleMiningCandidate(candidate, jobId) {
 
 
 async function handleRemoteBlockDownloaded({ block }) {
+    log(`[JS RECEIVED BLOCK] Block #${block?.height} Coinbase output 0 viewTag: ${block?.transactions?.[0]?.outputs?.[0]?.viewTag ?? 'N/A'}`, 'debug'); // <-- ADD THIS LINE (at the top)
     const release = await globalMutex.acquire();
     try {
         const currentHeight = (await pluribit.get_blockchain_state()).current_height;
@@ -1653,6 +1627,7 @@ setInterval(safe(debugReorgState), 60000); // Every 60 seconds
         log('Creating and saving new genesis block to DB.', 'info');
         // We get the genesis block from Rust and save it to the DB at height 0.
         const genesisBlock = await pluribit.create_genesis_block();
+        log(`[JS PRE-SAVE GENESIS] Coinbase output 0 viewTag: ${genesisBlock?.transactions?.[0]?.outputs?.[0]?.viewTag ?? 'N/A'}`, 'debug'); // <-- ADD THIS LINE
         await db.saveBlock(genesisBlock);
     }
 
@@ -2006,6 +1981,25 @@ await p2p.subscribe(TOPICS.BLOCKS, async (block) => {
         if (transaction && transaction.inputs) {  // Validate it's a transaction
             try {
                 log(`Received transaction from network`, 'info');
+                // Manually convert viewTag from Uint8Array to number or null
+                const processedTransaction = convertLongsToBigInts(transaction); // Apply existing BigInt conversion first
+                if (processedTransaction.outputs && Array.isArray(processedTransaction.outputs)) {
+                    for (const output of processedTransaction.outputs) {
+                        if (output.viewTag instanceof Uint8Array) { // Check if it's a Uint8Array
+                            if (output.viewTag.length === 1) {
+                                output.viewTag = output.viewTag[0]; // Replace with the number
+                                log(`[DEBUG] Converted viewTag Uint8Array to number: ${output.viewTag}`, 'debug');
+                            } else {
+                                log(`[WARN] Received viewTag with unexpected length ${output.viewTag.length}, setting to null.`, 'warn');
+                                output.viewTag = null; // Set to null if length is wrong
+                            }
+                        } else if (output.viewTag != null) {
+                             log(`[WARN] Received viewTag that is not a Uint8Array or null/undefined: ${typeof output.viewTag}`, 'warn');
+                             // Optionally handle other unexpected types, maybe set to null
+                             // output.viewTag = null;
+                        }
+                    }
+                }
                 await pluribit.add_transaction_to_pool(convertLongsToBigInts(transaction));
                 log(`Added network transaction to pool.`, 'success');
             } catch (e) {
