@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import readline from 'readline';
 import util from 'node:util';
+import {printGlitchLogo} from './logo.js';
 
 // --- Setup ---
 const __filename = fileURLToPath(import.meta.url);
@@ -331,4 +332,7 @@ process.on('SIGINT', () => rl.close());
 process.on('SIGTERM', () => rl.close());
 
 // --- Initial Start ---
+// Display  logo on startup
+printGlitchLogo(); // Try printLogo() or printCompactLogo() for different styles!
+
 worker.postMessage({ action: 'initializeNetwork' });

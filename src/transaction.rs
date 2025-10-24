@@ -28,6 +28,7 @@ pub struct TransactionOutput {
     pub range_proof: Vec<u8>,
     pub ephemeral_key: Option<Vec<u8>>, // Stores the sender's ephemeral public key R
     pub stealth_payload: Option<Vec<u8>>, // Stores the encrypted nonce || cipher
+    pub view_tag: Option<u8>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -255,7 +256,8 @@ impl Transaction {
         let blinding = Scalar::random(&mut OsRng);
         log(&format!("[CREATE_COINBASE] Output {}: blinding={}", i, hex::encode(blinding.to_bytes())));
         
-        let (ephemeral_key, payload) = stealth::encrypt_stealth_out(&r, &scan_pub, *amount, &blinding);
+        // Capture all 3 return values, including the view_tag
+        let (ephemeral_key, payload, view_tag) = stealth::encrypt_stealth_out(&r, &scan_pub, *amount, &blinding); 
         
         // Create commitment explicitly
         let commitment_point = mimblewimble::commit(*amount, &blinding)?;
@@ -269,6 +271,7 @@ impl Transaction {
             range_proof: proof.to_bytes(),
             ephemeral_key: Some(ephemeral_key.compress().to_bytes().to_vec()),
             stealth_payload: Some(payload),
+            view_tag: Some(view_tag),
         });
         
         blinding_sum += blinding;
@@ -374,6 +377,8 @@ impl From<TransactionOutput> for p2p::TransactionOutput {
             range_proof: output.range_proof,
             ephemeral_key: output.ephemeral_key,
             stealth_payload: output.stealth_payload,
+            // Convert Option<u8> to Option<Vec<u8>> containing one byte
+            view_tag: output.view_tag.map(|tag| vec![tag]),
         }
     }
 }
@@ -386,6 +391,8 @@ impl From<p2p::TransactionOutput> for TransactionOutput {
             range_proof: proto.range_proof,
             ephemeral_key: proto.ephemeral_key,
             stealth_payload: proto.stealth_payload,
+            // Convert Option<Vec<u8>> (expecting one byte) back to Option<u8>
+            view_tag: proto.view_tag.and_then(|bytes| bytes.first().cloned()), 
         }
     }
 }

@@ -8,7 +8,6 @@ use serde::{Serialize, Deserialize};
 use serde_json;
 use sha2::{Sha256, Digest};
 use curve25519_dalek::{ristretto::{CompressedRistretto, RistrettoPoint}, scalar::Scalar, traits::Identity};
-use prost::Message;
 
 use crate::blockchain::Blockchain;
 use crate::vrf::VrfProof;

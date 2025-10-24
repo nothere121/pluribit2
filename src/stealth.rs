@@ -20,6 +20,15 @@ pub fn hash_to_scalar(label: &[u8], data: &[u8]) -> Scalar {
     Scalar::from_bytes_mod_order(hash.into())
 }
 
+/// Derives the 1-byte view tag from the shared secret scalar 's'.
+/// H("view_tag" || s.to_bytes())[0]
+pub fn derive_view_tag(shared_secret: &Scalar) -> u8 {
+    let mut hasher = Sha256::new();
+    hasher.update(b"pluribit_view_tag_v1"); // Domain separator for view tag
+    hasher.update(shared_secret.to_bytes());
+    hasher.finalize()[0] // Take the first byte as the tag
+}
+
 /// Derive a stealth subaddress public key D_i = Hs("SubAddr"||Ps||i)*G + Pv
 pub fn derive_subaddress(scan_pub: &RistrettoPoint, spend_pub: &RistrettoPoint, index: u32) -> RistrettoPoint {
     // Compress scan_pub to bytes
@@ -45,13 +54,16 @@ pub fn encrypt_stealth_out(
     scan_pub: &RistrettoPoint,
     value: u64,
     blinding: &Scalar,
-) -> (RistrettoPoint, Vec<u8>) {
+) -> (RistrettoPoint, Vec<u8>, u8) {
     // CORRECTED: R = r*G
     let r_point = r * &*RISTRETTO_BASEPOINT_TABLE;
 
     // Shared secret S = Hs(r * Ps)
     let rps = (scan_pub * r).compress().to_bytes();
     let s = hash_to_scalar(b"Stealth", &rps);
+
+    // Derive the view tag from the shared secret 's'
+    let view_tag = derive_view_tag(&s);
 
     // Derive symmetric key from shared secret
     let key = Key::from_slice(s.as_bytes());
@@ -76,7 +88,7 @@ pub fn encrypt_stealth_out(
     out.extend_from_slice(&nonce_bytes);
     out.extend_from_slice(&ct);
 
-    (r_point, out)
+    (r_point, out, view_tag)
 }
 
 /// Try to decrypt a stealth output. Returns Some((value, blinding)) on success.
@@ -89,7 +101,7 @@ pub fn decrypt_stealth_output(
     if data.len() < 24 { return None; }
     let (nonce_bytes, ct) = data.split_at(24);
 
-    // Compute shared secret S' = Hs(a_s * R)
+    // Compute shared secret S' = Hs("Stealth" || scan_priv * R)
     let apr = (R * scan_priv).compress().to_bytes();
     let s = hash_to_scalar(b"Stealth", &apr);
 
@@ -110,7 +122,7 @@ pub fn decrypt_stealth_output(
     let mut blind_bytes = [0u8; 32];
     blind_bytes.copy_from_slice(&pt[8..40]);
 
-    // CRITICAL FIX #7: Use canonical scalar representation only
+    // Use canonical scalar representation only
     // This prevents malleability attacks where multiple scalar representations
     // could create the same commitment
     let blinding = if let Some(scalar) = Scalar::from_canonical_bytes(blind_bytes).into() {

@@ -1883,6 +1883,7 @@ $root.p2p = (function() {
          * @property {Uint8Array|null} [rangeProof] TransactionOutput rangeProof
          * @property {Uint8Array|null} [ephemeralKey] TransactionOutput ephemeralKey
          * @property {Uint8Array|null} [stealthPayload] TransactionOutput stealthPayload
+         * @property {Uint8Array|null} [viewTag] TransactionOutput viewTag
          */
 
         /**
@@ -1932,6 +1933,14 @@ $root.p2p = (function() {
          */
         TransactionOutput.prototype.stealthPayload = null;
 
+        /**
+         * TransactionOutput viewTag.
+         * @member {Uint8Array|null|undefined} viewTag
+         * @memberof p2p.TransactionOutput
+         * @instance
+         */
+        TransactionOutput.prototype.viewTag = null;
+
         // OneOf field names bound to virtual getters and setters
         var $oneOfFields;
 
@@ -1954,6 +1963,17 @@ $root.p2p = (function() {
          */
         Object.defineProperty(TransactionOutput.prototype, "_stealthPayload", {
             get: $util.oneOfGetter($oneOfFields = ["stealthPayload"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * TransactionOutput _viewTag.
+         * @member {"viewTag"|undefined} _viewTag
+         * @memberof p2p.TransactionOutput
+         * @instance
+         */
+        Object.defineProperty(TransactionOutput.prototype, "_viewTag", {
+            get: $util.oneOfGetter($oneOfFields = ["viewTag"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -1989,6 +2009,8 @@ $root.p2p = (function() {
                 writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.ephemeralKey);
             if (message.stealthPayload != null && Object.hasOwnProperty.call(message, "stealthPayload"))
                 writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.stealthPayload);
+            if (message.viewTag != null && Object.hasOwnProperty.call(message, "viewTag"))
+                writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.viewTag);
             return writer;
         };
 
@@ -2039,6 +2061,10 @@ $root.p2p = (function() {
                     }
                 case 4: {
                         message.stealthPayload = reader.bytes();
+                        break;
+                    }
+                case 5: {
+                        message.viewTag = reader.bytes();
                         break;
                     }
                 default:
@@ -2093,6 +2119,11 @@ $root.p2p = (function() {
                 if (!(message.stealthPayload && typeof message.stealthPayload.length === "number" || $util.isString(message.stealthPayload)))
                     return "stealthPayload: buffer expected";
             }
+            if (message.viewTag != null && message.hasOwnProperty("viewTag")) {
+                properties._viewTag = 1;
+                if (!(message.viewTag && typeof message.viewTag.length === "number" || $util.isString(message.viewTag)))
+                    return "viewTag: buffer expected";
+            }
             return null;
         };
 
@@ -2128,6 +2159,11 @@ $root.p2p = (function() {
                     $util.base64.decode(object.stealthPayload, message.stealthPayload = $util.newBuffer($util.base64.length(object.stealthPayload)), 0);
                 else if (object.stealthPayload.length >= 0)
                     message.stealthPayload = object.stealthPayload;
+            if (object.viewTag != null)
+                if (typeof object.viewTag === "string")
+                    $util.base64.decode(object.viewTag, message.viewTag = $util.newBuffer($util.base64.length(object.viewTag)), 0);
+                else if (object.viewTag.length >= 0)
+                    message.viewTag = object.viewTag;
             return message;
         };
 
@@ -2173,6 +2209,11 @@ $root.p2p = (function() {
                 object.stealthPayload = options.bytes === String ? $util.base64.encode(message.stealthPayload, 0, message.stealthPayload.length) : options.bytes === Array ? Array.prototype.slice.call(message.stealthPayload) : message.stealthPayload;
                 if (options.oneofs)
                     object._stealthPayload = "stealthPayload";
+            }
+            if (message.viewTag != null && message.hasOwnProperty("viewTag")) {
+                object.viewTag = options.bytes === String ? $util.base64.encode(message.viewTag, 0, message.viewTag.length) : options.bytes === Array ? Array.prototype.slice.call(message.viewTag) : message.viewTag;
+                if (options.oneofs)
+                    object._viewTag = "viewTag";
             }
             return object;
         };

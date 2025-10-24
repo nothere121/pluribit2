@@ -13,7 +13,7 @@ use crate::constants::COINBASE_MATURITY;
 use crate::WasmU64;
 use std::collections::HashMap;
 use sha2::{Sha256, Digest};
-use bip39::{Mnemonic, Language};
+use bip39::Mnemonic;
 
 
 lazy_static! {
@@ -149,7 +149,7 @@ impl Wallet {
         let mnemonic = Mnemonic::from_entropy(&entropy)
             .map_err(|e| format!("Failed to generate mnemonic: {}", e))?;
 
-        let phrase = mnemonic.word_iter().collect::<Vec<&str>>().join(" ");
+        let phrase = mnemonic.words().collect::<Vec<&str>>().join(" ");
 
         // Create a seed from the mnemonic (using an empty passphrase)
         let seed = mnemonic.to_seed("");
@@ -233,53 +233,72 @@ impl Wallet {
         // STEP 2: Add new outputs (simplified logic)
         for tx in &block.transactions {
             for output in &tx.outputs {
-                if let (Some(r_bytes), Some(payload)) = (&output.ephemeral_key, &output.stealth_payload) {
+                // Check if all necessary fields are present for stealth check
+                if let (Some(r_bytes), Some(payload), Some(output_view_tag)) =
+                       (&output.ephemeral_key, &output.stealth_payload, output.view_tag) {
+
                     if let Ok(compressed_point) = CompressedRistretto::from_slice(r_bytes) {
                         if let Some(r_point) = compressed_point.decompress() {
-                            if let Some((value, blinding)) = stealth::decrypt_stealth_output(&self.scan_priv, &r_point, payload) {
-                                // Verify commitment matches
-                                let commitment = mimblewimble::commit(value, &blinding).unwrap();
-                                let commitment_bytes = commitment.compress().to_bytes().to_vec();
-                                
-                                if commitment_bytes != output.commitment {
-                                    continue;
-                                }
-                                
-                                // Verify range proof
-                                let proof = match RangeProof::from_bytes(&output.range_proof) {
-                                    Ok(p) => p,
-                                    Err(_) => {
-                                        log(&format!("[WALLET] Invalid range proof format for output {}", 
+
+                            // --- VIEW TAG CHECK ---
+                            // Compute the expected shared secret s' = Hs("Stealth" || scan_priv * R)
+                            let apr = (&r_point * &self.scan_priv).compress().to_bytes();
+                            let s_prime = stealth::hash_to_scalar(b"Stealth", &apr);
+                            // Compute the expected view tag H("view_tag" || s'.to_bytes())[0]
+                            let expected_view_tag = stealth::derive_view_tag(&s_prime);
+
+                            // Compare tags before attempting decryption
+                            if expected_view_tag == output_view_tag {
+                                // TAG MATCH! Now attempt full decryption
+                                if let Some((value, blinding)) = stealth::decrypt_stealth_output(&self.scan_priv, &r_point, payload) {
+    
+                                    // Verify commitment matches
+                                    let commitment = mimblewimble::commit(value, &blinding).unwrap();
+                                    let commitment_bytes = commitment.compress().to_bytes().to_vec();
+                                    
+                                    if commitment_bytes != output.commitment {
+                                        log(&format!("[WALLET] View tag matched but commitment mismatch for output {}", hex::encode(&output.commitment[..8]))); 
+                                        continue;
+                                    }
+                                    
+                                    // Verify range proof
+                                    let proof = match RangeProof::from_bytes(&output.range_proof) {
+                                        Ok(p) => p,
+                                        Err(_) => {
+                                            log(&format!("[WALLET] Invalid range proof format for output {}", 
+                                                hex::encode(&output.commitment[..8])));
+                                            continue;
+                                        }
+                                    };
+                                    
+                                    if !mimblewimble::verify_range_proof(&proof, &CompressedRistretto::from_slice(&output.commitment).unwrap()) {
+                                        log(&format!("[WALLET] Range proof verification failed for output {}", 
                                             hex::encode(&output.commitment[..8])));
                                         continue;
                                     }
-                                };
-                                
-                                if !mimblewimble::verify_range_proof(&proof, &CompressedRistretto::from_slice(&output.commitment).unwrap()) {
-                                    log(&format!("[WALLET] Range proof verification failed for output {}", 
-                                        hex::encode(&output.commitment[..8])));
-                                    continue;
+                                    
+                                    // ✅ SIMPLIFIED: Just check if we don't already have it
+                                    if !self.owned_utxos.iter().any(|u| u.commitment.to_bytes() == commitment_bytes.as_slice()) {
+                                        log(&format!("[WALLET] Found incoming UTXO! Value: {}", value));
+                                        self.owned_utxos.push(WalletUtxo {
+                                            value,
+                                            blinding,
+                                            commitment: CompressedRistretto::from_slice(&commitment_bytes).unwrap(),
+                                            block_height: *block.height,
+                                            merkle_proof: None,
+                                        });
+                                    }
+                                } else {
+                                     log(&format!("[WALLET] View tag matched but decryption failed for output {}", hex::encode(&output.commitment[..8]))); // Log false positive
                                 }
-                                
-                                // ✅ SIMPLIFIED: Just check if we don't already have it
-                                if !self.owned_utxos.iter().any(|u| u.commitment.to_bytes() == commitment_bytes.as_slice()) {
-                                    log(&format!("[WALLET] Found incoming UTXO! Value: {}", value));
-                                    self.owned_utxos.push(WalletUtxo {
-                                        value,
-                                        blinding,
-                                        commitment: CompressedRistretto::from_slice(&commitment_bytes).unwrap(),
-                                        block_height: *block.height,
-                                        merkle_proof: None,
-                                    });
-                                }
-                            }
+                            } // else: view tag mismatch, skip expensive decryption
                         }
                     }
                 }
             }
         }
-        // ✅ NO second input removal loop needed
     }
+
     
 
 
@@ -477,7 +496,7 @@ pub fn create_stealth_output(
     let r = Scalar::random(&mut OsRng);
     let blinding = Scalar::random(&mut OsRng);
 
-    let (ephemeral_key, payload) = stealth::encrypt_stealth_out(&r, scan_pub, value, &blinding);
+    let (ephemeral_key, payload, view_tag) = stealth::encrypt_stealth_out(&r, scan_pub, value, &blinding); 
 
     let (range_proof, commitment) = mimblewimble::create_range_proof(value, &blinding)
         .map_err(|e| e.to_string())?;
@@ -488,6 +507,7 @@ pub fn create_stealth_output(
             range_proof: range_proof.to_bytes(),
             ephemeral_key: Some(ephemeral_key.compress().to_bytes().to_vec()),
             stealth_payload: Some(payload),
+            view_tag: Some(view_tag),
         },
         blinding,
     ))
