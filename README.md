@@ -1,3 +1,20 @@
+```
+▓▓▓ ╔══════════════════════════════════════════════════════════╗ ▓▓▓
+▓▓  ║                                     ██                   ║  ▓▓
+▓   ║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║██║║║║║║║║║║║║║║║║║║║║   ▓
+    ║██████╗ ██╗     ██╗   ██╗██████╗ ██╗████║    ██╗████████╗ ║
+    ║██╔══██╗██║     ██║   ██║██╔══██╗██║║██ ╚══╗ ██║╚══██╔══╝ ║
+    ║██████╔╝██║     ██║   ██║██████╔╝██║║██████║ ██║   ██║    ║
+    ║██╔═══╝ ██║     ██║   ██║██╔══██╗██║║██║║║██║║║║║║║║║║║║║║║║║║
+    ║██║     ███████╗╚██████╔╝██║  ██║██║║██████║ ██║   ██║    ║
+    ║╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝ ╚═╝   ╚═╝    ║
+▓   ║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║║   ▓
+▓▓  ║                 Digital cash, native to the web          ║  ▓▓
+▓▓▓ ╚══════════════════════════════════════════════════════════╝ ▓▓▓
+
+        ▶ Decentralized • Secure • Private ◀
+              [Proof of Time]
+```
 # pluriƀit
 
 An experimental, privacy-focused cryptocurrency featuring a novel consensus mechanism. Pluribit is built as a hybrid system with a Rust core compiled to WASM for cryptographic operations and a Node.js layer for networking and orchestration.
