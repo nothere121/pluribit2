@@ -153,6 +153,15 @@ impl Blockchain {
                 continue;
             }
 
+            // 3) Verify inputs still exist in the current UTXO set view
+            { // Acquire lock briefly
+                let utxos = crate::blockchain::UTXO_SET.lock().unwrap();
+                if !tx.inputs.iter().all(|inp| utxos.contains_key(&inp.commitment)) {
+                     println!("[SELECT] skip tx: input(s) no longer in UTXO set for tx {}", tx.hash());
+                     continue;
+                }
+            }
+
             total_fees = total_fees.saturating_add(tx.total_fee());
             selected.push(tx.clone());
         }
@@ -550,13 +559,11 @@ impl Blockchain {
         Ok(())
     }
     
-pub fn create_utxo_snapshot(&self, tip_block: &Block, utxos: HashMap<Vec<u8>, TransactionOutput>) -> PluribitResult<crate::UTXOSnapshot> {
-    // TODO: This function needs to be re-implemented for the new architecture if needed.
+pub fn create_utxo_snapshot(&self, _tip_block: &Block, _utxos: HashMap<Vec<u8>, TransactionOutput>) -> PluribitResult<crate::UTXOSnapshot> {
     Err(PluribitError::StateError("create_utxo_snapshot is not implemented".to_string()))
 }
     
-pub fn restore_from_snapshot(&mut self, snapshot: crate::UTXOSnapshot) -> PluribitResult<()> {
-    // TODO: This function needs to be re-implemented for the new architecture if needed.
+pub fn restore_from_snapshot(&mut self, _snapshot: crate::UTXOSnapshot) -> PluribitResult<()> {
     Err(PluribitError::StateError("restore_from_snapshot is not implemented".to_string()))
 }
     

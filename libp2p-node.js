@@ -296,7 +296,18 @@ export class PluribitP2P {
     async _handleStemTransaction(stemMessage, from) {
         const { transaction, hopCount, timestamp } = stemMessage;
         const txHash = this._getTxHash(transaction);
-        
+
+        // Immediately publish locally via gossipsub to add to our own mempool.
+        // The existing TOPICS.TRANSACTIONS handler will process this due to emitSelf: true.
+        // This ensures the transaction is in the pool before block selection, fixing the race condition.
+        try {
+            await this.publish(TOPICS.TRANSACTIONS, transaction);
+            this.log(`[Dandelion] Published received stem tx ${txHash} locally for mempool add`, 'debug');
+        } catch (e) {
+            this.log(`[Dandelion] Failed local publish for stem tx ${txHash}: ${e.message}`, 'warn');
+            // Don't necessarily stop Dandelion relay just because local add failed (it might already be there)
+        }
+
         // Deduplication: ignore if we've already seen this transaction
         if (this._seenStemTransactions.has(txHash)) {
             this.log(`[Dandelion] Ignoring duplicate stem transaction ${txHash}`, 'debug');
@@ -327,9 +338,9 @@ export class PluribitP2P {
             
             if (!nextRelay || nextRelay === from) {
                 // No relay available or would send back to sender -> fluff instead
-                this.log(`[Dandelion] No valid next relay, fluffing transaction ${txHash}`, 'debug');
-                await this.publish(TOPICS.TRANSACTIONS, transaction);
-                return;
+                // Fluffing is now implicitly handled by the initial local publish.
+                // No further action needed here if we decide not to stem.
+                 return;
             }
             
             const nextStemMessage = {
@@ -342,13 +353,14 @@ export class PluribitP2P {
                 await this._sendStemDirect(nextRelay, nextStemMessage);
                 this.log(`[Dandelion] Relayed stem transaction ${txHash} (hop ${hopCount + 1})`, 'debug');
             } catch (e) {
+                // If stem relay fails, the initial local publish acts as the fallback fluff.
                 this.log(`[Dandelion] Stem relay failed, fluffing: ${e.message}`, 'warn');
-                await this.publish(TOPICS.TRANSACTIONS, transaction);
             }
         } else {
             // Switch to fluff phase
             this.log(`[Dandelion] Fluffing transaction ${txHash} after ${hopCount} hops`, 'info');
-            await this.publish(TOPICS.TRANSACTIONS, transaction);
+            // Fluffing is now implicitly handled by the initial local publish.
+            // No further action needed here.
         }
     }   
     
@@ -879,19 +891,20 @@ export class PluribitP2P {
 
         
         await this.node.handle(TOPICS.DANDELION_STEM, async ({ stream, connection }) => {
+            const peerId = connection.remotePeer.toString(); // Get PeerID early for logging
+            this.log(`[Dandelion] Received incoming STEM connection from ${peerId.slice(-6)}`, 'debug'); // Log connection
             try {
-                const peerId = connection.remotePeer.toString();
                 
                 // Require verified peer
                 if (!this.isPeerVerified(peerId)) {
-                    this.log(`[Dandelion] Rejecting stem from unverified peer ${peerId}`, 'warn');
+                    this.log(`[Dandelion] Rejecting stem from unverified peer ${peerId.slice(-6)}`, 'warn'); //
                     try { await stream.close(); } catch {}
                     return;
                 }
                 
                 // Rate limiting
                 if (!this._allowMessage(peerId)) {
-                    this.log(`[Dandelion] Rate limited stem from ${peerId}`, 'warn');
+                    this.log(`[Dandelion] Rate limited stem from ${peerId.slice(-6)}`, 'warn'); //
                     try { await stream.close(); } catch {}
                     return;
                 }
@@ -902,11 +915,15 @@ export class PluribitP2P {
                 }
                 const buffer = Buffer.concat(chunks);
                 const stemMessage = p2p.DandelionStem.decode(buffer);
-                
+
+                const txHash = this._getTxHash(stemMessage.transaction); // Get hash for logging
+                this.log(`[Dandelion] Decoded stem message for tx ${txHash} from ${peerId.slice(-6)}`, 'debug'); // Log successful decode
+
                 await this._handleStemTransaction(stemMessage, peerId);
                 
             } catch (e) {
-                this.log(`[Dandelion] Error handling stem protocol: ${e.message}`, 'error');
+                const err = /** @type {Error} */ (e);
+                this.log(`[Dandelion] Error handling stem protocol from ${peerId.slice(-6)}: ${err.message}`, 'error'); //
             }
         });
         
@@ -1109,9 +1126,7 @@ export class PluribitP2P {
     async handleGossipMessage(msg) {
         try {
             const from = msg.from?.toString?.() ?? String(msg.from);
-            if (this.node && from === this.node.peerId.toString()) {
-                return; // Ignore messages from self
-            }
+
             this.log(`[P2P RAW] Received message on topic ${msg.topic} from ${from}`, 'debug');
             // CRITICAL: Verify ALL peers (including self for loopback)
             if (!this.isPeerVerified(from)) {

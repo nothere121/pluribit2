@@ -22,7 +22,7 @@ import bridge from './js_bridge.cjs';
 const { JSONStringifyWithBigInt, JSONParseWithBigInt, convertLongsToBigInts } = bridge; 
 import { pipe } from 'it-pipe';
 import http from 'http';
-
+import util from 'node:util';
 import { parentPort, Worker as ThreadWorker } from 'worker_threads';
 import crypto from 'crypto';    
 import path from 'path';
@@ -481,8 +481,6 @@ async function checkAndRecoverFromIncompleteReorg() {
         
         log(`[RECOVERY] Found original tip: ${originalTipBlock.hash.substring(0,12)}...`, 'info');
         
-        // Force reset the Rust in-memory state to match the database
-        // You may need to add this function to lib.rs if it doesn't exist
         try {
             await pluribit.force_reset_to_height(
                 marker.original_tip_height, 
@@ -537,28 +535,62 @@ export async function main() {
                case 'restoreWalletFromMnemonic': await handleRestoreWalletFromMnemonic(params); break; 
                 case 'inspectBlock':
                     try {
-                        const height = parseInt(params.height);
-                        const block = await load_block_from_db(height);
+                        const height = BigInt(params.height); // Use BigInt for consistency
+                        const block = await global.load_block_from_db(height); // Assuming global exists
+
                         if (block) {
-                            const coinbase = block.transactions[0];
-                            log(`Block ${height} coinbase has ${coinbase.outputs.length} output(s)`);
-                            log(`Kernel fee: ${coinbase.kernels[0].fee}`);
-                            log(`Total transaction count: ${block.transactions.length}`);
-                            
-                            // Show who each output goes to
-                            for (let i = 0; i < coinbase.outputs.length; i++) {
-                                const out = coinbase.outputs[i];
-                                log(`  Output ${i}: commitment=${out.commitment.slice(0, 16)}...`);
-                                log(`    has ephemeral_key: ${!!out.ephemeral_key}`);
-                                log(`    has stealth_payload: ${!!out.stealth_payload}`);
+                            log(`--- Block ${height} Inspection ---`);
+                            const coinbase = block.transactions.find(tx => !tx.inputs || tx.inputs.length === 0); // Safer find
+
+                            if (coinbase) {
+                                log(`Coinbase Tx: ${coinbase.outputs?.length || 0} output(s)`);
+                                if (coinbase.kernels && coinbase.kernels.length > 0) {
+                                    log(`  Kernel fee: ${coinbase.kernels[0].fee ?? 'N/A'}`); // Use BigInt directly
+                                } else {
+                                    log(`  Coinbase Kernel: N/A`);
+                                }
+
+                                // Show output details
+                                for (let i = 0; i < (coinbase.outputs?.length || 0); i++) {
+                                    const out = coinbase.outputs[i];
+                                    // Convert commitment bytes to hex for display
+                                    let commitmentHex = 'N/A';
+                                    try {
+                                        // Assuming commitment is Uint8Array or Array-like
+                                        commitmentHex = Array.from(out.commitment || [])
+                                                            .map(b => b.toString(16).padStart(2, '0'))
+                                                            .join('')
+                                                            .slice(0, 16) + '...';
+                                    } catch (e) { log(`  Error parsing commitment for output ${i}`, 'warn'); }
+
+                                    log(`  Output ${i}: commitment=${commitmentHex}`);
+                                    log(`    Has Ephemeral Key: ${!!out.ephemeralKey}`); // Proto uses camelCase
+                                    log(`    Has Stealth Payload: ${!!out.stealthPayload}`); // Proto uses camelCase
+
+                                    // Handle optional bytes viewTag
+                                    let viewTagDisplay = 'N/A';
+                                    if (out.viewTag && out.viewTag.length > 0) {
+                                         // Assuming viewTag is Uint8Array or Array-like containing the single byte
+                                        try {
+                                           viewTagDisplay = out.viewTag[0].toString(); // Get the first byte's value
+                                        } catch(e) { log(`  Error parsing viewTag for output ${i}`, 'warn'); }
+                                    }
+                                    log(`    View Tag: ${viewTagDisplay}`);
+                                }
+                            } else {
+                                log(`No coinbase transaction found in block ${height}`);
                             }
+
+                            log(`Total transaction count: ${block.transactions?.length || 0}`);
+                            log(`--------------------------`);
+
                         } else {
-                            log(`Block ${height} not found`);
+                            log(`Block ${height} not found in DB`);
                         }
                     } catch(e) {
-                        log(`Error inspecting block: ${e.message}`, 'error');
+                        log(`Error inspecting block ${params.height}: ${e.message}`, 'error');
                     }
-                    break;
+                    break; // Added missing break
                 case 'loadWallet': 
                     await handleLoadWallet(params);
                     
@@ -1981,29 +2013,20 @@ await p2p.subscribe(TOPICS.BLOCKS, async (block) => {
         if (transaction && transaction.inputs) {  // Validate it's a transaction
             try {
                 log(`Received transaction from network`, 'info');
-                // Manually convert viewTag from Uint8Array to number or null
-                const processedTransaction = convertLongsToBigInts(transaction); // Apply existing BigInt conversion first
-                if (processedTransaction.outputs && Array.isArray(processedTransaction.outputs)) {
-                    for (const output of processedTransaction.outputs) {
-                        if (output.viewTag instanceof Uint8Array) { // Check if it's a Uint8Array
-                            if (output.viewTag.length === 1) {
-                                output.viewTag = output.viewTag[0]; // Replace with the number
-                                log(`[DEBUG] Converted viewTag Uint8Array to number: ${output.viewTag}`, 'debug');
-                            } else {
-                                log(`[WARN] Received viewTag with unexpected length ${output.viewTag.length}, setting to null.`, 'warn');
-                                output.viewTag = null; // Set to null if length is wrong
-                            }
-                        } else if (output.viewTag != null) {
-                             log(`[WARN] Received viewTag that is not a Uint8Array or null/undefined: ${typeof output.viewTag}`, 'warn');
-                             // Optionally handle other unexpected types, maybe set to null
-                             // output.viewTag = null;
-                        }
-                    }
-                }
-                await pluribit.add_transaction_to_pool(convertLongsToBigInts(transaction));
+
+                // Convert Longs/BigInts first
+                const txForRust = convertLongsToBigInts(transaction);
+
+                // --- ADD THIS LOG LINE ---
+                console.log('[DEBUG TX HANDLER] Transaction object being passed to Rust:', util.inspect(txForRust, { depth: null, colors: true }));
+                // --- END ADD ---
+
+                // Directly pass the transaction (after BigInt conversion) to Rust
+                await pluribit.add_transaction_to_pool(txForRust); // Pass the converted object
                 log(`Added network transaction to pool.`, 'success');
             } catch (e) {
-                log(`Failed to add network transaction: ${e}`, 'warn');
+                const errorMsg = e?.message || String(e);
+                log(`Failed to add network transaction: ${errorMsg}`, 'warn');
             }
         } else {
             log(`[P2P] Received invalid transaction message: ${JSON.stringify(transaction).substring(0, 100)}`, 'warn');

@@ -462,7 +462,11 @@ impl Wallet {
              log("[WALLET] Insufficient funds.");
              self.owned_utxos.extend(selected_utxos); // Add the UTXOs back.
              // --- Need to re-acquire pending lock to unmark ---
-             let mut pending_revert = PENDING_UTXOS.lock().expect("Failed to lock PENDING_UTXOS for revert"); // Acquire lock again
+            // Try to recover from poisoned mutex, logging if necessary
+            let mut pending_revert = PENDING_UTXOS.lock().unwrap_or_else(|poisoned| {
+                log("[WALLET_ERROR] PENDING_UTXOS mutex was poisoned during revert! Attempting recovery.");
+                poisoned.into_inner()
+            }); // Acquire lock again
              for input in selected_inputs {
                  pending_revert.remove(&input.commitment); // Un-mark as pending.
              }
@@ -478,7 +482,24 @@ impl Wallet {
         let (recipient_output, recipient_blinding) = create_stealth_output(amount, recipient_scan_pub)?;
         outputs.push(recipient_output);
         output_blinding_sum += recipient_blinding;
-        
+
+        // Defensive check against underflow before calculating change
+        if total_from_selected < total_needed {
+             // This path should ideally be unreachable due to the earlier check,
+             // but we add this to prevent panics in case of unexpected flow.
+             log(&format!("[WALLET_ERROR] Reached change calculation with insufficient funds! Selected={}, Needed={}. Aborting.", total_from_selected, total_needed));
+             // Attempt to revert pending marks again, similar to the main insufficient funds block
+             self.owned_utxos.extend(selected_utxos);
+             let mut pending_revert = PENDING_UTXOS.lock().unwrap_or_else(|poisoned| {
+                 log("[WALLET_ERROR] PENDING_UTXOS mutex poisoned during defensive revert!");
+                 poisoned.into_inner()
+             });
+             for input in &selected_inputs { // Borrow here
+                 pending_revert.remove(&input.commitment);
+             }
+             return Err("Internal error: Insufficient funds at change calculation stage.".to_string());
+        }
+
         let change_amount = total_from_selected - total_needed;
         if change_amount > 0 {
             log(&format!("[WALLET] Change amount: {}", change_amount));

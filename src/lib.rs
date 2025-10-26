@@ -294,6 +294,113 @@ async fn clear_all_utxos_from_db() -> Result<(), JsValue> {
     Ok(())
 }
 
+#[wasm_bindgen]
+pub async fn force_reset_to_height(height: u64, hash: String) -> Result<(), JsValue> {
+    log(&format!("[RECOVERY] Attempting force reset to height={}, hash={}", height, &hash[..12]));
+
+    // --- 1. Load the target block from DB to ensure it exists and matches ---
+    let target_block = load_block_from_db(height).await?
+        .ok_or_else(|| JsValue::from_str(&format!("Target block {} not found in DB for reset", height)))?;
+
+    if target_block.hash() != hash {
+        return Err(JsValue::from_str(&format!(
+            "Hash mismatch for target block {}. DB has {}, expected {}",
+            height, target_block.hash(), hash
+        )));
+    }
+    log("[RECOVERY] Target block verified in DB.");
+
+    // --- 2. Clear existing in-memory state (acquire locks briefly) ---
+    log("[RECOVERY] Clearing in-memory state...");
+    { // Scope for locks
+        let mut chain = BLOCKCHAIN.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock BLOCKCHAIN for clear: {}", e)))?;
+        *chain = blockchain::Blockchain::new(); // Reset to default (will be updated later)
+
+        let mut utxo_set = blockchain::UTXO_SET.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock UTXO_SET for clear: {}", e)))?;
+        utxo_set.clear();
+
+        let mut coinbase_index = blockchain::COINBASE_INDEX.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock COINBASE_INDEX for clear: {}", e)))?;
+        coinbase_index.clear();
+
+        let mut tx_pool = TX_POOL.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock TX_POOL for clear: {}", e)))?;
+        tx_pool.pending.clear();
+        tx_pool.fee_total = 0;
+
+        // Clear side blocks cache
+        SIDE_BLOCKS.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock SIDE_BLOCKS for clear: {}", e)))?.clear();
+        SIDE_BLOCKS_LRU.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock SIDE_BLOCKS_LRU for clear: {}", e)))?.clear();
+
+        // Clear recent UTXO cache (if you implement caching later)
+        // RECENT_UTXO_CACHE.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock RECENT_UTXO_CACHE for clear: {}", e)))?.clear();
+        // UTXO_CACHE_LRU.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock UTXO_CACHE_LRU for clear: {}", e)))?.clear();
+
+    } // Locks released here
+    log("[RECOVERY] In-memory state cleared.");
+
+    // --- 3. Rebuild state up to the target height ---
+    log(&format!("[RECOVERY] Rebuilding state up to height {}...", height));
+    let mut calculated_total_work: u64 = 0; // Initialize work calculation
+
+    for h in 0..=height {
+        let block = load_block_from_db(h).await?
+            .ok_or_else(|| JsValue::from_str(&format!("Missing block {} during state rebuild", h)))?;
+
+        // Calculate and accumulate work for this block
+        calculated_total_work = calculated_total_work.saturating_add(Blockchain::get_chain_work(&[block.clone()]));
+
+        // Apply block effects (add outputs, remove inputs)
+        { // Scope for locks
+            let mut utxo_set = blockchain::UTXO_SET.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock UTXO_SET for rebuild height {}: {}", h, e)))?;
+            let mut coinbase_index = blockchain::COINBASE_INDEX.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock COINBASE_INDEX for rebuild height {}: {}", h, e)))?;
+
+            for tx in &block.transactions {
+                 // Remove inputs (check if they exist first, though in a rebuild they should unless DB is corrupt)
+                 for input in &tx.inputs {
+                     utxo_set.remove(&input.commitment);
+                     coinbase_index.remove(&input.commitment);
+                 }
+                 // Add outputs
+                 let is_coinbase = tx.inputs.is_empty() && tx.total_fee() == 0; // More robust check
+                 for output in &tx.outputs {
+                     utxo_set.insert(output.commitment.clone(), output.clone());
+                     if is_coinbase {
+                        coinbase_index.insert(output.commitment.clone(), h);
+                     }
+                 }
+            }
+        } // Locks released for this block iteration
+        if h % 100 == 0 || h == height { // Log progress periodically
+             log(&format!("[RECOVERY] Rebuilt state up to height {}", h));
+        }
+    }
+    log("[RECOVERY] State rebuild complete.");
+
+     // --- 4. Update the main Blockchain struct state ---
+     log("[RECOVERY] Finalizing BLOCKCHAIN state...");
+     { // Scope for final lock
+         let mut chain = BLOCKCHAIN.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock BLOCKCHAIN for final update: {}", e)))?;
+         *chain.current_height = *target_block.height;
+         chain.tip_hash = target_block.hash(); // Use the hash from the verified target block
+         chain.total_work = WasmU64::from(calculated_total_work); // Use the recalculated work
+         chain.current_vrf_threshold = target_block.vrf_threshold;
+         chain.current_vdf_iterations = target_block.vdf_iterations;
+
+        log(&format!("[RECOVERY] BLOCKCHAIN state set: height={}, hash={}, work={}",
+            chain.current_height, &chain.tip_hash[..12], chain.total_work));
+
+     } // Lock released
+
+    // --- 5. Optional: Persist recalculated work ---
+    // It might be good practice to save the recalculated work back to the DB
+    // in case the stored value was somehow corrupted during the failed reorg.
+    if let Err(e) = save_total_work_to_db(calculated_total_work).await {
+         log(&format!("[RECOVERY WARNING] Failed to save recalculated total work to DB: {:?}", e));
+    }
+
+
+    log(&format!("[RECOVERY] ✓ Force reset to height {} complete.", height));
+    Ok(())
+}
 pub async fn save_utxo_to_db(commitment: &[u8], output: &TransactionOutput) -> Result<(), JsValue> {
     let hex = hex::encode(commitment);
     let output_js = serde_wasm_bindgen::to_value(output)?;
@@ -2367,11 +2474,21 @@ pub fn get_mining_metrics() -> Result<JsValue, JsValue> {
 
 #[wasm_bindgen]
 pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
+    
+    log("[POOL_ADD ENTRY] Attempting deserialization...");
+    log(&format!("[POOL_ADD ENTRY] Received JsValue: {:?}", tx_json));
     let tx: Transaction = serde_wasm_bindgen::from_value(tx_json)
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize transaction: {}", e)))?;
+
+    let tx_hash_for_log = tx.hash(); // Get hash early for logging
+    log(&format!("[POOL_ADD {}] Starting validation", &tx_hash_for_log[..8]));
+
+
     // 1) Kernel signature (single source of truth)
-    if !tx.verify_signature().unwrap_or(false) {
-        return Err(JsValue::from_str("Invalid transaction signature"));
+    match tx.verify_signature() {
+        Ok(true) => log(&format!("[POOL_ADD {}] Signature verified", &tx_hash_for_log[..8])),
+        Ok(false) => return Err(JsValue::from_str(&format!("[POOL_ADD {}] Failed signature verification", &tx_hash_for_log[..8]))),
+        Err(e) => return Err(JsValue::from_str(&format!("[POOL_ADD {}] Error during signature verification: {}", &tx_hash_for_log[..8], e))),
     }
 
     // 2) Range proofs
@@ -2384,6 +2501,7 @@ pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
             return Err(JsValue::from_str("Range proof verification failed"));
         }
     }
+    log(&format!("[POOL_ADD {}] Range proofs verified", &tx_hash_for_log[..8]));
 
     // 3) Mimblewimble balance:
     //    sum(inputs) == sum(outputs) + kernel_excess
@@ -2391,28 +2509,37 @@ pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
     let mut input_sum = RistrettoPoint::identity();
     let mut output_sum = RistrettoPoint::identity();
 
-    for input in &tx.inputs {
+    for (i, input) in tx.inputs.iter().enumerate() {
         let c = CompressedRistretto::from_slice(&input.commitment)
             .map_err(|_| JsValue::from_str("Invalid input commitment"))?
             .decompress()
-            .ok_or_else(|| JsValue::from_str("Failed to decompress input commitment"))?;
+            .ok_or_else(|| JsValue::from_str(&format!(
+                "[POOL_ADD {}] Failed to decompress input commitment {}",
+                 &tx_hash_for_log[..8], i
+            )))?;
         input_sum += c;
     }
-    for output in &tx.outputs {
+    for (i, output) in tx.outputs.iter().enumerate() {
         let c = CompressedRistretto::from_slice(&output.commitment)
             .map_err(|_| JsValue::from_str("Invalid output commitment"))?
             .decompress()
-            .ok_or_else(|| JsValue::from_str("Failed to decompress output commitment"))?;
+            .ok_or_else(|| JsValue::from_str(&format!(
+                "[POOL_ADD {}] Failed to decompress output commitment {}",
+                 &tx_hash_for_log[..8], i
+            )))?;
         output_sum += c;
     }
 
     // Sum all kernel excess points
     let mut excess_total = RistrettoPoint::identity();
-    for k in &tx.kernels {
+    for (i, k) in tx.kernels.iter().enumerate() {
         let p = CompressedRistretto::from_slice(&k.excess)
             .map_err(|_| JsValue::from_str("Invalid kernel excess"))?
             .decompress()
-            .ok_or_else(|| JsValue::from_str("Failed to decompress kernel excess"))?;
+            .ok_or_else(|| JsValue::from_str(&format!(
+                "[POOL_ADD {}] Failed to decompress kernel excess {}",
+                 &tx_hash_for_log[..8], i
+            )))?;
         excess_total += p;
     }
     if input_sum != (output_sum + excess_total) {
@@ -2420,6 +2547,7 @@ pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
     }
 
     // 4) Inputs must exist in current UTXO set (and coinbase spends must be mature)
+    log(&format!("[POOL_ADD {}] Balance check passed, checking UTXO existence...", &tx_hash_for_log[..8]));
     {
         use crate::constants::COINBASE_MATURITY;
         // read the current tip height
@@ -2442,9 +2570,13 @@ pub fn add_transaction_to_pool(tx_json: JsValue) -> Result<(), JsValue> {
             }
         }
     }
-
+    log(&format!("[POOL_ADD {}] UTXO/maturity checks passed, checking pool policies...", &tx_hash_for_log[..8]));
     // 5) Mempool policy & add
-    let mut pool = TX_POOL.lock().unwrap_or_else(|p| p.into_inner());
+    // Use map_err for better error context if lock fails
+    let mut pool = TX_POOL.lock().map_err(|e| {
+        JsValue::from_str(&format!("[POOL_ADD {}] Failed to lock TX_POOL: {}", &tx_hash_for_log[..8], e))
+    })?;
+    log(&format!("[POOL_ADD {}] Acquired pool lock", &tx_hash_for_log[..8]));
     // prevent conflicts with pending txs
     for pending in &pool.pending {
         // same hash = duplicate
@@ -2544,7 +2676,7 @@ pub fn wallet_get_data(wallet_json: &str) -> Result<JsValue, JsValue> {
 
 #[wasm_bindgen]
 pub fn get_chain_storage_size() -> Result<JsValue, JsValue> {
-    let chain = BLOCKCHAIN.lock().unwrap();
+    let _chain = BLOCKCHAIN.lock().unwrap();
     let utxo_set = blockchain::UTXO_SET.lock().unwrap();
 
     // This is a very rough estimate and should be improved if precise metrics are needed.
