@@ -137,6 +137,15 @@ message DandelionStem {
   uint64 timestamp = 3; // When stem phase started
 }
 
+message ReorgMarker {
+  uint64 original_tip_height = 1;
+  uint64 new_tip_height = 2;
+  string new_tip_hash = 3;
+  repeated string blocks_to_attach = 4;
+  repeated uint64 blocks_to_detach_heights = 5;
+  uint64 timestamp = 6;
+}
+
 // Top-level message wrapper.
 // Rationale: Using a 'oneof' ensures that each P2P message has exactly one
 // payload type. This provides a single, type-safe entry point for all network

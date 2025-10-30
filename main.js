@@ -171,18 +171,33 @@ rl.on('line', (line) => {
 async function handleCommand(command, args) {
     switch (command) {
         case 'help':
-            console.log('\nAvailable Commands:');
-            console.log('  create <wallet_name>   - Create a new wallet (outputs mnemonic)');
-            console.log('  restore <wallet_name> "<mnemonic phrase>" - Restore wallet from phrase');
-            console.log('  load <wallet_name>     - Load an existing wallet');
-            console.log('  send <to> <amount>     - Send a transaction');
-            console.log('  mine                   - Toggle PoW+PoST mining on/off');
-            console.log('  status                 - Show current chain status');
-            console.log('  balance                - Show wallet balance');
-            console.log('  supply                 - Audit the total circulating supply');
-            console.log('  connect <peer>         - Manually connect to a peer');
-            console.log('  peers                  - List connected P2P peers');
-            console.log('  exit                   - Shutdown the node\n');
+            console.log(chalk.bold('\n--- Wallet ---'));
+            console.log('  create <wallet_name>          - Create a new wallet (outputs mnemonic)');
+            console.log('  restore <wallet_name> "<phrase>" - Restore wallet from 12-word phrase');
+            console.log('  load <wallet_name>            - Load an existing wallet');
+            console.log('  balance                       - Show loaded wallet balance');
+            console.log('  send <to_address> <amount>    - Send a transaction');
+            
+            console.log(chalk.bold('\n--- Node & Chain ---'));
+            console.log('  mine                          - Toggle mining on/off');
+            console.log('  status                        - Show current chain status');
+            console.log('  supply                        - Audit the total circulating supply');
+            console.log('  peers                         - List connected P2P peers');
+            console.log('  connect <multiaddr>           - Manually connect to a peer');
+            console.log('  exit                          - Shutdown the node');
+
+            console.log(chalk.bold('\n--- Atomic Swaps (L2) ---'));
+            console.log('  swap_initiate <pubkey> <plb_amt> <btc_sats> <blocks> - Propose a swap');
+            console.log('  swap_list                     - List all active and pending swaps');
+            console.log('  swap_respond <swap_id> <btc_addr> <btc_txid> <vout> - Respond to a swap proposal');
+            console.log('  swap_claim <swap_id> <secret_hex>   - (Bob) Claim Pluribit after Alice claims BTC');
+            console.log('  swap_refund <swap_id>         - (Alice) Refund Pluribit if swap times out');
+           
+            console.log(chalk.bold('\n--- Debug & Audit ---'));
+            console.log('  inspect <height>              - Show full details of a block');
+            console.log('  audit                         - Run a detailed audit');
+            console.log('  verify                        - Verify total supply');
+            console.log('\n');
             break;
 
         case 'audit':
@@ -422,6 +437,22 @@ async function handleCommand(command, args) {
                     action: 'swapRefund',
                     walletId: loadedWalletId,
                     swapId: args[0]
+                });
+            }
+            break;
+
+        case 'swap_claim':
+            // Usage: swap_claim <swap_id> <adaptor_secret_hex>
+            if (args.length < 2) {
+                console.log('Usage: swap_claim <swap_id> <adaptor_secret_hex_from_btc_tx>');
+            } else if (!loadedWalletId) {
+                console.log(chalk.red('Error: Load a wallet first.'));
+            } else {
+                worker.postMessage({
+                    action: 'swapClaim',
+                    walletId: loadedWalletId,
+                    swapId: args[0],
+                    adaptorSecretHex: args[1]
                 });
             }
             break;

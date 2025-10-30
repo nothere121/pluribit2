@@ -536,26 +536,32 @@ function log(message, level = 'info') {
  */
 async function checkAndRecoverFromIncompleteReorg() {
     try {
-        const markerStr = await db.check_incomplete_reorg();
-        if (!markerStr) {
+        // This function now returns raw bytes (as a hex string)
+        const markerHex = await db.check_incomplete_reorg();
+        if (!markerHex) {
             log('[RECOVERY] No incomplete reorg detected', 'debug');
             return;
         }
         
-        const marker = JSONParseWithBigInt(markerStr);
-        log('[RECOVERY] ⚠️  Incomplete reorg detected from previous session!', 'error');
-        log(`[RECOVERY] Original tip: height ${marker.original_tip_height}`, 'error');
-        log(`[RECOVERY] Attempted new tip: height ${marker.new_tip_height}, hash ${marker.new_tip_hash.substring(0,12)}...`, 'error');
+        log('[RECOVERY] ⚠️  Incomplete reorg detected! Decoding marker...', 'warn');
         
-        // Strategy: Rollback to the original tip since the reorg didn't complete
-        log(`[RECOVERY] Attempting rollback to height ${marker.original_tip_height}...`, 'warn');
+        // --- DECODE PROTOBUF ---
+        // Convert the hex string back into bytes
+        const markerBytes = Buffer.from(markerHex, 'hex');
+        // Decode the bytes using the new p2p.ReorgMarker message
+        const marker = p2p.ReorgMarker.decode(markerBytes);
+        // --- END DECODE ---
+
+        log(`[RECOVERY] Original tip: height ${marker.originalTipHeight}`, 'error');
+        log(`[RECOVERY] Attempted new tip: height ${marker.newTipHeight}, hash ${marker.newTipHash.substring(0,12)}...`, 'error');
         
-        // Load the original tip from database
-        const originalTipBlock = await db.loadBlock(marker.original_tip_height);
+        // Strategy: Rollback to the original tip
+        log(`[RECOVERY] Attempting rollback to height ${marker.originalTipHeight}...`, 'warn');
+        
+        const originalTipBlock = await db.loadBlock(marker.originalTipHeight);
         if (!originalTipBlock) {
-            log(`[RECOVERY] ✗ FATAL: Cannot find original tip block at height ${marker.original_tip_height}!`, 'error');
+            log(`[RECOVERY] ✗ FATAL: Cannot find original tip block at height ${marker.originalTipHeight}!`, 'error');
             log('[RECOVERY] Manual database inspection and repair required.', 'error');
-            log('[RECOVERY] Consider restoring from backup or resyncing from genesis.', 'error');
             process.exit(1);
         }
         
@@ -563,17 +569,15 @@ async function checkAndRecoverFromIncompleteReorg() {
         
         try {
             await pluribit.force_reset_to_height(
-                marker.original_tip_height, 
+                marker.originalTipHeight, 
                 originalTipBlock.hash
             );
-            log(`[RECOVERY] ✓ Rust state reset to height ${marker.original_tip_height}`, 'success');
+            log(`[RECOVERY] ✓ Rust state reset to height ${marker.originalTipHeight}`, 'success');
         } catch (e) {
-            // If force_reset_to_height doesn't exist, try loading blocks to resync
+            // ... (rest of the recovery logic) ...
             log('[RECOVERY] Attempting to resync chain state...', 'warn');
-            
-            // Clear and rebuild UTXO set by replaying the chain
             await pluribit.clear_utxo_set();
-            for (let h = 0n; h <= marker.original_tip_height; h++) {
+            for (let h = 0n; h <= marker.originalTipHeight; h++) {
                 const block = await db.loadBlock(h);
                 if (block) {
                     await pluribit.process_block_for_recovery(block);
@@ -586,7 +590,7 @@ async function checkAndRecoverFromIncompleteReorg() {
         await db.clear_reorg_marker();
         log('[RECOVERY] ✓ Recovery complete - reorg marker cleared', 'success');
         
-        // Verify consistency
+        // ... (rest of the function is unchanged) ...
         const dbTipHeight = await db.getTipHeight();
         const rustState = await pluribit.get_blockchain_state();
         if (dbTipHeight.toString() !== rustState.current_height.toString()) {
@@ -596,9 +600,9 @@ async function checkAndRecoverFromIncompleteReorg() {
         }
         
     } catch (error) {
-        log(`[RECOVERY] ✗ Recovery failed: ${error.message}`, 'error');
+        const msg = error?.message || String(error);
+        log(`[RECOVERY] ✗ Recovery failed: ${msg}`, 'error');
         log('[RECOVERY] The node may be in an inconsistent state. Manual intervention required.', 'error');
-        // Don't exit - let the operator decide what to do
     }
 }
 
@@ -2490,14 +2494,43 @@ async function handleChannelPayAccept(acceptance, from) {
 
 async function handleSwapInitiate({ walletId, counterpartyPubkey, plbAmount, btcAmount, timeoutBlocks }) {
     log(`[SWAP] Initiating swap: ${plbAmount} PLB for ${btcAmount} sats...`);
-    // TODO:
-    // 1. Get wallet secret: `const secret = await pluribit.wallet_session_get_spend_privkey(walletId);`
-    // 2. Call Wasm: `const swapJson = await pluribit.atomic_swap_initiate(secret, plbAmount, hexToBytes(counterpartyPubkey), btcAmount, timeoutBlocks);` [cite: 859-860]
-    // 3. Deserialize: `const swap = JSON.parse(swapJson);`
-    // 4. Store: `workerState.atomicSwaps.set(swap.swap_id, { swap, role: 'alice' });`
-    // 5. Publish: `await workerState.p2p.publish(TOPICS.SWAP_PROPOSE, swap);`
-    // 6. Log to user.
-    log("[SWAP] STUB: handleSwapInitiate logic not yet implemented.", 'warn');
+    try {
+        // 1. Get wallet's secret key from the Rust session
+        const secret = await pluribit.wallet_session_get_spend_privkey(walletId);
+        
+        // 2. Decode the counterparty's hex public key into bytes
+        const pubkeyBytes = Buffer.from(counterpartyPubkey, 'hex');
+        if (pubkeyBytes.length !== 32) {
+            throw new Error("Counterparty pubkey must be 32 bytes (64 hex chars)");
+        }
+
+        // 3. Call the WASM 'atomic_swap_initiate' function
+        const swap = await pluribit.atomic_swap_initiate(
+            secret,
+            plbAmount,
+            pubkeyBytes,
+            btcAmount,
+            timeoutBlocks
+        );
+
+        // 4. Store the new swap state locally in the worker
+        // FIX: Convert the swap_id (Uint8Array) to a hex string to use as a map key
+        const swapIdHex = Buffer.from(swap.swap_id).toString('hex');
+        workerState.atomicSwaps.set(swapIdHex, { swap, role: 'alice', state: 'INITIATED', walletId });
+
+        // 5. Publish the swap proposal to the network for the counterparty
+        await workerState.p2p.publish(TOPICS.SWAP_PROPOSE, swap);
+
+        // 6. Log success and notify the main thread
+        const swapIdShort = swapIdHex.substring(0, 8);
+        log(`[SWAP] ✓ Swap ${swapIdShort}... initiated and proposed to network.`, 'success');
+        parentPort.postMessage({ type: 'log', payload: { level: 'success', message: `Swap ${swapIdShort}... proposed.` }});
+
+    } catch (e) {
+        const msg = e?.message || String(e);
+        log(`[SWAP] ✗ Failed to initiate swap: ${msg}`, 'error');
+        parentPort.postMessage({ type: 'error', error: `Swap failed: ${msg}` });
+    }
 }
 
 async function handleSwapList() {
@@ -2507,66 +2540,335 @@ async function handleSwapList() {
 }
 
 async function handleSwapRespond({ walletId, swapId, btcAddress, btcTxid, btcVout }) {
-    log(`[SWAP] Responding to swap ${swapId} with HTLC ${btcTxid}:${btcVout}`);
-    // TODO:
-    // 1. Get proposal: `const proposal = workerState.pendingSwapProposals.get(swapId);`
-    // 2. Get wallet secret.
-    // 3. Get timeout (e.g., from proposal or config).
-    // 4. Call Wasm: `const swapJson = await pluribit.atomic_swap_respond(JSON.stringify(proposal), secret, btcAddress, btcTxid, btcVout, [], timeout);` 
-    // 5. Deserialize: `const swap = JSON.parse(swapJson);`
-    // 6. Store: `workerState.atomicSwaps.set(swap.swap_id, { swap, role: 'bob' });`
-    // 7. Publish: `await workerState.p2p.publish(TOPICS.SWAP_RESPOND, swap);`
-    log("[SWAP] STUB: handleSwapRespond logic not yet implemented.", 'warn');
-}
+    log(`[SWAP] Attempting to respond to swap ${swapId} with HTLC ${btcTxid}:${btcVout}`);
+    try {
+        // 1. Get the pending proposal (using hex swapId from CLI)
+        const proposal = workerState.pendingSwapProposals.get(swapId);
+        if (!proposal) {
+            throw new Error(`No pending swap proposal found with ID ${swapId}.`);
+        }
+
+        // 2. Get wallet's secret key (Bob's secret)
+        const secret = await pluribit.wallet_session_get_spend_privkey(walletId);
+
+        // 3. Get timeout from the proposal (using Alice's as the default)
+        const timeout = proposal.alice_timeout_height;
+
+        // 4. Call the WASM 'atomic_swap_respond' function
+        const updatedSwap = await pluribit.atomic_swap_respond(
+            proposal,
+            secret,
+            btcAddress,
+            btcTxid,
+            btcVout,
+            new Uint8Array(), // Placeholder for bob_adaptor_sig_bytes
+            timeout
+        ); // <-- FIX: Stray citation removed
+
+        // 5. Store the *updated* swap state
+        // Remove from pending and add to active swaps (using hex swapId from CLI)
+        workerState.pendingSwapProposals.delete(swapId);
+        workerState.atomicSwaps.set(swapId, { swap: updatedSwap, role: 'bob', state: 'RESPONDED', walletId });
+
+        // 6. Publish the response to the network for Alice
+        await workerState.p2p.publish(TOPICS.SWAP_RESPOND, updatedSwap);
+
+        // 7. Log success
+        const swapIdShort = swapId.substring(0, 8);
+        log(`[SWAP] ✓ Responded to swap ${swapIdShort}. Waiting for Alice's signature.`, 'success');
+        parentPort.postMessage({ type: 'log', payload: { level: 'success', message: `Swap ${swapIdShort} response sent.` }});
+        
+    } catch (e) {
+        const msg = e?.message || String(e);
+        log(`[SWAP] ✗ Failed to respond to swap: ${msg}`, 'error');
+        parentPort.postMessage({ type: 'error', error: `Swap respond failed: ${msg}` });
+    }
+}    
+    
 
 async function handleSwapRefund({ walletId, swapId }) {
     log(`[SWAP] Attempting to refund swap ${swapId}`);
-    // TODO:
-    // 1. Get swap: `const { swap, role } = workerState.atomicSwaps.get(swapId);`
-    // 2. Get wallet secret.
-    // 3. Get current height.
-    // 4. If role == 'alice':
-    //    `const refundTx = await pluribit.atomic_swap_refund_alice(JSON.stringify(swap), secret, ...);` [cite: 867-868]
-    // 5. If role == 'bob':
-    //    (This would need a Bitcoin library to broadcast a refund)
-    // 6. Broadcast Pluribit refund tx.
-    log("[SWAP] STUB: handleSwapRefund logic not yet implemented.", 'warn');
+    try {
+        // 1. Get the swap data
+        const ourSwapData = workerState.atomicSwaps.get(swapId);
+        if (!ourSwapData) {
+            throw new Error(`No active swap found with ID ${swapId}.`);
+        }
+
+        const { swap, role } = ourSwapData;
+
+        // 2. Get wallet secret
+        const secret = await pluribit.wallet_session_get_spend_privkey(walletId);
+
+        // 3. Get current height
+        const state = await pluribit.get_blockchain_state();
+        const currentHeight = BigInt(state.current_height);
+
+        // 4. If we are Alice (Pluribit side)
+        if (role === 'alice') {
+            log(`[SWAP] We are Alice. Checking if refund is possible...`);
+            // Get our own receive address to refund to
+            const receiveAddressBytes = await pluribit.wallet_session_get_spend_pubkey(walletId);
+
+            // Call WASM function to create the refund transaction
+            const refundTx = await pluribit.atomic_swap_refund_alice(
+                swap,
+                secret,
+                receiveAddressBytes,
+                currentHeight
+            ); // 
+
+            // 5. Broadcast the refund transaction
+            await workerState.p2p.stemTransaction(refundTx);
+            
+            // 6. Update state and log
+            ourSwapData.state = 'REFUNDED';
+            workerState.atomicSwaps.set(swapId, ourSwapData);
+            
+            log(`[SWAP] ✓ Alice's Pluribit refund transaction broadcasted.`, 'success');
+            parentPort.postMessage({ type: 'log', payload: { level: 'success', message: `Swap ${swapId.substring(0,8)}... refunded.` }});
+
+        } else {
+            // 5. If we are Bob (Bitcoin side)
+            log(`[SWAP] We are Bob. Checking Bitcoin refund...`);
+            if (currentHeight < swap.bob_timeout_height) {
+                throw new Error(`Cannot refund Bitcoin yet. Timeout not reached (Current: ${currentHeight}, Timeout: ${swap.bob_timeout_height})`);
+            }
+            
+            log(`[SWAP] ✓ Bitcoin HTLC is eligible for refund.`, 'success');
+            parentPort.postMessage({ 
+                type: 'log', 
+                payload: { 
+                    level: 'success', 
+                    message: `[SWAP] Please use your Bitcoin wallet to refund the HTLC at address: ${swap.bob_btc_address}` 
+                }
+            });
+        }
+
+    } catch (e) {
+        const msg = e?.message || String(e);
+        log(`[SWAP] ✗ Failed to refund swap: ${msg}`, 'error');
+        parentPort.postMessage({ type: 'error', error: `Swap refund failed: ${msg}` });
+    }
 }
 
-// --- ATOMIC SWAP P2P HANDLERS ---
+async function handleSwapClaim({ walletId, swapId, adaptorSecretHex }) {
+    log(`[SWAP] Attempting to claim Pluribit for swap ${swapId.substring(0, 8)}...`);
+    try {
+        // 1. Get our swap data
+        const ourSwapData = workerState.atomicSwaps.get(swapId);
+        if (!ourSwapData) {
+            throw new Error(`No active swap found with ID ${swapId}.`);
+        }
 
-async function handleSwapPropose(proposal, from) {
-    // TODO:
-    // 1. Store proposal: `workerState.pendingSwapProposals.set(proposal.swap_id, proposal);`
-    // 2. Log to user: `log(Received swap proposal ${proposal.swap_id} from ${from}. Use 'swap_respond' to accept.)`
-    log(`[SWAP] STUB: Received swap proposal from ${from}. Logic not implemented.`, 'warn');
+        const { swap, role } = ourSwapData;
+
+        // 2. Validate
+        if (role !== 'bob') {
+            throw new Error(`Only the responder (Bob) can claim the Pluribit.`);
+        }
+        if (ourSwapData.state !== 'ALICE_SIG_RECEIVED') {
+            throw new Error(`Cannot claim yet. State is '${ourSwapData.state}', not 'ALICE_SIG_RECEIVED'.`);
+        }
+        if (!adaptorSecretHex || adaptorSecretHex.length !== 64) {
+            throw new Error(`Invalid adaptor secret. It must be a 64-character hex string.`);
+        }
+
+        // 3. Get Bob's wallet secret and receive address
+        const secret = await pluribit.wallet_session_get_spend_privkey(walletId);
+        const receiveAddressBytes = await pluribit.wallet_session_get_spend_pubkey(walletId);
+
+        // 4. Decode the adaptor secret from hex
+        const adaptorSecretBytes = Buffer.from(adaptorSecretHex, 'hex');
+
+        // 5. Call WASM to create the claim transaction
+        const claimTx = await pluribit.atomic_swap_bob_claim(
+            swap,
+            secret,
+            adaptorSecretBytes,
+            receiveAddressBytes
+        ); // 
+
+        // 6. Broadcast the claim transaction
+        await workerState.p2p.stemTransaction(claimTx);
+
+        // 7. Update state and log
+        ourSwapData.state = 'COMPLETED';
+        workerState.atomicSwaps.set(swapId, ourSwapData);
+        
+        log(`[SWAP] ✓✓✓ Swap ${swapId.substring(0, 8)} COMPLETED! Claim transaction broadcasted.`, 'success');
+        parentPort.postMessage({ type: 'log', payload: { level: 'success', message: `Swap ${swapId.substring(0,8)}... successfully claimed!` }});
+
+    } catch (e) {
+        const msg = e?.message || String(e);
+        log(`[SWAP] ✗ Failed to claim swap: ${msg}`, 'error');
+        parentPort.postMessage({ type: 'error', error: `Swap claim failed: ${msg}` });
+    }
 }
 
-async function handleSwapRespondP2P(response, from) {
-    // This is Alice receiving Bob's response
-    log(`[SWAP] Received response for swap ${response.swap_id} from ${from}`);
-    // TODO:
-    // 1. Get our swap: `const { swap, role } = workerState.atomicSwaps.get(response.swap_id);`
-    // 2. Get wallet secret.
-    // 3. Call Wasm: `const updatedSwapJson = await pluribit.atomic_swap_alice_create_adaptor_sig(JSON.stringify(response), secret);` [cite: 862-863]
-    // 4. Deserialize: `const updatedSwap = JSON.parse(updatedSwapJson);`
-    // 5. Store updated swap.
-    // 6. Publish adaptor sig: `await workerState.p2p.publish(TOPICS.SWAP_ALICE_ADAPTOR_SIG, { swapId: updatedSwap.swap_id, adaptorSig: updatedSwap.alice_adaptor_sig });`
-    log("[SWAP] STUB: handleSwapRespondP2P logic not yet implemented.", 'warn');
+async function handleSwapPropose(proposal, { from }) {
+    try {
+        if (!proposal || !proposal.swap_id || proposal.swap_id.length === 0) {
+            throw new Error("Received invalid or empty swap proposal");
+        }
+
+        // FIX: Convert swap_id (bytes) to a hex string for use as a map key
+        const swapIdHex = Buffer.from(proposal.swap_id).toString('hex');
+        const swapIdShort = swapIdHex.substring(0, 8);
+        const peerShort = from.toString().slice(-6);
+        
+        // 1. Check if we already have this swap (using the hex key)
+        if (workerState.pendingSwapProposals.has(swapIdHex) || workerState.atomicSwaps.has(swapIdHex)) {
+            log(`[SWAP] Ignoring duplicate swap proposal ${swapIdShort} from peer ${peerShort}`, 'debug');
+            return;
+        }
+        
+        // 2. Store the proposal (using the hex key)
+        // FIX: Removed the stray  that caused the syntax error
+        workerState.pendingSwapProposals.set(swapIdHex, proposal);
+        log(`[SWAP] Received new swap proposal ${swapIdShort} from peer ${peerShort}. Stored pending response.`, 'info');
+        
+        // 3. Log to user (notify main thread)
+        // FIX: Show the user the hex ID they must use to respond
+        parentPort.postMessage({ 
+            type: 'log', 
+            payload: { 
+                level: 'success', 
+                message: `[SWAP] New proposal ${swapIdShort} received. Type 'swap_respond ${swapIdHex} <your_btc_address> <your_btc_txid> <your_btc_vout>' to accept.` 
+            }
+        });
+        
+    } catch (e) {
+        const msg = e?.message || String(e);
+        log(`[SWAP] ✗ Failed to handle swap proposal: ${msg}`, 'error');
+    }
 }
 
-async function handleSwapAliceSig(message, from) {
+
+
+async function handleSwapRespondP2P(response, { from }) {
+    // This is Alice (initiator) receiving Bob's (responder's) message
+    const swapIdBytes = response?.swap_id;
+    if (!swapIdBytes || swapIdBytes.length === 0) {
+        log(`[SWAP] Received invalid swap_respond message from ${from.toString().slice(-6)}`, 'warn');
+        return;
+    }
+
+    // FIX: Convert bytes to hex string for map key
+    const swapIdHex = Buffer.from(swapIdBytes).toString('hex');
+    const swapIdShort = swapIdHex.substring(0, 8);
+    log(`[SWAP] Received response for swap ${swapIdShort} from peer ${from.toString().slice(-6)}`);
+
+    try {
+        // 1. Get our original swap data (using hex key)
+        const ourSwapData = workerState.atomicSwaps.get(swapIdHex);
+
+        // 2. Validate this response
+        if (!ourSwapData) {
+            throw new Error(`Received response for an unknown swap ID: ${swapIdHex}`);
+        }
+        if (ourSwapData.role !== 'alice') {
+            throw new Error(`Received swap response, but we are not the initiator (Alice)`);
+        }
+        if (ourSwapData.state !== 'INITIATED') {
+            log(`[SWAP] Ignoring response for swap ${swapIdShort}; state is '${ourSwapData.state}', not 'INITIATED'`, 'debug');
+            return;
+        }
+
+        // 3. Get our wallet secret from when we initiated
+        const secret = await pluribit.wallet_session_get_spend_privkey(ourSwapData.walletId);
+
+        // 4. Call Wasm to create our adaptor signature
+        const finalSwap = await pluribit.atomic_swap_alice_create_adaptor_sig(
+            response, // This is Bob's swap object
+            secret
+        );
+
+        // 5. Store the updated swap (using hex key)
+        workerState.atomicSwaps.set(swapIdHex, { ...ourSwapData, swap: finalSwap, state: 'ADAPTOR_SIGNED' });
+
+        // 6. Extract the signature and publish it for Bob
+        const adaptorSig = finalSwap.alice_adaptor_sig;
+        if (!adaptorSig) {
+            throw new Error("WASM function did not return an adaptor signature");
+        }
+
+        // Publish the payload matching the .proto definition
+        await workerState.p2p.publish(TOPICS.SWAP_ALICE_ADAPTOR_SIG, {
+            swapId: swapIdBytes, // Send the raw bytes
+            adaptorSig: { // ProtobufJS creates the message from this object
+                publicNonce: adaptorSig.public_nonce,
+                adaptorPoint: adaptor_sig.adaptor_point,
+                preSignature: adaptor_sig.pre_signature,
+                challenge: adaptor_sig.challenge,
+            }
+        });
+
+        log(`[SWAP] ✓ Created and sent adaptor signature for swap ${swapIdShort}.`, 'success');
+        parentPort.postMessage({ type: 'log', payload: { level: 'success', message: `Swap ${swapIdShort} adaptor signature sent.` }});
+
+    } catch (e) {
+        const msg = e?.message || String(e);
+        log(`[SWAP] ✗ Failed to process swap response: ${msg}`, 'error');
+        parentPort.postMessage({ type: 'error', error: `Swap response failed: ${msg}` });
+    }
+}
+
+
+
+
+async function handleSwapAliceSig(message, { from }) {
     // This is Bob receiving Alice's adaptor signature
-    log(`[SWAP] Received Alice's adaptor sig for swap ${message.swapId}`);
-    // TODO:
-    // 1. Get our swap: `const { swap, role } = workerState.atomicSwaps.get(message.swapId);`
-    // 2. Store `message.adaptorSig` in our swap object.
-    // 3. Now Bob can claim. This involves:
-    //    a. Get adaptor secret (this is complex, from adaptor sig + our secret)
-    //    b. Call Wasm `atomic_swap_bob_claim` [cite: 864-865]
-    //    c. Broadcast the resulting Pluribit transaction.
-    // 4. Log to user: `log(Ready to claim swap ${message.swapId}. Run 'swap_claim ...')`
-    log("[SWAP] STUB: handleSwapAliceSig logic not yet implemented.", 'warn');
+    const swapIdBytes = message?.swapId;
+    if (!swapIdBytes || swapIdBytes.length === 0) {
+        log(`[SWAP] Received invalid alice_adaptor_sig message from ${from.toString().slice(-6)}`, 'warn');
+        return;
+    }
+
+    // FIX: Convert bytes to hex string for map key
+    const swapIdHex = Buffer.from(swapIdBytes).toString('hex');
+    const swapIdShort = swapIdHex.substring(0, 8);
+    log(`[SWAP] Received Alice's adaptor sig for swap ${swapIdShort} from ${from.toString().slice(-6)}`);
+
+    try {
+        // 1. Get our swap data (using hex key)
+        const ourSwapData = workerState.atomicSwaps.get(swapIdHex);
+
+        // 2. Validate
+        if (!ourSwapData) {
+            throw new Error(`Received signature for an unknown swap ID: ${swapIdHex}`);
+        }
+        if (ourSwapData.role !== 'bob') {
+            throw new Error(`Received Alice's signature, but we are not the responder (Bob)`);
+        }
+        if (ourSwapData.state !== 'RESPONDED') {
+            log(`[SWAP] Ignoring Alice's signature for swap ${swapIdShort}; state is '${ourSwapData.state}', not 'RESPONDED'`, 'debug');
+            return;
+        }
+
+        // 3. We can't claim automatically. We store the signature and notify the user.
+        // The user must manually find the adaptor secret from the Bitcoin chain *after*
+        // Alice claims the BTC HTLC.
+        
+        // Store Alice's signature in our swap data
+        ourSwapData.swap.alice_adaptor_sig = message.adaptorSig;
+        ourSwapData.state = 'ALICE_SIG_RECEIVED';
+        workerState.atomicSwaps.set(swapIdHex, ourSwapData);
+
+        // 4. Log to user
+        log(`[SWAP] ✓ Received and stored Alice's signature for ${swapIdShort}.`, 'success');
+        parentPort.postMessage({ 
+            type: 'log', 
+            payload: { 
+                level: 'success', 
+                message: `[SWAP] Swap ${swapIdShort} is ready! Once you see Alice claim the BTC, run 'swap_claim ${swapIdHex} <adaptor_secret_from_btc_tx>'` 
+            }
+        });
+        
+    } catch (e) {
+        const msg = e?.message || String(e);
+        log(`[SWAP] ✗ Failed to handle Alice's signature: ${msg}`, 'error');
+    }
 }
 
 

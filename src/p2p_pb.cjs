@@ -5507,6 +5507,421 @@ $root.p2p = (function() {
         return DandelionStem;
     })();
 
+    p2p.ReorgMarker = (function() {
+
+        /**
+         * Properties of a ReorgMarker.
+         * @memberof p2p
+         * @interface IReorgMarker
+         * @property {number|Long|null} [originalTipHeight] ReorgMarker originalTipHeight
+         * @property {number|Long|null} [newTipHeight] ReorgMarker newTipHeight
+         * @property {string|null} [newTipHash] ReorgMarker newTipHash
+         * @property {Array.<string>|null} [blocksToAttach] ReorgMarker blocksToAttach
+         * @property {Array.<number|Long>|null} [blocksToDetachHeights] ReorgMarker blocksToDetachHeights
+         * @property {number|Long|null} [timestamp] ReorgMarker timestamp
+         */
+
+        /**
+         * Constructs a new ReorgMarker.
+         * @memberof p2p
+         * @classdesc Represents a ReorgMarker.
+         * @implements IReorgMarker
+         * @constructor
+         * @param {p2p.IReorgMarker=} [properties] Properties to set
+         */
+        function ReorgMarker(properties) {
+            this.blocksToAttach = [];
+            this.blocksToDetachHeights = [];
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * ReorgMarker originalTipHeight.
+         * @member {number|Long} originalTipHeight
+         * @memberof p2p.ReorgMarker
+         * @instance
+         */
+        ReorgMarker.prototype.originalTipHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * ReorgMarker newTipHeight.
+         * @member {number|Long} newTipHeight
+         * @memberof p2p.ReorgMarker
+         * @instance
+         */
+        ReorgMarker.prototype.newTipHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * ReorgMarker newTipHash.
+         * @member {string} newTipHash
+         * @memberof p2p.ReorgMarker
+         * @instance
+         */
+        ReorgMarker.prototype.newTipHash = "";
+
+        /**
+         * ReorgMarker blocksToAttach.
+         * @member {Array.<string>} blocksToAttach
+         * @memberof p2p.ReorgMarker
+         * @instance
+         */
+        ReorgMarker.prototype.blocksToAttach = $util.emptyArray;
+
+        /**
+         * ReorgMarker blocksToDetachHeights.
+         * @member {Array.<number|Long>} blocksToDetachHeights
+         * @memberof p2p.ReorgMarker
+         * @instance
+         */
+        ReorgMarker.prototype.blocksToDetachHeights = $util.emptyArray;
+
+        /**
+         * ReorgMarker timestamp.
+         * @member {number|Long} timestamp
+         * @memberof p2p.ReorgMarker
+         * @instance
+         */
+        ReorgMarker.prototype.timestamp = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * Creates a new ReorgMarker instance using the specified properties.
+         * @function create
+         * @memberof p2p.ReorgMarker
+         * @static
+         * @param {p2p.IReorgMarker=} [properties] Properties to set
+         * @returns {p2p.ReorgMarker} ReorgMarker instance
+         */
+        ReorgMarker.create = function create(properties) {
+            return new ReorgMarker(properties);
+        };
+
+        /**
+         * Encodes the specified ReorgMarker message. Does not implicitly {@link p2p.ReorgMarker.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.ReorgMarker
+         * @static
+         * @param {p2p.IReorgMarker} message ReorgMarker message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ReorgMarker.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.originalTipHeight != null && Object.hasOwnProperty.call(message, "originalTipHeight"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.originalTipHeight);
+            if (message.newTipHeight != null && Object.hasOwnProperty.call(message, "newTipHeight"))
+                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.newTipHeight);
+            if (message.newTipHash != null && Object.hasOwnProperty.call(message, "newTipHash"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.newTipHash);
+            if (message.blocksToAttach != null && message.blocksToAttach.length)
+                for (var i = 0; i < message.blocksToAttach.length; ++i)
+                    writer.uint32(/* id 4, wireType 2 =*/34).string(message.blocksToAttach[i]);
+            if (message.blocksToDetachHeights != null && message.blocksToDetachHeights.length) {
+                writer.uint32(/* id 5, wireType 2 =*/42).fork();
+                for (var i = 0; i < message.blocksToDetachHeights.length; ++i)
+                    writer.uint64(message.blocksToDetachHeights[i]);
+                writer.ldelim();
+            }
+            if (message.timestamp != null && Object.hasOwnProperty.call(message, "timestamp"))
+                writer.uint32(/* id 6, wireType 0 =*/48).uint64(message.timestamp);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified ReorgMarker message, length delimited. Does not implicitly {@link p2p.ReorgMarker.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.ReorgMarker
+         * @static
+         * @param {p2p.IReorgMarker} message ReorgMarker message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ReorgMarker.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a ReorgMarker message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.ReorgMarker
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.ReorgMarker} ReorgMarker
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ReorgMarker.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.ReorgMarker();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.originalTipHeight = reader.uint64();
+                        break;
+                    }
+                case 2: {
+                        message.newTipHeight = reader.uint64();
+                        break;
+                    }
+                case 3: {
+                        message.newTipHash = reader.string();
+                        break;
+                    }
+                case 4: {
+                        if (!(message.blocksToAttach && message.blocksToAttach.length))
+                            message.blocksToAttach = [];
+                        message.blocksToAttach.push(reader.string());
+                        break;
+                    }
+                case 5: {
+                        if (!(message.blocksToDetachHeights && message.blocksToDetachHeights.length))
+                            message.blocksToDetachHeights = [];
+                        if ((tag & 7) === 2) {
+                            var end2 = reader.uint32() + reader.pos;
+                            while (reader.pos < end2)
+                                message.blocksToDetachHeights.push(reader.uint64());
+                        } else
+                            message.blocksToDetachHeights.push(reader.uint64());
+                        break;
+                    }
+                case 6: {
+                        message.timestamp = reader.uint64();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a ReorgMarker message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.ReorgMarker
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.ReorgMarker} ReorgMarker
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ReorgMarker.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a ReorgMarker message.
+         * @function verify
+         * @memberof p2p.ReorgMarker
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        ReorgMarker.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.originalTipHeight != null && message.hasOwnProperty("originalTipHeight"))
+                if (!$util.isInteger(message.originalTipHeight) && !(message.originalTipHeight && $util.isInteger(message.originalTipHeight.low) && $util.isInteger(message.originalTipHeight.high)))
+                    return "originalTipHeight: integer|Long expected";
+            if (message.newTipHeight != null && message.hasOwnProperty("newTipHeight"))
+                if (!$util.isInteger(message.newTipHeight) && !(message.newTipHeight && $util.isInteger(message.newTipHeight.low) && $util.isInteger(message.newTipHeight.high)))
+                    return "newTipHeight: integer|Long expected";
+            if (message.newTipHash != null && message.hasOwnProperty("newTipHash"))
+                if (!$util.isString(message.newTipHash))
+                    return "newTipHash: string expected";
+            if (message.blocksToAttach != null && message.hasOwnProperty("blocksToAttach")) {
+                if (!Array.isArray(message.blocksToAttach))
+                    return "blocksToAttach: array expected";
+                for (var i = 0; i < message.blocksToAttach.length; ++i)
+                    if (!$util.isString(message.blocksToAttach[i]))
+                        return "blocksToAttach: string[] expected";
+            }
+            if (message.blocksToDetachHeights != null && message.hasOwnProperty("blocksToDetachHeights")) {
+                if (!Array.isArray(message.blocksToDetachHeights))
+                    return "blocksToDetachHeights: array expected";
+                for (var i = 0; i < message.blocksToDetachHeights.length; ++i)
+                    if (!$util.isInteger(message.blocksToDetachHeights[i]) && !(message.blocksToDetachHeights[i] && $util.isInteger(message.blocksToDetachHeights[i].low) && $util.isInteger(message.blocksToDetachHeights[i].high)))
+                        return "blocksToDetachHeights: integer|Long[] expected";
+            }
+            if (message.timestamp != null && message.hasOwnProperty("timestamp"))
+                if (!$util.isInteger(message.timestamp) && !(message.timestamp && $util.isInteger(message.timestamp.low) && $util.isInteger(message.timestamp.high)))
+                    return "timestamp: integer|Long expected";
+            return null;
+        };
+
+        /**
+         * Creates a ReorgMarker message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.ReorgMarker
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.ReorgMarker} ReorgMarker
+         */
+        ReorgMarker.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.ReorgMarker)
+                return object;
+            var message = new $root.p2p.ReorgMarker();
+            if (object.originalTipHeight != null)
+                if ($util.Long)
+                    (message.originalTipHeight = $util.Long.fromValue(object.originalTipHeight)).unsigned = true;
+                else if (typeof object.originalTipHeight === "string")
+                    message.originalTipHeight = parseInt(object.originalTipHeight, 10);
+                else if (typeof object.originalTipHeight === "number")
+                    message.originalTipHeight = object.originalTipHeight;
+                else if (typeof object.originalTipHeight === "object")
+                    message.originalTipHeight = new $util.LongBits(object.originalTipHeight.low >>> 0, object.originalTipHeight.high >>> 0).toNumber(true);
+            if (object.newTipHeight != null)
+                if ($util.Long)
+                    (message.newTipHeight = $util.Long.fromValue(object.newTipHeight)).unsigned = true;
+                else if (typeof object.newTipHeight === "string")
+                    message.newTipHeight = parseInt(object.newTipHeight, 10);
+                else if (typeof object.newTipHeight === "number")
+                    message.newTipHeight = object.newTipHeight;
+                else if (typeof object.newTipHeight === "object")
+                    message.newTipHeight = new $util.LongBits(object.newTipHeight.low >>> 0, object.newTipHeight.high >>> 0).toNumber(true);
+            if (object.newTipHash != null)
+                message.newTipHash = String(object.newTipHash);
+            if (object.blocksToAttach) {
+                if (!Array.isArray(object.blocksToAttach))
+                    throw TypeError(".p2p.ReorgMarker.blocksToAttach: array expected");
+                message.blocksToAttach = [];
+                for (var i = 0; i < object.blocksToAttach.length; ++i)
+                    message.blocksToAttach[i] = String(object.blocksToAttach[i]);
+            }
+            if (object.blocksToDetachHeights) {
+                if (!Array.isArray(object.blocksToDetachHeights))
+                    throw TypeError(".p2p.ReorgMarker.blocksToDetachHeights: array expected");
+                message.blocksToDetachHeights = [];
+                for (var i = 0; i < object.blocksToDetachHeights.length; ++i)
+                    if ($util.Long)
+                        (message.blocksToDetachHeights[i] = $util.Long.fromValue(object.blocksToDetachHeights[i])).unsigned = true;
+                    else if (typeof object.blocksToDetachHeights[i] === "string")
+                        message.blocksToDetachHeights[i] = parseInt(object.blocksToDetachHeights[i], 10);
+                    else if (typeof object.blocksToDetachHeights[i] === "number")
+                        message.blocksToDetachHeights[i] = object.blocksToDetachHeights[i];
+                    else if (typeof object.blocksToDetachHeights[i] === "object")
+                        message.blocksToDetachHeights[i] = new $util.LongBits(object.blocksToDetachHeights[i].low >>> 0, object.blocksToDetachHeights[i].high >>> 0).toNumber(true);
+            }
+            if (object.timestamp != null)
+                if ($util.Long)
+                    (message.timestamp = $util.Long.fromValue(object.timestamp)).unsigned = true;
+                else if (typeof object.timestamp === "string")
+                    message.timestamp = parseInt(object.timestamp, 10);
+                else if (typeof object.timestamp === "number")
+                    message.timestamp = object.timestamp;
+                else if (typeof object.timestamp === "object")
+                    message.timestamp = new $util.LongBits(object.timestamp.low >>> 0, object.timestamp.high >>> 0).toNumber(true);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a ReorgMarker message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.ReorgMarker
+         * @static
+         * @param {p2p.ReorgMarker} message ReorgMarker
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        ReorgMarker.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.arrays || options.defaults) {
+                object.blocksToAttach = [];
+                object.blocksToDetachHeights = [];
+            }
+            if (options.defaults) {
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.originalTipHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.originalTipHeight = options.longs === String ? "0" : 0;
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.newTipHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.newTipHeight = options.longs === String ? "0" : 0;
+                object.newTipHash = "";
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.timestamp = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.timestamp = options.longs === String ? "0" : 0;
+            }
+            if (message.originalTipHeight != null && message.hasOwnProperty("originalTipHeight"))
+                if (typeof message.originalTipHeight === "number")
+                    object.originalTipHeight = options.longs === String ? String(message.originalTipHeight) : message.originalTipHeight;
+                else
+                    object.originalTipHeight = options.longs === String ? $util.Long.prototype.toString.call(message.originalTipHeight) : options.longs === Number ? new $util.LongBits(message.originalTipHeight.low >>> 0, message.originalTipHeight.high >>> 0).toNumber(true) : message.originalTipHeight;
+            if (message.newTipHeight != null && message.hasOwnProperty("newTipHeight"))
+                if (typeof message.newTipHeight === "number")
+                    object.newTipHeight = options.longs === String ? String(message.newTipHeight) : message.newTipHeight;
+                else
+                    object.newTipHeight = options.longs === String ? $util.Long.prototype.toString.call(message.newTipHeight) : options.longs === Number ? new $util.LongBits(message.newTipHeight.low >>> 0, message.newTipHeight.high >>> 0).toNumber(true) : message.newTipHeight;
+            if (message.newTipHash != null && message.hasOwnProperty("newTipHash"))
+                object.newTipHash = message.newTipHash;
+            if (message.blocksToAttach && message.blocksToAttach.length) {
+                object.blocksToAttach = [];
+                for (var j = 0; j < message.blocksToAttach.length; ++j)
+                    object.blocksToAttach[j] = message.blocksToAttach[j];
+            }
+            if (message.blocksToDetachHeights && message.blocksToDetachHeights.length) {
+                object.blocksToDetachHeights = [];
+                for (var j = 0; j < message.blocksToDetachHeights.length; ++j)
+                    if (typeof message.blocksToDetachHeights[j] === "number")
+                        object.blocksToDetachHeights[j] = options.longs === String ? String(message.blocksToDetachHeights[j]) : message.blocksToDetachHeights[j];
+                    else
+                        object.blocksToDetachHeights[j] = options.longs === String ? $util.Long.prototype.toString.call(message.blocksToDetachHeights[j]) : options.longs === Number ? new $util.LongBits(message.blocksToDetachHeights[j].low >>> 0, message.blocksToDetachHeights[j].high >>> 0).toNumber(true) : message.blocksToDetachHeights[j];
+            }
+            if (message.timestamp != null && message.hasOwnProperty("timestamp"))
+                if (typeof message.timestamp === "number")
+                    object.timestamp = options.longs === String ? String(message.timestamp) : message.timestamp;
+                else
+                    object.timestamp = options.longs === String ? $util.Long.prototype.toString.call(message.timestamp) : options.longs === Number ? new $util.LongBits(message.timestamp.low >>> 0, message.timestamp.high >>> 0).toNumber(true) : message.timestamp;
+            return object;
+        };
+
+        /**
+         * Converts this ReorgMarker to JSON.
+         * @function toJSON
+         * @memberof p2p.ReorgMarker
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        ReorgMarker.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for ReorgMarker
+         * @function getTypeUrl
+         * @memberof p2p.ReorgMarker
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        ReorgMarker.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.ReorgMarker";
+        };
+
+        return ReorgMarker;
+    })();
+
     p2p.P2pMessage = (function() {
 
         /**

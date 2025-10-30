@@ -275,6 +275,16 @@ async fn save_block_to_db(block: Block) -> Result<(), JsValue> {
     Ok(())
 }
 
+async fn save_reorg_marker_proto(marker: &p2p::ReorgMarker) -> Result<(), JsValue> {
+    use prost::Message;
+    let marker_bytes = marker.encode_to_vec();
+    // Convert the raw bytes to a hex string for safe storage in JS LevelDB
+    let marker_hex = hex::encode(marker_bytes);
+    let marker_js = JsValue::from_str(&marker_hex);
+    wasm_bindgen_futures::JsFuture::from(save_reorg_marker_raw(marker_js)).await?;
+    Ok(())
+}
+
 async fn save_total_work_to_db(work: u64) -> Result<(), JsValue> {
     let promise = save_total_work_to_db_raw(work);
     wasm_bindgen_futures::JsFuture::from(promise).await?;
@@ -2415,18 +2425,8 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
         (chain.current_height, snapshot)
     }; // Lock released immediately
 
-    // FIX #1: Write recovery marker BEFORE any state changes
-    #[derive(Serialize)]
-    struct ReorgMarker {
-        original_tip_height: u64,
-        new_tip_height: u64,
-        new_tip_hash: String,
-        blocks_to_attach: Vec<String>,
-        blocks_to_detach_heights: Vec<u64>,
-        timestamp: u64,
-    }
-    
-    let marker = ReorgMarker {
+    // FIX #1: Write recovery marker BEFORE any state changes (now using Protobuf)
+    let marker = p2p::ReorgMarker {
         original_tip_height: *original_tip_height,
         new_tip_height: plan.new_height,
         new_tip_hash: plan.new_tip_hash.clone(),
@@ -2434,9 +2434,10 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
         blocks_to_detach_heights: ((state_snapshot.current_height - blocks_to_detach.len() as u64 + 1)..=*original_tip_height).collect(),
         timestamp: js_sys::Date::now() as u64,
     };
-    
-    save_reorg_marker(&marker).await?;
-    log("[REORG] Recovery marker saved");
+
+    // Use the new Protobuf-aware helper function
+    save_reorg_marker_proto(&marker).await?;
+    log("[REORG] Recovery marker (Protobuf) saved");
 
     // ============================================================================
     // PHASE 3: COMPUTE ALL CHANGES (NO LOCKS, PURE COMPUTATION)
