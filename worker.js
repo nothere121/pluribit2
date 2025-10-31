@@ -319,23 +319,35 @@ function startApiServer() {
                 for (let i = 0n; i < count && tipHeight - i >= 0n; i++) {
                     const block = await db.loadBlock(tipHeight - i);
                     if (block) {
-                        let minerDisplay = 'N/A';
-                        // Check if minerPubkey exists and is an array with data
-                        if (block.minerPubkey && block.minerPubkey.type === 'Buffer' && block.minerPubkey.data) {
-                            // Convert the {"0": 1, "1": 2, ...} object into a byte array [1, 2, ...]
-                            const minerBytes = Object.values(block.minerPubkey.data);
+                        
+                        // --- VVV DEBUGGING VVV ---
+                        if (i === 0n) { // Log only for the most recent block to avoid spam
+                            console.log(`[DEBUG /api/blocks/recent] RAW block.minerPubkey:`, block.minerPubkey);
+                        }
+                        // --- ^^^ DEBUGGING ^^^ ---
 
-                            if (minerBytes.length > 0) {
-                                // Check if it's the genesis block (all zeros)
-                                if (minerBytes.every(b => b === 0)) {
-                                    minerDisplay = 'Genesis Miner';
-                                } else {
-                                    // Convert the array of numbers to a hex string
-                                    const hex = Buffer.from(minerBytes).toString('hex');
-                                    // Use your truncate logic
-                                    minerDisplay = hex.slice(0, 12) + '...' + hex.slice(-8);
-                                }
+                        let minerDisplay = 'N/A';
+                        let minerBytes = null; // Variable to hold the final byte array/buffer
+
+                        // Check if minerPubkey exists and is a Buffer
+                        if (block.minerPubkey && Buffer.isBuffer(block.minerPubkey)) {
+                            minerBytes = block.minerPubkey;
+                        }
+
+                        // Now, if we successfully got bytes, process them
+                        if (minerBytes && minerBytes.length > 0) {
+                            // Check if it's the genesis block (all zeros)
+                            if (minerBytes.every(b => b === 0)) {
+                                minerDisplay = 'Genesis Miner';
+                            } else {
+                                // Convert the array of numbers to a hex string
+                                const hex = minerBytes.toString('hex');
+                                // Use your truncate logic
+                                minerDisplay = hex.slice(0, 12) + '...' + hex.slice(-8);
                             }
+                            if (i === 0n) console.log(`[DEBUG] Final minerDisplay: ${minerDisplay}`);
+                        } else if (i === 0n) {
+                            console.log(`[DEBUG] minerBytes was null or empty. Final minerDisplay: ${minerDisplay}`);
                         }
 
                         blocks.push({
