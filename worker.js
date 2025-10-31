@@ -320,12 +320,6 @@ function startApiServer() {
                     const block = await db.loadBlock(tipHeight - i);
                     if (block) {
                         
-                        // --- VVV DEBUGGING VVV ---
-                        if (i === 0n) { // Log only for the most recent block to avoid spam
-                            console.log(`[DEBUG /api/blocks/recent] RAW block.minerPubkey:`, block.minerPubkey);
-                        }
-                        // --- ^^^ DEBUGGING ^^^ ---
-
                         let minerDisplay = 'N/A';
                         let minerBytes = null; // Variable to hold the final byte array/buffer
 
