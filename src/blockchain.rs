@@ -17,6 +17,7 @@ use std::sync::Mutex;
 use lazy_static::lazy_static;
 use serde::{Serialize, Deserialize};
 use crate::constants::{COINBASE_MATURITY, DEFAULT_VRF_THRESHOLD, INITIAL_VDF_ITERATIONS, MAX_FUTURE_DRIFT_MS};
+use crate::save_coinbase_index_to_db;
 
 use crate::{save_utxo_to_db, delete_utxo_from_db};
 
@@ -466,6 +467,8 @@ impl Blockchain {
         }
         
         for (commitment, height) in coinbase_to_add {
+            save_coinbase_index_to_db(&commitment, height).await
+                .map_err(|_| PluribitError::StateError("Failed to save coinbase index".into()))?;
             { COINBASE_INDEX.lock().unwrap().insert(commitment, height); }
         }
         log("[BLOCK VALIDATION] UTXO set updated successfully");

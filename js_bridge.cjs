@@ -119,6 +119,53 @@ const db = new Level(path.join(DB_PATH, 'chain'), {
 }
 
 /**
+ * Saves a coinbase index entry (commitment_hex -> height)
+ */
+async function save_coinbase_index(commitmentHex, height) {
+    const db = await getChainDb(); // <<< FIX: Get the correct DB instance
+    await db.put(`cbidx_${commitmentHex}`, height.toString());
+};
+
+/**
+ * Deletes a coinbase index entry
+ */
+ async function delete_coinbase_index(commitmentHex) {
+    const db = await getChainDb(); // <<< FIX: Get the correct DB instance
+    try {
+        await db.del(`cbidx_${commitmentHex}`);
+    } catch (/** @type {any} */ err) {
+        // It's okay if it's not found (e.g., deleting a non-coinbase UTXO)
+        if (err && err.code === 'LEVEL_NOT_FOUND') return;
+        throw err;
+    }
+};
+
+/**
+ * Loads the *entire* coinbase index into a map.
+ * This is the O(U) part of the startup process.
+ */
+ async function loadAllCoinbaseIndexes() {
+    const index = new Map();
+    const prefix = 'cbidx_';
+    const db = await getChainDb(); // <<< FIX: Get the correct DB instance
+    try {
+        // Use the actual DB instance's iterator
+        for await (const [key, value] of db.iterator({
+            gt: prefix,
+            lt: `${prefix}\xff` // All keys starting with 'cbidx_'
+        })) {
+            const commitmentHex = key.toString('utf8').substring(prefix.length);
+            index.set(commitmentHex, BigInt(value.toString('utf8')));
+        }
+    } catch (e) {
+        // We can't use the 'log' function here, so use console.error
+        console.error(`[DB] Error loading coinbase index: ${e.message}`);
+    }
+    console.log(`[DB] Loaded ${index.size} coinbase index entries`);
+    return index;
+};
+
+/**
  * Lazily initializes and opens the wallet database instance.
  * @private
  * @returns {Promise<LevelDB>} A promise that resolves with the open wallet DB instance.
@@ -654,6 +701,16 @@ const JSONStringifyWithBigInt = (obj) => {
 };
 
 /**
+ * Loads all key-value pairs from the UTXO database.
+ * @returns {Promise<Array<[string, any]>>} A promise resolving to an array of [key, value] pairs.
+ */
+async function loadAllUtxos() {
+  const db = await getUtxoDb();
+  // .all() efficiently streams all entries into an array
+  return await db.iterator().all(); 
+}
+
+/**
  * @param {string} str
  * @returns {any}
  */
@@ -982,6 +1039,9 @@ module.exports = {
   loadBlocks,
   saveBlockWithHash,
   loadBlockByHash,
+  save_coinbase_index,
+  delete_coinbase_index,
+  loadAllCoinbaseIndexes,
   
   // Deferred blocks
   saveDeferredBlock,
@@ -1001,6 +1061,7 @@ module.exports = {
   load_utxo,
   delete_utxo,
   clear_all_utxos,
+    loadAllUtxos,
 
   // Functions for JS Worker (utils.cjs)
   JSONStringifyWithBigInt,

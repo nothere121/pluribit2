@@ -52,6 +52,7 @@ global.save_utxo = db.save_utxo;
 global.load_utxo = db.load_utxo;
 global.delete_utxo = db.delete_utxo;
 global.clear_all_utxos = db.clear_all_utxos;
+global.loadAllUtxos = db.loadAllUtxos;
 global.saveBlockWithHash = db.saveBlockWithHash;
 global.loadBlockByHash = db.loadBlockByHash;
 global.save_reorg_marker = db.save_reorg_marker;
@@ -60,6 +61,17 @@ global.check_incomplete_reorg = db.check_incomplete_reorg;
 global.save_block_to_staging = db.save_block_to_staging;
 global.commit_staged_reorg = db.commit_staged_reorg;
 
+
+// ==================== CORRECTED ADDITIONS START HERE ====================
+// RATIONALE: Import the new functions from the js_bridge module
+// and expose them to Rust (WASM) on the 'global' object, just
+// like all the other database functions.
+
+global.save_coinbase_index = db.save_coinbase_index;
+global.delete_coinbase_index = db.delete_coinbase_index;
+global.loadAllCoinbaseIndexes = db.loadAllCoinbaseIndexes;
+
+// ===================== CORRECTED ADDITIONS END HERE =====================
 
 const wasmPath = path.join(__dirname, './pkg-node/pluribit_core.js');
 const { default: init, ...pluribit } = await import(wasmPath);
@@ -1889,6 +1901,14 @@ blockRequestCleanupTimer = setInterval(() => {
     }, PEER_HASH_REQUEST_CLEANUP_INTERVAL);
  }, blockRequestState.CLEANUP_INTERVAL);
 
+    log('P2P stack online.', 'success');
+    parentPort.postMessage({ type: 'networkInitialized' });
+   // Start API server for block explorer
+    startApiServer();
+    log('Network initialization complete.', 'success');
+}
+
+
 async function gracefulShutdown(code = 0) {
   try {
     log('Shutting down...');
@@ -1915,18 +1935,6 @@ async function gracefulShutdown(code = 0) {
 
 process.on('SIGINT', () => gracefulShutdown(0));
 process.on('SIGTERM', () => gracefulShutdown(0));
-
-
-
-
-
-
-    log('P2P stack online.', 'success');
-    parentPort.postMessage({ type: 'networkInitialized' });
-   // Start API server for block explorer
-    startApiServer();
-    log('Network initialization complete.', 'success');
-}
 
 
 // Ask peers for their tip, but only when someone is there to hear us.
@@ -3536,8 +3544,24 @@ async function handleLoadWallet({ walletId }) {
         const walletJson = (typeof walletRecord === 'string') ? walletRecord : JSON.stringify(walletRecord);
         await pluribit.wallet_session_open(walletId, walletJson);
 
-        log(`Scanning blockchain for wallet '${walletId}'...`, 'info');
-        await pluribit.wallet_session_scan_chain(walletId);
+        log(`Wallet '${walletId}' loaded. Checking for missed blocks...`);
+
+        const walletHeight = await pluribit.wallet_session_get_synced_height(walletId);
+
+        // 2. Get the blockchain's current tip height
+        const chainTipHeight = await db.getTipHeight();
+
+        // 3. Scan *only* the missing blocks (O(k) scan)
+        if (walletHeight < chainTipHeight) {
+            log(`[WALLET] Scanning from height ${walletHeight + 1n} to ${chainTipHeight}...`);
+            await pluribit.wallet_session_scan_range(
+                walletId, 
+                walletHeight + 1n, // Start from the block *after* the one we have
+                chainTipHeight
+            );
+        } else {
+            log(`[WALLET] Wallet is already fully synced.`);
+        }
 
         // Persist updated state (from Rust session) and report summary
         const persisted = await pluribit.wallet_session_export(walletId);

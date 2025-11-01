@@ -191,6 +191,9 @@ extern "C" {
     #[wasm_bindgen(js_name = "loadBlocks")]
     fn load_blocks_from_db_raw(start: u64, end: u64) -> js_sys::Promise;
 
+    #[wasm_bindgen(js_name = "loadAllUtxos")]
+    fn load_all_utxos_raw() -> js_sys::Promise;
+
     #[wasm_bindgen(js_name = save_utxo)]
     fn save_utxo_raw(commitment_hex: &str, output: JsValue) -> js_sys::Promise;
 
@@ -221,7 +224,44 @@ extern "C" {
     #[wasm_bindgen(js_name = commit_staged_reorg)]
     fn commit_staged_reorg_raw(blocks: JsValue, old_heights: JsValue, new_tip_height: u64, new_tip_hash: &str) -> js_sys::Promise;
 
+    #[wasm_bindgen(js_name = "save_coinbase_index")]
+    fn save_coinbase_index_raw(commitment_hex: &str, height: u64) -> js_sys::Promise;
 
+    #[wasm_bindgen(js_name = "delete_coinbase_index")]
+    fn delete_coinbase_index_raw(commitment_hex: &str) -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = "loadAllCoinbaseIndexes")]
+    fn load_all_coinbase_indexes_raw() -> js_sys::Promise;
+    
+}
+
+// --- START: Add async helpers for new bridge functions ---
+async fn save_coinbase_index_to_db(commitment: &[u8], height: u64) -> Result<(), JsValue> {
+    let hex = hex::encode(commitment);
+    wasm_bindgen_futures::JsFuture::from(save_coinbase_index_raw(&hex, height)).await?;
+    Ok(())
+}
+
+async fn delete_coinbase_index_from_db(commitment: &[u8]) -> Result<(), JsValue> {
+    let hex = hex::encode(commitment);
+    wasm_bindgen_futures::JsFuture::from(delete_coinbase_index_raw(&hex)).await?;
+    Ok(())
+}
+
+async fn load_all_coinbase_indexes_from_db() -> Result<HashMap<Vec<u8>, u64>, JsValue> {
+    let promise = load_all_coinbase_indexes_raw();
+    let result_js = wasm_bindgen_futures::JsFuture::from(promise).await?;
+    
+    // Deserialize the Map<string, bigint> from JS
+    let js_map: HashMap<String, WasmU64> = serde_wasm_bindgen::from_value(result_js)?;
+    
+    let mut rust_map = HashMap::new();
+    for (hex_key, wasm_height) in js_map {
+        let commitment_bytes = hex::decode(hex_key)
+            .map_err(|e| JsValue::from_str(&format!("Invalid hex in coinbase index key: {}", e)))?;
+        rust_map.insert(commitment_bytes, *wasm_height);
+    }
+    Ok(rust_map)
 }
 
 // helper
@@ -355,32 +395,44 @@ pub async fn force_reset_to_height(height: u64, hash: String) -> Result<(), JsVa
 
     // --- 3. Rebuild state up to the target height ---
     log(&format!("[RECOVERY] Rebuilding state up to height {}...", height));
-    let mut calculated_total_work: u64 = 0; // Initialize work calculation
+    let mut calculated_total_work: u64 = 0; 
+
+    // === ADDITION: Clear DB state before rebuilding ===
+    clear_all_utxos_from_db().await?; 
+    // We assume you will add a `clear_all_coinbase_indexes_from_db()` to worker.js
+    // For now, we proceed, overwriting entries.
+    log("[RECOVERY] Cleared old DB state.");
+
 
     for h in 0..=height {
         let block = load_block_from_db(h).await?
             .ok_or_else(|| JsValue::from_str(&format!("Missing block {} during state rebuild", h)))?;
-
-        // Calculate and accumulate work for this block
+        
         calculated_total_work = calculated_total_work.saturating_add(Blockchain::get_chain_work(&[block.clone()]));
 
-        // Apply block effects (add outputs, remove inputs)
         { // Scope for locks
             let mut utxo_set = blockchain::UTXO_SET.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock UTXO_SET for rebuild height {}: {}", h, e)))?;
             let mut coinbase_index = blockchain::COINBASE_INDEX.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock COINBASE_INDEX for rebuild height {}: {}", h, e)))?;
 
             for tx in &block.transactions {
-                 // Remove inputs (check if they exist first, though in a rebuild they should unless DB is corrupt)
                  for input in &tx.inputs {
                      utxo_set.remove(&input.commitment);
                      coinbase_index.remove(&input.commitment);
+                     // === ADDITION: Persist DB change ===
+                     delete_utxo_from_db(&input.commitment).await.ok();
+                     delete_coinbase_index_from_db(&input.commitment).await.ok();
                  }
-                 // Add outputs
-                 let is_coinbase = tx.inputs.is_empty() && tx.total_fee() == 0; // More robust check
+                 
+                 let is_coinbase = tx.inputs.is_empty() && tx.total_fee() == 0; 
                  for output in &tx.outputs {
                      utxo_set.insert(output.commitment.clone(), output.clone());
+                     // === ADDITION: Persist DB change ===
+                     save_utxo_to_db(&output.commitment, output).await?;
+                     
                      if is_coinbase {
                         coinbase_index.insert(output.commitment.clone(), h);
+                        // === ADDITION: Persist DB change ===
+                        save_coinbase_index_to_db(&output.commitment, h).await?;
                      }
                  }
             }
@@ -1177,19 +1229,43 @@ pub fn wallet_session_get_balance(wallet_id: &str) -> Result<u64, JsValue> {
     Ok(w.balance())
 }
 
-/// Scan the entire blockchain into this wallet session (Rust iterates blocks).
+/// Scans a specific range of blocks (O(k)) 
+#[wasm_bindgen]
+pub async fn wallet_session_scan_range(
+    wallet_id: &str, 
+    start_height: u64, 
+    end_height: u64
+) -> Result<(), JsValue> {
+    let mut map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let w = map.get_mut(wallet_id).ok_or_else(|| JsValue::from_str("Wallet not loaded"))?;
+
+    if start_height > end_height {
+        return Ok(()); // Nothing to scan
+    }
+
+    // Load only the blocks in the required range
+    let blocks_to_scan = load_blocks_from_db(start_height, end_height).await?;
+
+    for b in blocks_to_scan {
+        w.scan_block(&b);
+    }
+
+    Ok(())
+}
+
+#[wasm_bindgen]
+pub fn wallet_session_get_synced_height(wallet_id: &str) -> Result<u64, JsValue> {
+    let map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let w = map.get(wallet_id).ok_or_else(|| JsValue::from_str("Wallet not loaded"))?;
+    Ok(w.synced_height)
+}
+
+/// Scan the ENTIRE (O(n)) blockchain into this wallet session (Rust iterates blocks).
 #[wasm_bindgen]
 pub async fn wallet_session_scan_chain(wallet_id: &str) -> Result<(), JsValue> {
     let tip_height = get_tip_height_from_db().await?;
-    let mut map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let w = map.get_mut(wallet_id).ok_or_else(|| JsValue::from_str("Wallet not loaded"))?;
-    // Loop from genesis to the tip, fetching each block from the DB via the JS bridge.
-    for h in 0..=tip_height {
-        if let Some(b) = load_block_from_db(h).await? {
-            w.scan_block(&b);
-        }
-    }
-    Ok(())
+    // Call the O(k) function to scan the full range
+    wallet_session_scan_range(wallet_id, 0, tip_height).await
 }
 
 #[wasm_bindgen]
@@ -1499,7 +1575,6 @@ pub async fn init_blockchain_from_db() -> Result<JsValue, JsValue> {
             *chain.current_height = *tip_block.height;
             chain.tip_hash = tip_block.hash();
             chain.total_work = WasmU64::from(get_total_work_from_db().await?);
-
             chain.current_vrf_threshold = tip_block.vrf_threshold;
             chain.current_vdf_iterations = tip_block.vdf_iterations;
              log(&format!("[RUST] Restored blockchain from DB to height {}", tip_height));
@@ -1514,37 +1589,41 @@ pub async fn init_blockchain_from_db() -> Result<JsValue, JsValue> {
         log("[RUST] Initialized new blockchain with genesis block.");
     }
     
-    // Reset UTXO set and tx pool
-
-    { let mut utxo_set = blockchain::UTXO_SET.lock().unwrap(); utxo_set.clear(); }
-    //clear_all_utxos_from_db().await?;
-let mut tx_pool = TX_POOL.lock().unwrap();
-
-    tx_pool.pending.clear();
-    tx_pool.fee_total = 0;
-    // Rebuild UTXO set by replaying all blocks in one batch
-    if tip_height > 0 {
-        let all_blocks = load_blocks_from_db(0, tip_height).await?;
-        for block in all_blocks {
-            for tx in &block.transactions {
-                // Spend inputs
-                for inp in &tx.inputs {
-                    { blockchain::UTXO_SET.lock().unwrap().remove(&inp.commitment); }
-                    delete_utxo_from_db(&inp.commitment).await.ok();
-                }
-                // Create outputs
-                for out in &tx.outputs {
-                    save_utxo_to_db(&out.commitment, out).await?;
-                    { blockchain::UTXO_SET.lock().unwrap().insert(out.commitment.clone(), out.clone()); }
-                }
-            }
-        }
+    // --- O(U) State Loading ---
+    
+    // 1. Clear all in-memory state
+    { 
+        blockchain::UTXO_SET.lock().unwrap().clear();
+        blockchain::COINBASE_INDEX.lock().unwrap().clear();
+        let mut tx_pool = TX_POOL.lock().unwrap();
+        tx_pool.pending.clear();
+        tx_pool.fee_total = 0;
     }
-    log(&format!("[RUST] Rebuilt UTXO set from DB, size: {}", blockchain::UTXO_SET.lock().unwrap().len()));
-
+    
+    // 2. Load UTXO_SET from DB (using existing JS bridge function)
+    let utxo_map_js = wasm_bindgen_futures::JsFuture::from(load_all_utxos_raw()).await?;
+    let utxo_map_native: HashMap<String, TransactionOutput> = serde_wasm_bindgen::from_value(utxo_map_js)?;
+    
+    { // Scope for lock
+        let mut utxo_set = blockchain::UTXO_SET.lock().unwrap();
+        for (hex_key, output) in utxo_map_native {
+             let commitment_bytes = hex::decode(hex_key)
+                .map_err(|e| JsValue::from_str(&format!("Invalid hex in UTXO key: {}", e)))?;
+            utxo_set.insert(commitment_bytes, output);
+        }
+        log(&format!("[RUST] Rebuilt UTXO set from DB, size: {}", utxo_set.len()));
+    }
+    
+    // 3. Load COINBASE_INDEX from DB (using new JS bridge function)
+    let coinbase_map_native = load_all_coinbase_indexes_from_db().await?;
+    { // Scope for lock
+        let mut coinbase_index = blockchain::COINBASE_INDEX.lock().unwrap();
+        *coinbase_index = coinbase_map_native;
+        log(&format!("[RUST] Rebuilt Coinbase Index from DB, size: {}", coinbase_index.len()));
+    }
+    // --- End O(U) State Loading ---
 
     serde_wasm_bindgen::to_value(&*chain).map_err(|e| e.into())
-
 }
 
 
@@ -2590,8 +2669,8 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
         .saturating_sub(detached_work)
         .saturating_add(attached_work);
 
-    log(&format!("[REORG] Computed {} UTXO changes, {} coinbase changes, {} wallet updates",
-        changes.utxo_changes.len(), changes.coinbase_changes.len(), changes.wallet_updates.len()));
+        log(&format!("[REORG] Computed {} UTXO changes, {} coinbase changes, {} wallet updates",
+         changes.utxo_changes.len(), changes.coinbase_changes.len(), changes.wallet_updates.len()));
 
     // ============================================================================
     // PHASE 4: APPLY ALL CHANGES (LOCKS HELD BRIEFLY IN SEQUENCE)
@@ -2599,31 +2678,39 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
     
     log("[REORG] Phase 4: Applying changes to global state");
     
-    // Step 4.1: Apply UTXO changes
+    // Step 4.1: Apply UTXO changes (in memory AND database)
     {
         let mut utxo_set = blockchain::UTXO_SET.lock().unwrap();
         for change in &changes.utxo_changes {
             match change {
                 UtxoChange::Add(commitment, output) => {
                     utxo_set.insert(commitment.clone(), output.clone());
+                    // === ADDITION: Persist DB change ===
+                    save_utxo_to_db(commitment, output).await?;
                 }
                 UtxoChange::Remove(commitment) => {
                     utxo_set.remove(commitment);
+                    // === ADDITION: Persist DB change ===
+                    delete_utxo_from_db(commitment).await.ok();
                 }
             }
         }
     } // UTXO lock released
     
-    // Step 4.2: Apply coinbase index changes
+    // Step 4.2: Apply coinbase index changes (in memory AND database)
     {
         let mut coinbase_index = blockchain::COINBASE_INDEX.lock().unwrap();
         for change in &changes.coinbase_changes {
             match change {
                 CoinbaseChange::Add(commitment, height) => {
                     coinbase_index.insert(commitment.clone(), *height);
+                    // === ADDITION: Persist DB change ===
+                    save_coinbase_index_to_db(commitment, *height).await?;
                 }
                 CoinbaseChange::Remove(commitment) => {
                     coinbase_index.remove(commitment);
+                    // === ADDITION: Persist DB change ===
+                    delete_coinbase_index_from_db(commitment).await.ok();
                 }
             }
         }

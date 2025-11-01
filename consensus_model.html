@@ -1562,122 +1562,253 @@ getTimeSpan(startHeight, endHeight) {
       }
     }
     
-    async function runDiscreteEventSimulation(params) {
-      // Discrete event simulation for precise timing
-      const events = [];
-      const consensus = new RESTConsensus(params);
+async function runDiscreteEventSimulation(params) {
+      // This is a true discrete event simulation modeling the continuous mining race
+      // and network propagation.
+      
+      const consensus = new RESTConsensus(params); // We use this for hashing and work calculation
+      const events = []; // Our event queue: { time: number, type: 'BLOCK_FOUND' | 'BLOCK_RECEIVED', ... }
       let currentTime = 0;
       
-      // Initialize genesis
-      consensus.chain.push({
+      // Miner-specific state
+      const miners = [];
+      const totalMiners = 100; // Simulate 100 miners
+      const attackerMiners = Math.floor(totalMiners * params.attackerPower);
+      
+      // Calculate work for a single block (constant)
+      const workPerBlock = (1 / params.vrfThreshold) * params.vdfIterations;
+
+      const genesisBlock = {
         height: 0,
         hash: '0x0',
         timestamp: 0,
-        vdfIterations: params.vdfIterations,
-        vrfThreshold: params.vrfThreshold
-      });
-      
-      // Create initial mining events
-      for (let i = 0; i < 100; i++) {
-        events.push({
-          time: Math.random() * params.targetBlockTime * 1000,
-          type: 'mine_attempt',
-          miner: i,
-          isAttacker: i < (100 * params.attackerPower)
-        });
-      }
-      
-      // Sort events by time
-      events.sort((a, b) => a.time - b.time);
-      
-      // Process events
-      const results = {
-        blocks: [],
-        forks: [],
-        orphans: [],
-        metrics: {}
+        totalWork: 0
       };
       
-      while (events.length > 0 && consensus.chain.length < params.simTime) {
+      // Stats
+      const results = {
+        blocks: [genesisBlock], // Canonical chain
+        forks: 0,
+        orphans: 0,
+        totalAttempts: 0,
+        metrics: {}
+      };
+
+      // Initialize all miners
+      for (let i = 0; i < totalMiners; i++) {
+        const isAttacker = i < attackerMiners;
+        const miner = {
+          id: i,
+          isAttacker,
+          speedup: isAttacker ? params.attackerSpeedup : 1,
+          localTip: genesisBlock, // Each miner's view of the chain
+        };
+        miners.push(miner);
+        
+        // Schedule their *first* block find event
+        const attempt = simulateMiningAttempt(miner, consensus, params); // Use new correct function
+        results.totalAttempts += attempt.attempts;
+        if (attempt.success) {
+          events.push({
+            time: attempt.time, // Time is relative to now (0)
+            type: 'BLOCK_FOUND',
+            miner: miner,
+            height: 1,
+            prevHash: genesisBlock.hash,
+            attempts: attempt.attempts
+          });
+        }
+      }
+      
+      events.sort((a, b) => a.time - b.time); // Sort by time
+
+      // Process events
+      while (events.length > 0 && results.blocks.length < params.simTime) {
+        
+        // Yield to UI to prevent browser freeze
+        if(results.blocks.length % 100 === 0) {
+            updateProgress((results.blocks.length / params.simTime) * 100);
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
         const event = events.shift();
         currentTime = event.time;
         
-        if (event.type === 'mine_attempt') {
-          // Process mining attempt
-          const miner = {
-            id: event.miner,
-            isAttacker: event.isAttacker,
-            speedup: event.isAttacker ? params.attackerSpeedup : 1
+        if (event.type === 'BLOCK_FOUND') {
+          const winner = event.miner;
+          
+          // Was this block mined on the miner's current local tip?
+          if (event.prevHash !== winner.localTip.hash) {
+            // This is an orphan block. The miner was working on a stale chain.
+            results.orphans++;
+            continue; // Miner's event is just discarded. They will get a BLOCK_RECEIVED event soon.
+          }
+          
+          // This is a valid new block!
+          const newBlock = {
+            height: event.height,
+            hash: consensus.hash(`${event.height}${event.attempts}${winner.id}`),
+            timestamp: currentTime,
+            miner: winner.id,
+            isAttacker: winner.isAttacker,
+            prevHash: event.prevHash,
+            // Apply the fork-choice rule (total work)
+            totalWork: winner.localTip.totalWork + workPerBlock 
           };
           
-          const attempt = simulateMiningAttempt(miner, consensus, params);
+          // Update this miner's local tip
+          winner.localTip = newBlock;
+
+          // Check if it's a fork or a simple extension
+          const canonicalTip = results.blocks[results.blocks.length - 1];
           
-          if (attempt.success) {
-            // Block found
-            const block = {
-              height: consensus.chain.length,
-              timestamp: currentTime + attempt.time,
-              miner: miner.id,
-              isAttacker: miner.isAttacker
-            };
-            
-            consensus.chain.push(block);
-            results.blocks.push(block);
-            
-            // Schedule next attempt
-            events.push({
-              time: currentTime + params.targetBlockTime * 1000 * Math.random(),
-              type: 'mine_attempt',
-              miner: miner.id,
-              isAttacker: miner.isAttacker
-            });
+          if (newBlock.height === canonicalTip.height) {
+            // Two blocks found at the same height! This is a fork.
+            results.forks++;
+            // Apply the fork-choice rule to see if this becomes the new canonical tip
+            if (newBlock.totalWork > canonicalTip.totalWork) {
+               results.blocks.push(newBlock); // New canonical tip
+            } else {
+               // This block is now an orphan (lost the race)
+               results.orphans++;
+               // We don't propagate it, and the winner keeps mining on their
+               // (now non-canonical) chain.
+               continue;
+            }
           } else {
-            // Retry
+             // Simple chain extension
+             results.blocks.push(newBlock);
+          }
+
+          // Schedule this winner to start mining the *next* block
+          const nextAttempt = simulateMiningAttempt(winner, consensus, params);
+          results.totalAttempts += nextAttempt.attempts;
+          if (nextAttempt.success) {
             events.push({
-              time: currentTime + attempt.retryDelay,
-              type: 'mine_attempt',
-              miner: miner.id,
-              isAttacker: miner.isAttacker
+              time: currentTime + nextAttempt.time, // Start from *now*
+              type: 'BLOCK_FOUND',
+              miner: winner,
+              height: newBlock.height + 1,
+              prevHash: newBlock.hash,
+              attempts: nextAttempt.attempts
             });
           }
+          
+          // Schedule "BLOCK_RECEIVED" events for all *other* miners
+          for (const otherMiner of miners) {
+            if (otherMiner.id === winner.id) continue;
+            
+            // Calculate network propagation time
+            const propDelay = params.networkLatency + (params.blockSize / params.networkBandwidth) * 1000;
+            let effectiveDelay = propDelay;
+            
+            // Apply network advantage
+            if(winner.isAttacker) effectiveDelay *= (1 - params.attackerNetAdv / 100);
+            if(otherMiner.isAttacker) effectiveDelay *= (1 - params.attackerNetAdv / 100);
+            
+            events.push({
+              time: currentTime + effectiveDelay,
+              type: 'BLOCK_RECEIVED',
+              miner: otherMiner,
+              block: newBlock
+            });
+          }
+          
+          // Re-sort the event queue with all new events
+          events.sort((a, b) => a.time - b.time);
+          
+        } else if (event.type === 'BLOCK_RECEIVED') {
+          const receiver = event.miner;
+          const receivedBlock = event.block;
+          
+          // Did this block extend a chain with more work than our local tip?
+          if (receivedBlock.totalWork > receiver.localTip.totalWork) {
+            // Yes. This is our new tip.
+            receiver.localTip = receivedBlock;
+            
+            // Abort our current mining job
+            const myEventIndex = events.findIndex(e => e.type === 'BLOCK_FOUND' && e.miner.id === receiver.id);
+            if (myEventIndex > -1) {
+              events.splice(myEventIndex, 1);
+            }
+            
+            // Start mining on this new tip
+            const nextAttempt = simulateMiningAttempt(receiver, consensus, params);
+            results.totalAttempts += nextAttempt.attempts;
+            if (nextAttempt.success) {
+              events.push({
+                time: currentTime + nextAttempt.time, // Start from *now*
+                type: 'BLOCK_FOUND',
+                miner: receiver,
+                height: receivedBlock.height + 1,
+                prevHash: receivedBlock.hash,
+                attempts: nextAttempt.attempts
+              });
+              events.sort((a, b) => a.time - b.time);
+            }
+          }
+          // If receivedBlock.totalWork <= receiver.localTip.totalWork,
+          // we just ignore it. It's either on a weaker fork or just stale.
         }
-        
-        // Re-sort events
-        events.sort((a, b) => a.time - b.time);
-      }
-      
-      // Calculate metrics
+      } // end while loop
+
+      // Calculate final metrics
       const blockTimes = [];
       for (let i = 1; i < results.blocks.length; i++) {
         blockTimes.push(results.blocks[i].timestamp - results.blocks[i-1].timestamp);
       }
       
+      const avgBlockTime = blockTimes.length > 0 ? 
+        (blockTimes.reduce((a, b) => a + b, 0) / blockTimes.length / 1000) : 0; // in seconds
+      
       results.metrics = {
-        averageBlockTime: blockTimes.reduce((a, b) => a + b, 0) / blockTimes.length / 1000,
+        averageBlockTime: avgBlockTime,
         attackerBlocks: results.blocks.filter(b => b.isAttacker).length,
         totalBlocks: results.blocks.length,
-        attackerShare: results.blocks.filter(b => b.isAttacker).length / results.blocks.length
+        attackerShare: results.blocks.length > 0 ? (results.blocks.filter(b => b.isAttacker).length / results.blocks.length) : 0,
+        forkRate: results.blocks.length > 0 ? (results.forks / results.blocks.length) : 0,
+        orphanRate: (results.blocks.length + results.orphans) > 0 ? (results.orphans / (results.blocks.length + results.orphans)) : 0,
+        avgAttemptsPerBlock: results.blocks.length > 0 ? (results.totalAttempts / results.blocks.length) : 0
       };
       
+      log(`[DE-SIM] Complete. Avg Block Time: ${avgBlockTime.toFixed(2)}s, Fork Rate: ${(results.metrics.forkRate*100).toFixed(2)}%`);
       return results;
     }
     
-    function simulateMiningAttempt(miner, consensus, params) {
-      // Simulate VDF computation and VRF lottery
-      const vdfTime = (params.vdfIterations / 1000000) / miner.speedup;
-      const vrfSuccess = Math.random() < params.vrfThreshold;
+function simulateMiningAttempt(miner, consensus, params) {
+      // THIS IS THE CORRECTED SEQUENTIAL LOTTERY MODEL
+      // A miner must sequentially try nonces, with each attempt costing VDF time.
       
-      if (vrfSuccess) {
-        return {
-          success: true,
-          time: vdfTime * 1000
-        };
-      } else {
-        return {
-          success: false,
-          retryDelay: vdfTime * 1000
-        };
+      let attempts = 0;
+      let totalTimeSpent = 0; // in seconds
+      const maxAttempts = params.maxNonce;
+      // VDF time in seconds for a single attempt
+      const vdfTimePerAttempt = (params.vdfIterations / 1000000) / miner.speedup; 
+      
+      while (attempts < maxAttempts) {
+        attempts++;
+        totalTimeSpent += vdfTimePerAttempt; // Time accumulates *sequentially*
+        
+        // Check VRF lottery for this attempt
+        const vrfSuccess = Math.random() < params.vrfThreshold;
+        
+        if (vrfSuccess) {
+          // Found a block!
+          return {
+            success: true,
+            time: totalTimeSpent * 1000, // Return total time in milliseconds
+            attempts: attempts
+          };
+        }
       }
+      
+      // Miner hit the maxNonce limit without finding a block.
+      // This miner fails for this round.
+      return {
+        success: false,
+        time: totalTimeSpent * 1000, // Time was still spent
+        attempts: attempts
+      };
     }
     
     function displayResults(results, params) {

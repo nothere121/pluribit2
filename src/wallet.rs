@@ -83,6 +83,8 @@ pub struct Wallet {
     pub scan_pub: RistrettoPoint,
     pub spend_pub: RistrettoPoint,
     pub owned_utxos: Vec<WalletUtxo>,
+    #[serde(default)]
+    pub synced_height: u64,
 }
 
 
@@ -134,6 +136,7 @@ impl Wallet {
             scan_pub,
             spend_pub,
             owned_utxos: Vec::new(),
+            synced_height: 0,
         }
     }
 
@@ -168,6 +171,7 @@ impl Wallet {
                 scan_pub,
                 spend_pub,
                 owned_utxos: Vec::new(),
+                synced_height: 0, 
             },
             phrase
         ))
@@ -193,6 +197,7 @@ impl Wallet {
             scan_pub,
             spend_pub,
             owned_utxos: Vec::new(),
+            synced_height: 0,
         })
     }
 
@@ -332,6 +337,7 @@ impl Wallet {
              }
          }
      }
+     self.synced_height = *block.height;
      log(&format!("[SCAN_BLOCK] Finished block #{}. Owned UTXOs: {}", block.height, self.owned_utxos.len()));
  }
 
