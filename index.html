@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pluriƀit — Digital cash, native to the web.</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --primary: #4ECDC4;
+    --secondary: #293241;
+    --bg: #F0F4F8;
+  }
+  body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--secondary);
+    line-height: 1.6;
+  }
+  header {
+    text-align: center;
+    padding: 80px 20px 50px;
+  }
+  h1 {
+    font-size: 2.3rem;
+    font-weight: 700;
+    margin: 0 0 10px;
+  }
+  .tagline {
+    font-size: 1.05rem;
+    opacity: 0.9;
+    max-width: 480px;
+    margin: 0 auto 20px;
+  }
+  .cta {
+    display: inline-block;
+    margin-top: 20px;
+    padding: 12px 24px;
+    border-radius: 6px;
+    background: var(--primary);
+    color: var(--secondary);
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 0.95rem;
+  }
+  section {
+    max-width: 760px;
+    margin: 40px auto;
+    padding: 0 20px;
+  }
+  h2 {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 16px;
+  }
+  h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-top: 28px;
+    margin-bottom: 6px;
+  }
+  p {
+    font-size: 0.95rem;
+    margin-bottom: 10px;
+  }
+  footer {
+    text-align: center;
+    padding: 40px 0;
+    font-size: 0.85rem;
+    opacity: 0.75;
+  }
+  ul {
+    font-size: 0.95rem;
+    margin-bottom: 12px;
+    padding-left: 20px;
+  }
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>pluriƀit</h1>
+  <p class="tagline">Digital cash, native to the web.</p>
+  <a class="cta" href="https://github.com/PubliusPseudis/pluribit/releases">Get pluriƀit</a>
+</header>
+
+<section>
+  <h2>How pluriƀit Works</h2>
+
+  <h3>Pure peer-to-peer network</h3>
+  <p>
+    pluriƀit nodes connect directly to each other over libp2p. No servers, no hosted RPC endpoints,
+    no trusted infrastructure. Each node independently validates the chain and participates in gossip.
+  </p>
+
+  <h3>libp2p networking</h3>
+  <p>
+    Nodes use gossipsub, DHT peer discovery, NAT traversal, and relays:
+  </p>
+  <ul>
+    <li>gossipsub for blocks and transactions</li>
+    <li>WebRTC / TCP / WebSocket transports (depending on environment)</li>
+    <li>Kademlia DHT for peer discovery</li>
+    <li>Dandelion stem phase for transaction origin privacy</li>
+  </ul>
+  <p>Network participation is decentralized, permissionless, and censorship-resistant.</p>
+
+  <h3>Consensus: VRF + VDF + GHOST</h3>
+  <p>
+    pluriƀit uses a fairness-driven consensus design:
+  </p>
+  <ul>
+    <li><strong>VRF — Verifiable Random Function</strong> fairly selects block producers</li>
+    <li><strong>VDF — Verifiable Delay Function</strong> enforces real-time and prevents grinding</li>
+    <li><strong>GHOST rule</strong> chooses the chain with most accumulated work</li>
+  </ul>
+  <p>
+    No mining arms race. No staking cartel. Fair, time-based block production.
+  </p>
+
+  <h3>Mimblewimble privacy</h3>
+  <p>
+    pluriƀit adopts Mimblewimble-style private transfers:
+  </p>
+  <ul>
+    <li>Pedersen commitments hide amounts</li>
+    <li>Bulletproofs ensure validity without revealing values</li>
+    <li>Stealth addresses and ephemeral keys provide unlinkable payments</li>
+    <li>Cut-through prunes spent outputs for chain efficiency</li>
+  </ul>
+  <p>Balances and transaction history remain private by default.</p>
+
+  <h3>Kernel concatenation</h3>
+  <p>
+    Instead of aggregating kernels like Grin, pluriƀit <strong>concatenates kernels</strong>:
+  </p>
+  <ul>
+    <li>Supports cut-through optimization</li>
+    <li>Maintains explicit kernel history</li>
+    <li>Preserves full supply auditability</li>
+  </ul>
+
+  <h3>Deterministic supply schedule</h3>
+  <p>
+    Rewards follow predictable halving cycles and supply epochs. Anyone can verify the total supply
+    from local state — no trusted party and no opacity.
+  </p>
+
+  <h3>Deterministic Protobuf encoding</h3>
+  <p>
+    Blocks, transactions, and p2p messages use <strong>deterministic Protobuf serialization</strong>,
+    ensuring identical behavior and consensus across environments and platforms.
+  </p>
+</section>
+
+<section>
+  <h2>Principles</h2>
+  <p>Private. Fair. Open. Web-native digital cash.</p>
+</section>
+
+<footer>
+  pluriƀit — plurality, privacy, accessibility.
+</footer>
+
+<script>
+console.log("pluriƀit landing page loaded.");
+</script>
+
+</body>
+</html>
