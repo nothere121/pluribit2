@@ -1010,17 +1010,40 @@ export class PluribitP2P {
     }
 
     async loadOrCreatePeerId() {
+        // --- BOOTSTRAP: Load permanent key from environment ---
+        if (this.isBootstrap) {
+            this.log('[P2P] Attempting to load permanent bootstrap PeerID from environment...');
+            const PERMANENT_KEY_BASE64 = process.env.BOOTSTRAP_KEY;
+
+            if (!PERMANENT_KEY_BASE64) {
+                this.log('[P2P] FATAL: BOOTSTRAP_KEY environment variable is not set.', 'error');
+                this.log('[P2P] A bootstrap node MUST have a permanent key.', 'error');
+                process.exit(1);
+            }
+            
+            try {
+                const peerId = await createEd25519PeerId({
+                    privateKey: uint8ArrayFromString(PERMANENT_KEY_BASE64, 'base64')
+                });
+                this.log(`[P2P] Successfully loaded permanent bootstrap ID: ${peerId.toString()}`, 'success');
+                return peerId;
+            } catch (e) {
+                this.log(`[P2P] FATAL: Failed to parse BOOTSTRAP_KEY: ${e.message}`, 'error');
+                process.exit(1);
+            }
+        }
+        
+        // --- MINER: Load/create local key from file  ---
+        // This logic is unchanged
         const peerIdPath = './pluribit-data/peer-id.json';
         try {
             await fs.mkdir('./pluribit-data', { recursive: true });
             const data = await fs.readFile(peerIdPath, 'utf-8');
             const stored = JSON.parse(data);
-            // @ts-ignore - createEd25519PeerId signature varies by version
             return await createEd25519PeerId({
                 privateKey: uint8ArrayFromString(stored.privKey, 'base64')
             });
         } catch {
-            // Create new
             const peerId = await createEd25519PeerId();
             const privKey = peerId.privateKey;
             const pubKey = peerId.publicKey;
@@ -1034,7 +1057,7 @@ export class PluribitP2P {
             };
             await fs.writeFile(peerIdPath, JSON.stringify(data, null, 2), { mode: 0o600 });
             try { await fs.chmod(peerIdPath, 0o600); } catch {}
-            this.log('[P2P] Created new peer ID');
+            this.log('[P2P] Created new local peer ID');
             return peerId;
         }
     }
