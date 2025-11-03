@@ -1056,7 +1056,7 @@ export class PluribitP2P {
         this.node.addEventListener('peer:connect', async (evt) => {
             const peerId = evt.detail.toString();
             this.log(`[P2P] Connected to ${peerId}`, 'debug');
-
+            setTimeout(() => { try { bootstrapSync() } catch(e){} }, 3000); // Trigger a sync check 3s after ANY new peer connects
             // Give the connection a moment to stabilize before sending a challenge.
             setTimeout(async () => {
                 try {
