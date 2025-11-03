@@ -41,24 +41,36 @@ Pluriƀit uses a hybrid architecture to combine performance, security, and devel
 
 ## Consensus Mechanism
 
-pluriƀit's consensus is a multi-stage process designed for decentralization by reducing the hardware advantages common in pure Proof-of-Work systems.
+pluriƀit's consensus is a two-part system designed for decentralization and fairness by reducing the hardware advantages of traditional Proof-of-Work.
 
-#### 1\. Proof-of-Work (Spam Resistance)
+### Part 1: Block Production (VDF → VRF Lottery)
 
-  * A trivial PoW puzzle must be solved to begin the block proposal process.
-  * This acts as a rate-limiting mechanism to prevent spam, not as the primary security mechanism. It allows participation in the next stage.
+This is the "lottery" a miner must win to create a block. It is a time-based search, not a hash-based one.
+
+#### 1\. Nonce Search Loop (VDF as "Work")
+
+  * A miner iteratively tests nonces (`nonce = 0, 1, 2...`) in a sequential search.
+  * The "work" required for *each attempt* is the computation of a **VDF (Verifiable Delay Function)**. This VDF computation functions as the rate-limiting mechanism for the search.
 
 #### 2\. Verifiable Delay Function (VDF)
 
-  * The PoW solution is used as input to a VDF.
-  * The VDF requires a fixed duration of sequential computation that cannot be significantly parallelized or sped up with specialized hardware.
-  * This enforces a **time cost**, which makes computational power differences between miners less significant.
+  * The current `nonce` is combined with other block data to create a unique input for the VDF.
+  * The VDF requires a fixed duration of sequential computation (`vdfIterations`) that cannot be significantly parallelized or sped up with specialized hardware.
+  * This enforces a **time cost** per attempt, which makes hardware advantages less significant.
 
 #### 3\. Verifiable Random Function (VRF)
 
-  * The output of the completed VDF is used as the input for a VRF.
+  * The output of the completed VDF (`vdf_proof.y`) is used as the input for a **VRF**.
   * The VRF produces an unpredictable but verifiable random number.
-  * If this number is below the current network target, the miner wins the right to produce the next block.
+  * If this number is below the current network target (`vrfThreshold`), the miner wins the lottery and can produce the next block.
+
+### Part 2: Fork-Choice Rule (GHOST)
+
+This is the rule nodes use to agree on the "correct" chain if a fork occurs.
+
+  * When a fork is detected, the network does not simply follow the "longest" chain.
+  * Instead, nodes use the **GHOST** (Greedy Heaviest Observed Subtree) protocol.
+  * The network chooses the chain with the most **total cumulative work** in its entire subtree (the block *plus all* of its known descendants). This ensures the most secure chain is always followed.
 
 -----
 
