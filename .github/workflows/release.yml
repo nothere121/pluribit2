@@ -1,0 +1,105 @@
+name: Create Testnet Release
+
+# This workflow runs ONLY when you create a new release on GitHub
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-release:
+    name: Build for ${{ matrix.os }}
+    
+    # Run this job on all three operating systems
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset_name: pluribit-v${{ github.ref_name }}-testnet-linux-x64.zip
+          - os: macos-latest
+            asset_name: pluribit-v${{ github.ref_name }}-testnet-macos-x64.zip
+          - os: windows-latest
+            asset_name: pluribit-v${{ github.ref_name }}-testnet-windows-x64.zip
+
+    steps:
+      # 1. Check out your project's source code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Set up Node.js (for npm, pm2, etc.)
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      # 3. Set up Rust (for cargo, rustc)
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      # 4. Install wasm-pack (for building the WASM core)
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+
+      # 5. Install platform-specific build tools
+      # (This is the critical step for the native addon)
+      - name: Install Linux build dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config protobuf-compiler clang
+
+      # 6. Install all dependencies and build the entire project
+      - name: Build project (npm install & build)
+        run: npm install && npm run build
+      
+      # 7. Create a folder to put the release files into
+      - name: Create release directory
+        run: mkdir pluribit-release
+
+      # 8. Copy all necessary files into the release folder
+      # (We must copy everything a user needs to run the node)
+      - name: Copy project files (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cp -r native/index.node pluribit-release/
+          cp -r pkg-node pluribit-release/
+          cp -r src pluribit-release/
+          cp *.js pluribit-release/
+          cp *.cjs pluribit-release/
+          cp *.json pluribit-release/
+          cp README.md pluribit-release/
+      
+      - name: Copy project files (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          xcopy /E /I native\\index.node pluribit-release\\native
+          xcopy /E /I pkg-node pluribit-release\\pkg-node
+          xcopy /E /I src pluribit-release\\src
+          copy *.js pluribit-release
+          copy *.cjs pluribit-release
+          copy *.json pluribit-release
+          copy README.md pluribit-release
+
+      # 9. Zip the release folder
+      - name: Archive release (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: zip -r ${{ matrix.asset_name }} pluribit-release
+
+      - name: Archive release (Windows)
+        if: matrix.os == 'windows-latest'
+        run: powershell Compress-Archive -Path pluribit-release -DestinationPath ${{ matrix.asset_name }}
+
+      # 10. Upload the zip file to the GitHub Release page
+      - name: Upload asset to release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./${{ matrix.asset_name }}
+          asset_name: ${{ matrix.asset_name }}
+          asset_content_type: application/zip
