@@ -52,6 +52,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config protobuf-compiler clang
 
+      - name: Install macOS build dependencies
+        if: matrix.os == 'macos-latest'
+        run: brew install llvm
+
       # 6. Install all dependencies and build the entire project
       - name: Build project (npm install & build)
         run: npm install && npm run build
