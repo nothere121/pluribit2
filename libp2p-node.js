@@ -687,22 +687,39 @@ export class PluribitP2P {
     async initialize() {
         this.log('[P2P] Initializing libp2p node...');
         
-        // Try to load bootstrap addresses from config
-        if (!this.isBootstrap) {
+        // --- START MODIFICATION ---
+        const NET = process.env.PLURIBIT_NET || 'mainnet';
+        
+        if (NET === 'testnet') {
+            // 1. Try to load TESTNET config
+            try {
+                const fs = await import('fs/promises');
+                const configData = await fs.readFile('./bootstrap.testnet.json', 'utf-8');
+                const config = JSON.parse(configData);
+                if (config.bootstrapNodes && config.bootstrapNodes.length > 0) {
+                     this.config.bootstrap = config.bootstrapNodes;
+                    this.log('[P2P] Loaded TESTNET bootstrap addresses from config');
+                }
+            } catch (err) {
+                this.log('[P2P] TESTNET: No bootstrap.testnet.json found, using defaults', 'warn');
+            }
+        } else if (!this.isBootstrap) {
+            // 2. Try to load MAINNET config
             try {
                 const fs = await import('fs/promises');
                 const configData = await fs.readFile('./bootstrap-config.json', 'utf-8');
                 const config = JSON.parse(configData);
                 if (config.bootstrapNodes && config.bootstrapNodes.length > 0) {
-                    this.config.bootstrap = config.bootstrapNodes;
+                   this.config.bootstrap = config.bootstrapNodes;
                     this.log('[P2P] Loaded bootstrap addresses from config');
                 }
             } catch (err) {
                 this.log('[P2P] No bootstrap config found, using defaults', 'warn');
             }
         }
-        const peerId = await this.loadOrCreatePeerId();
+        // --- END MODIFICATION ---
 
+        const peerId = await this.loadOrCreatePeerId();
         // Create libp2p node
         this.node = await createLibp2p({
             peerId,
