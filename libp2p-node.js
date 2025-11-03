@@ -787,9 +787,9 @@ export class PluribitP2P {
                 : [mdns()],
             connectionManager: {
                 // @ts-ignore - connection manager options vary by version
-                minConnections: 0, 
+                minConnections: CONFIG.P2P.MIN_CONNECTIONS,
                 maxConnections: CONFIG.P2P.MAX_CONNECTIONS, 
-                autoDial: false,
+                autoDial: true,
                 autoDialInterval: 2000, 
                 maxParallelDials: 10,
                 dialTimeout: 30000      

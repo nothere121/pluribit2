@@ -4,16 +4,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>pluriƀit — Digital cash, native to the web.</title>
-
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
   :root {
     --primary: #4ECDC4;
     --secondary: #293241;
     --bg: #F0F4F8;
+    --bg-details: #ffffff;
+    --accent: #FF6B6B;
+    --shadow: rgba(0, 0, 0, 0.1);
+    --gradient: linear-gradient(135deg, #4ECDC4, #556270, #FF6B6B);
+    --highlight: #FFD93D;
   }
   body {
     margin: 0;
@@ -21,162 +27,820 @@
     background: var(--bg);
     color: var(--secondary);
     line-height: 1.6;
+    overflow-x: hidden;
+    animation: fadeInBody 1.5s ease-in-out;
+  }
+  @keyframes fadeInBody {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
   header {
     text-align: center;
-    padding: 80px 20px 50px;
+    padding: 120px 20px 80px;
+    background: var(--gradient);
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+  }
+  header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.3), transparent);
+    animation: pulse 4s infinite ease-in-out;
+  }
+  @keyframes pulse {
+    0% { transform: scale(1); opacity: 0.6; }
+    50% { transform: scale(1.3); opacity: 0.4; }
+    100% { transform: scale(1); opacity: 0.6; }
+  }
+  header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 50px;
+    background: linear-gradient(to bottom, transparent, var(--bg));
   }
   h1 {
-    font-size: 2.3rem;
+    font-size: 3.5rem;
     font-weight: 700;
-    margin: 0 0 10px;
+    margin: 0 0 20px;
+    text-shadow: 0 3px 6px rgba(0,0,0,0.3);
+    animation: slideIn 1s ease-out;
+  }
+  @keyframes slideIn {
+    from { transform: translateY(-50px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
   }
   .tagline {
-    font-size: 1.05rem;
-    opacity: 0.9;
-    max-width: 480px;
-    margin: 0 auto 20px;
+    font-size: 1.3rem;
+    opacity: 0.95;
+    max-width: 550px;
+    margin: 0 auto 40px;
+    font-style: italic;
+    animation: slideIn 1.2s ease-out;
   }
   .cta {
     display: inline-block;
     margin-top: 20px;
-    padding: 12px 24px;
-    border-radius: 6px;
-    background: var(--primary);
-    color: var(--secondary);
-    font-weight: 600;
+    padding: 16px 32px;
+    border-radius: 50px;
+    background: #fff;
+    color: var(--primary);
+    font-weight: 700;
     text-decoration: none;
-    font-size: 0.95rem;
+    font-size: 1.1rem;
+    transition: all 0.4s ease;
+    box-shadow: 0 6px 15px rgba(0,0,0,0.2);
+    animation: bounceIn 1.5s ease-out;
+  }
+  @keyframes bounceIn {
+    0% { transform: scale(0.8); opacity: 0; }
+    60% { transform: scale(1.1); opacity: 1; }
+    100% { transform: scale(1); }
+  }
+  .cta:hover {
+    transform: translateY(-5px) rotate(2deg);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+    background: var(--highlight);
+    color: var(--secondary);
   }
   section {
-    max-width: 760px;
-    margin: 40px auto;
+    max-width: 850px;
+    margin: 60px auto;
     padding: 0 20px;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  section.visible {
+    opacity: 1;
+    transform: translateY(0);
   }
   h2 {
-    font-size: 1.3rem;
+    font-size: 2rem;
     font-weight: 700;
-    margin-bottom: 16px;
+    margin-bottom: 25px;
+    color: var(--primary);
+    position: relative;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  }
+  h2::after {
+    content: '';
+    display: block;
+    width: 70px;
+    height: 4px;
+    background: var(--accent);
+    margin: 15px auto 0;
+    border-radius: 2px;
+  }
+  /* Details & Summary for Expandable Sections */
+  details {
+    background: var(--bg-details);
+    border-radius: 15px;
+    margin-bottom: 20px;
+    border: 1px solid #dce4e8;
+    transition: all 0.4s ease;
+    overflow: hidden;
+  }
+  details:hover {
+    box-shadow: 0 8px 20px var(--shadow);
+    border-color: var(--primary);
+  }
+  details[open] {
+    box-shadow: 0 8px 20px var(--shadow);
+  }
+  summary {
+    font-size: 1.2rem;
+    font-weight: 700;
+    padding: 25px;
+    cursor: pointer;
+    list-style: none;
+    position: relative;
+    outline: none;
+    color: var(--secondary);
+    transition: color 0.3s ease, background 0.3s ease;
+  }
+  summary:hover {
+    color: var(--accent);
+    background: rgba(78, 205, 196, 0.1);
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  /* Custom Triangle Marker */
+  summary::before {
+    content: '';
+    display: block;
+    position: absolute;
+    right: 25px;
+    top: 50%;
+    transform: translateY(-50%) rotate(0deg);
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 10px solid var(--primary);
+    transition: transform 0.4s ease;
+  }
+  details[open] summary::before {
+    transform: translateY(-50%) rotate(180deg);
+  }
+  /* Expanded content */
+  .details-content {
+    padding: 0 25px 30px 25px;
+    border-top: 1px solid var(--bg);
+    animation: expand 0.6s ease;
+  }
+  @keyframes expand {
+    from { opacity: 0; max-height: 0; }
+    to { opacity: 1; max-height: 1000px; }
   }
   h3 {
-    font-size: 1.05rem;
+    font-size: 1.25rem;
     font-weight: 700;
-    margin-top: 28px;
-    margin-bottom: 6px;
+    margin-top: 30px;
+    margin-bottom: 10px;
+    color: var(--accent);
+    position: relative;
+  }
+  h3::before {
+    content: '•';
+    color: var(--primary);
+    margin-right: 8px;
   }
   p {
-    font-size: 0.95rem;
-    margin-bottom: 10px;
+    font-size: 1rem;
+    margin-bottom: 15px;
+    transition: color 0.3s ease;
+  }
+  p:hover {
+    color: var(--primary);
   }
   footer {
     text-align: center;
-    padding: 40px 0;
-    font-size: 0.85rem;
-    opacity: 0.75;
+    padding: 60px 0;
+    font-size: 1rem;
+    opacity: 0.9;
+    border-top: 2px solid #dce4e8;
+    background: var(--gradient);
+    color: #fff;
+    position: relative;
+  }
+  footer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, rgba(255,255,255,0.1), transparent);
+    opacity: 0.5;
   }
   ul {
+    font-size: 1rem;
+    margin-bottom: 18px;
+    padding-left: 30px;
+    list-style-type: none;
+  }
+  ul li {
+    margin-bottom: 10px;
+    position: relative;
+  }
+  ul li::before {
+    content: '➤';
+    color: var(--accent);
+    position: absolute;
+    left: -20px;
+    top: 0;
+  }
+  code {
+    background-color: #e0e4e8;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-family: monospace;
     font-size: 0.95rem;
-    margin-bottom: 12px;
-    padding-left: 20px;
+    color: var(--highlight);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  }
+  canvas {
+    max-width: 100%;
+    margin: 20px 0;
+  }
+  .mermaid {
+    text-align: center;
+    margin: 20px 0;
   }
 </style>
 </head>
-
 <body>
-
 <header>
   <h1>pluriƀit</h1>
   <p class="tagline">Digital cash, native to the web.</p>
   <a class="cta" href="https://github.com/PubliusPseudis/pluribit/releases">Get pluriƀit</a>
 </header>
-
 <section>
-  <h2>How pluriƀit Works</h2>
-
-  <h3>Pure peer-to-peer network</h3>
-  <p>
-    pluriƀit nodes connect directly to each other over libp2p. No servers, no hosted RPC endpoints,
-    no trusted infrastructure. Each node independently validates the chain and participates in gossip.
-  </p>
-
-  <h3>libp2p networking</h3>
-  <p>
-    Nodes use gossipsub, DHT peer discovery, NAT traversal, and relays:
-  </p>
-  <ul>
-    <li>gossipsub for blocks and transactions</li>
-    <li>WebRTC / TCP / WebSocket transports (depending on environment)</li>
-    <li>Kademlia DHT for peer discovery</li>
-    <li>Dandelion stem phase for transaction origin privacy</li>
-  </ul>
-  <p>Network participation is decentralized, permissionless, and censorship-resistant.</p>
-
-  <h3>Consensus: VRF + VDF + GHOST</h3>
-  <p>
-    pluriƀit uses a fairness-driven consensus design:
-  </p>
-  <ul>
-    <li><strong>VRF — Verifiable Random Function</strong> fairly selects block producers</li>
-    <li><strong>VDF — Verifiable Delay Function</strong> enforces real-time and prevents grinding</li>
-    <li><strong>GHOST rule</strong> chooses the chain with most accumulated work</li>
-  </ul>
-  <p>
-    No mining arms race. No staking cartel. Fair, time-based block production.
-  </p>
-
-  <h3>Mimblewimble privacy</h3>
-  <p>
-    pluriƀit adopts Mimblewimble-style private transfers:
-  </p>
-  <ul>
-    <li>Pedersen commitments hide amounts</li>
-    <li>Bulletproofs ensure validity without revealing values</li>
-    <li>Stealth addresses and ephemeral keys provide unlinkable payments</li>
-    <li>Cut-through prunes spent outputs for chain efficiency</li>
-  </ul>
-  <p>Balances and transaction history remain private by default.</p>
-
-  <h3>Kernel concatenation</h3>
-  <p>
-    Instead of aggregating kernels like Grin, pluriƀit <strong>concatenates kernels</strong>:
-  </p>
-  <ul>
-    <li>Supports cut-through optimization</li>
-    <li>Maintains explicit kernel history</li>
-    <li>Preserves full supply auditability</li>
-  </ul>
-
-  <h3>Deterministic supply schedule</h3>
-  <p>
-    Rewards follow predictable halving cycles and supply epochs. Anyone can verify the total supply
-    from local state — no trusted party and no opacity.
-  </p>
-
-  <h3>Deterministic Protobuf encoding</h3>
-  <p>
-    Blocks, transactions, and p2p messages use <strong>deterministic Protobuf serialization</strong>,
-    ensuring identical behavior and consensus across environments and platforms.
-  </p>
+  <h2>Core Principles</h2>
+  <p>pluriƀit is an experimental digital cash protocol built on three core principles.</p>
  
+  <details>
+    <summary><i class="fas fa-lock"></i> Private by Default</summary>
+    <div class="details-content">
+      <p>All transactions are confidential. Using Mimblewimble, all amounts and addresses are obscured on-chain. Privacy is a mandatory feature of the protocol, not an optional one.</p>
+    </div>
+  </details>
+ 
+  <details>
+    <summary><i class="fas fa-balance-scale"></i> Fair & Decentralized Consensus</summary>
+    <div class="details-content">
+      <p>A novel Proof-of-Time consensus mechanism eliminates the hardware arms race of Proof-of-Work and the "rich-get-richer" capital accumulation of Proof-of-Stake. Block production is open to anyone, with fairness enforced by verifiable, time-based cryptography.</p>
+    </div>
+  </details>
+  <details>
+    <summary><i class="fas fa-globe"></i> Web-Native & Peer-to-Peer</summary>
+    <div class="details-content">
+      <p>The network is truly peer-to-peer, with no centralized servers or trusted endpoints. Built on libp2p and Wasm, it natively supports WebRTC, WebSockets, and TCP, allowing nodes to run in any modern environment, including directly in the browser.</p>
+    </div>
+  </details>
 </section>
-
 <section>
-    <h3>Disclaimer</h3>
-<p>This is an experimental project built to explore new concepts in cryptocurrency design. It is <strong>not intended for production use</strong> and should not be used to store value. The code is provided as-is for educational and research purposes.
+  <h2>How Consensus Works: A Proof-of-Time Lottery</h2>
+  <p>pluriƀit replaces the energy-intensive "hash grinding" of Proof-of-Work with a fair, time-based process. This is a three-stage lottery that anyone can play.</p>
+  <div class="mermaid">
+    graph TD
+      A[Start: New Nonce] --> B["Compute VDF: y = x^(2^t) mod N"]
+      B --> C[Compute VRF with y]
+      C --> D{vrfOutputHex < thresholdHex?}
+      D -- Yes --> E[Produce Block]
+      D -- No --> A
+      style A fill:#f9f,stroke:#333
+      style E fill:#cfc,stroke:#333
+  </div>
+  <details>
+    <summary>1. The "Work": A Verifiable Delay Function (VDF)</summary>
+    <div class="details-content">
+      <h3>How it works</h3>
+      <p>Instead of a parallel search for a hash, producers perform a *sequential* search. For each new nonce (e.g., 0, 1, 2...), they must compute a <strong>Verifiable Delay Function (VDF)</strong>. This function, <code>y = x^(2^t) mod N</code>, takes a fixed amount of real time to compute and cannot be significantly parallelized.</p>
+      <ul>
+        <li><strong>No Arms Race:</strong> This neutralizes the advantage of specialized hardware (ASICs/FPGAs). A 1000-core machine is no faster at this task than a single-core machine.</li>
+        <li><strong>Binding:</strong> The VDF input is a unique string binding the <code>block height</code>, <code>previous hash</code>, <code>miner's key</code>, and the <code>nonce</code>. This ensures each attempt is unique to a specific miner and block.</li>
+      </ul>
+    </div>
+  </details>
+  <details>
+    <summary>2. The "Lottery": A Verifiable Random Function (VRF)</summary>
+    <div class="details-content">
+      <h3>How it works</h3>
+      <p>The unique output of the VDF (the <code>y</code> value) is then used as the input for a <strong>Verifiable Random Function (VRF)</strong>. The VRF acts as a lottery, producing a fair, unpredictable, and verifiable random number using the producer's secret key.</p>
+      <ul>
+        <li><strong>Provably Fair:</strong> The two-step (<code>VDF -> VRF</code>) process is crucial. It proves the miner *had* to wait for the VDF to finish before they could know if they won. They cannot "grind" for a winning VRF output by trying millions of inputs per second.</li>
+        <li><strong>Winning:</strong> If the VRF's random number is below the network's current difficulty threshold (e.g., <code>vrfOutputHex < thresholdHex</code>), the miner wins the right to produce the block.</li>
+      </ul>
+    </div>
+  </details>
+ 
+  <details>
+    <summary>3. The "Fork-Choice": GHOST Rule</summary>
+    <div class="details-content">
+      <h3>How it works</h3>
+      <p>To resolve network forks, pluriƀit uses the <strong>GHOST (Greedy Heaviest Observed Subtree)</strong> rule. When two competing chains exist, nodes don't simply pick the "longest" one.</p>
+      <ul>
+        <li><strong>Heaviest Subtree:</strong> Nodes select the chain with the most accumulated *work* (total VDF+VRF difficulty) in its *entire* subtree, including all known descendant blocks (even those on small forks).</li>
+        <li><strong>Security:</strong> This method ensures the network always converges on the chain with the most total computational effort behind it, providing strong security against selfish mining and other attacks.</li>
+      </ul>
+      <div class="mermaid">
+        graph TD
+          Genesis --> Chain1[Chain 1<br>Work: 10]
+          Genesis --> Chain2[Chain 2<br>Work: 5]
+          Chain1 --> Sub1[Sub 1<br>Work: 8]
+          Chain1 --> Sub2[Sub 2<br>Work: 7]
+          Chain2 --> Sub3[Sub 3<br>Work: 6]
+          subgraph "Heaviest Subtree (Chain 1: 10+8+7=25)"
+            Chain1
+            Sub1
+            Sub2
+          end
+          style Chain1 fill:#cfc,stroke:#333
+      </div>
+    </div>
+  </details>
 </section>
-
 <section>
-  <h2>Principles</h2>
-  <p>Private. Fair. Open. Web-native digital cash.</p>
+  <h2>How Privacy Works</h2>
+  <p>Privacy is mandatory and enforced at multiple layers of the protocol.</p>
+  <details>
+    <summary>Confidential Transactions (Mimblewimble)</summary>
+    <div class="details-content">
+      <h3>Hiding Amounts with Pedersen Commitments</h3>
+      <p>All transaction amounts are hidden using Pedersen Commitments. Instead of recording <code>value = 100</code>, the chain records a commitment <code>C = 100*H + b*G</code>, where <code>b</code> is a secret "blinding factor".</p>
+      <ul>
+        <li>An observer can't see the value <code>100</code>.</li>
+        <li>The network can still verify the math. A balanced transaction (<code>Inputs = Outputs + Fee</code>) holds true in the elliptic curve world: <code>Sum(Input_C) = Sum(Output_C) + Kernel_Excess</code>.</li>
+      </ul>
+      <h3>Proving Positivity with Aggregated Bulletproofs</h3>
+      <p>Commitments alone aren't enough; a sender could create a <code>-100</code> output to steal funds. To prevent this, all outputs must be proven to be positive numbers. pluriƀit uses <strong>Aggregated Bulletproofs</strong>, a single, highly efficient proof that covers *all* outputs in a transaction, saving significant block space.</p>
+    </div>
+  </details>
+  <details>
+    <summary>Private Payments (Stealth Addresses)</summary>
+    <div class="details-content">
+      <h3>How it Works (Sender)</h3>
+      <p>To pay Bob, Alice only needs his public stealth address (e.g., <code>pb1...</code>).</p>
+      <ol>
+        <li>Alice generates a new, one-time secret <code>r</code> and computes a public ephemeral key <code>R = r*G</code>.</li>
+        <li>She uses Bob's public scan key (<code>Ps</code>) to compute a shared secret: <code>s = Hs(r * Ps)</code>.</li>
+        <li>Alice uses this secret <code>s</code> to encrypt the <code>value</code> and <code>blinding factor</code> of the transaction.</li>
+        <li>She broadcasts the transaction, which includes <code>R</code> and the encrypted data.</li>
+      </ol>
+      <h3>How it Works (Receiver)</h3>
+      <p>Bob's wallet scans the blockchain for transactions. For each one:</p>
+      <ol>
+        <li>It uses its private scan key (<code>ps</code>) and the transaction's ephemeral key (<code>R</code>) to compute the same shared secret: <code>s' = Hs(ps * R)</code>.</li>
+        <li>It uses this secret to try and decrypt the transaction data.</li>
+        <li>If decryption is successful, the wallet has found its funds. It adds the <code>value</code> and <code>blinding factor</code> to its UTXO set and can now spend it using its private spend key.</li>
+      </ol>
+      <p>This process is non-interactive (Bob doesn't need to be online) and breaks all on-chain links between payments to the same recipient.</p>
+     
+      <h3>Optimization: View Tags</h3>
+      <p>The calculation <code>ps * R</code> is computationally expensive. To speed this up, the sender also derives a 1-byte <strong>View Tag</strong> from the shared secret (<code>tag = Hs("view_tag" || s)</code>). The wallet first checks this tag. If it doesn't match, it can skip the expensive decryption, discarding ~99.6% of all outputs almost instantly.</p>
+      <div class="mermaid">
+        sequenceDiagram
+          participant Alice
+          participant Blockchain
+          participant Bob
+          Alice->>Alice: Generate r, R = r*G
+          Alice->>Alice: s = Hs(r * Ps_Bob)
+          Alice->>Alice: Encrypt value & blinding with s
+          Alice->>Blockchain: Broadcast Tx (R, encrypted data)
+          Bob->>Blockchain: Scan Tx
+          Bob->>Bob: s' = Hs(ps * R)
+          Bob->>Bob: Decrypt if s' matches, add to UTXO
+      </div>
+    </div>
+  </details>
+  <details>
+    <summary>Anonymous Broadcasting (Dandelion)</summary>
+    <div class="details-content">
+      <p>To hide a transaction's origin IP, nodes use Dandelion propagation.</p>
+      <ul>
+        <li><strong>Stem Phase:</strong> When a node creates a transaction, it doesn't broadcast it. Instead, it sends it to *one* randomly chosen peer. This peer has a 90% chance (<code>STEM_PROBABILITY</code>) to pass it to *one* other peer, and so on. This is the "stem" phase.</li>
+        <li><strong>Fluff Phase:</strong> Eventually, a node will, by 10% chance, "fluff" the transaction, broadcasting it to all its peers. This breaks the link between the transaction and its origin, making IP-based surveillance difficult.</li>
+      </ul>
+      <div class="mermaid">
+        graph LR
+          A[Originator] -- Stem --> B[Peer 1]
+          B -- Stem 90% --> C[Peer 2]
+          B -- Fluff 10% --> D[Broadcast]
+          C -- Stem 90% --> E[Peer 3]
+          C -- Fluff 10% --> F[Broadcast]
+          style A fill:#f66,stroke:#333
+          style D fill:#cfc,stroke:#333
+          style F fill:#cfc,stroke:#333
+      </div>
+    </div>
+  </details>
+ 
+<details>
+    <summary>A Lighter Chain (Block-level Cut-through)</summary>
+    <div class="details-content">
+      <p>To keep the blockchain small and efficient, pluriƀit performs "cut-through" at the block level. This is a process of removing redundant, internal transaction data before the block is finalized.</p>
+      <ol>
+        <li>First, the coinbase transaction (the miner's reward) is isolated.</li>
+        <li>The node finds all "internal spends" — outputs that are created and spent *within the same block*.</li>
+        <li>These internal inputs and outputs (which cancel each other out) are removed.</li>
+        <li>All remaining (non-coinbase) transactions are combined into a single <strong>aggregated transaction</strong> for that block. This transaction contains only the external inputs and the final, unspent outputs.</li>
+        <li>All transaction kernels are then <strong>concatenated</strong> into this single aggregated transaction.</li>
+      </ol>
+     
+      <h3>Design Choice: Concatenation vs. Aggregation</h3>
+      <p>
+        This is a key difference from other Mimblewimble protocols like Grin, which <strong>aggregate</strong> kernels. Aggregating kernels (cryptographically combining them into one) requires an interactive process where all transaction participants must cooperate to build the final, combined kernel.
+      </p>
+      <p>
+        pluriƀit <strong>concatenates</strong> kernels (simply listing them one after another) to specifically <strong>remove this need for interactivity</strong>. This design is what enables non-interactive Stealth Address payments, allowing a sender to create and broadcast a transaction at any time without the receiver needing to be online. This approach maintains the cryptographic balance (<code>Sum(Inputs) = Sum(Outputs) + Kernels</code>), full supply auditability and non-interactive payments.
+      </p>
+      <div class="mermaid">
+        graph TD
+          A[Block with Txns] --> B[Isolate Coinbase]
+          A --> C[Find Internal Spends]
+          C --> D[Remove Internal I/O]
+          D --> E[Aggregate Remaining Txns]
+          E --> F[Concatenate Kernels]
+          F --> G[Final Block]
+          style A fill:#f9f,stroke:#333
+          style G fill:#cfc,stroke:#333
+      </div>
+    </div>
+  </details>
 </section>
-
+<section>
+  <h2>Game Theory & Economics</h2>
+  <p>The protocol's monetary policy and consensus stability are governed by two key mechanisms that work in tandem.</p>
+  <details>
+    <summary>Coin Issuance & Supply Schedule</summary>
+    <div class="details-content">
+      <h3>How New Coins are Created</h3>
+      <p>
+        New coins are created in the first transaction of every block, known as the <strong>Coinbase Transaction</strong>. This transaction has no inputs and creates new value, which is assigned to the block producer as their reward.
+      </p>
+      <p>
+        The smallest unit of account is a "bit". <strong>1 pluriƀit (ƀ) = 100,000,000 bits</strong>.
+      </p>
+     
+      <h3>The Block Reward</h3>
+      <p>The number of new bits created in each block follows a fixed, predictable schedule:</p>
+      <ul>
+        <li><strong>Initial Reward:</strong> The starting reward is <strong>50,000,000 bits</strong> (0.5 ƀ) per block.</li>
+        <li><strong>Halving:</strong> This reward is cut in half every <strong>525,600 blocks</strong> (approximately every 6 months).</li>
+        <li><strong>Reward Era:</strong> This halving cycle continues for approximately 5 years (5,256,000 blocks). After this "Reward Era" is complete, the entire schedule resets, starting a new era with the initial reward.</li>
+      </ul>
+      <h3>Auditable Supply</h3>
+      <p>
+        This deterministic schedule makes the total supply fully predictable and auditable. The total supply at any given time is simply the sum of all base block rewards from block 1 to the current height.
+      </p>
+      <p>
+        <strong>Transaction fees are not new coins</strong>. They are existing bits transferred from the user to the block producer. The coinbase transaction's output is therefore <code>Total Reward = Base Reward + Total Fees</code>, but only the <code>Base Reward</code> portion represents new issuance.
+      </p>
+      <h3>Visualization: Block Reward and Cumulative Supply</h3>
+      <canvas id="issuanceChart" width="800" height="400"></canvas>
+    </div>
+  </details>
+  <details>
+    <summary>How Difficulty is Adjusted</summary>
+    <div class="details-content">
+      <h3>Why Adjust Difficulty?</h3>
+      <p>
+        The network needs to maintain a stable average block time (Target: 30 seconds). If new producers join the network, blocks will be found faster. If producers leave, blocks will be found slower. The difficulty adjustment mechanism automatically corrects for this.
+      </p>
+      <p>
+        In pluriƀit, this adjustment happens every <strong>12 blocks</strong> (the <code>DIFFICULTY_ADJUSTMENT_INTERVAL</code>). The network uses a two-pronged approach:
+      </p>
+     
+      <h3>1. Adjusting the "Work": VDF Iterations</h3>
+      <p>This part adjusts the *time and effort* required for each lottery attempt.</p>
+      <ul>
+        <li>The network measures the actual time it took to produce the last 12 blocks (<code>actual_timespan = end_block.timestamp - start_block.timestamp</code>).</li>
+        <li>It compares this to the target time (<code>target_timespan = 12 * 30 seconds</code>).</li>
+        <li><strong>If blocks were too fast</strong> (<code>actual_timespan < target_timespan</code>), the <code>vdf_iterations</code> are <strong>increased</strong>. This makes the VDF computation take longer, slowing down block production.</li>
+        <li><strong>If blocks were too slow</strong>, the <code>vdf_iterations</code> are <strong>decreased</strong>.</li>
+        <li>This adjustment is clamped (e.g., to a maximum 4x change) to prevent extreme swings from timestamp manipulation.</li>
+      </ul>
+      <h3>2. Adjusting the "Odds": VRF Threshold</h3>
+      <p>This part adjusts the *probability* of winning the lottery with any given attempt.</p>
+      <ul>
+        <li><strong>If blocks were too fast</strong>, the <code>vrf_threshold</code> is <strong>lowered</strong>. This is like making the winning lottery numbers rarer, making it harder to win.</li>
+        <li><strong>If blocks were too slow</strong>, the <code>vrf_threshold</code> is <strong>raised</strong>, making it easier to win.</li>
+      </ul>
+      <p>By adjusting both the <strong>time per attempt (VDF)</strong> and the <strong>odds of winning (VRF)</strong>, the network dynamically and robustly targets a stable 30-second block time.</p>
+      <h3>Visualization: Hypothetical Difficulty Adjustment</h3>
+      <canvas id="difficultyChart" width="800" height="400"></canvas>
+    </div>
+  </details>
+</section>
+<section>
+  <h2>A Modern, Hybrid Architecture</h2>
+ 
+  <details>
+    <summary>Secure Core: Rust + Wasm</summary>
+    <div class="details-content">
+      <p>pluriƀit uses a hybrid design for security and performance. The core cryptography, consensus rules, and state logic are written in <strong>Rust</strong>. This core is compiled to <strong>WebAssembly (Wasm)</strong>, creating a secure, high-performance, and verifiable execution environment that can run anywhere.</p>
+      <h3>Rust/Wasm Manages:</h3>
+      <ul>
+        <li>All cryptography (Mimblewimble, VDF, VRF, Stealth)</li>
+        <li>Consensus Rules (block & transaction validation)</li>
+        <li>State Logic (UTXO set, reorgs, supply audit)</li>
+        <li>Wallet key management and transaction creation</li>
+      </ul>
+      <div class="mermaid">
+        graph TD
+          Rust[Rust Core] -->|Compile| Wasm[Wasm Module]
+          Wasm --> Crypto[Cryptography]
+          Wasm --> Consensus[Consensus Rules]
+          Wasm --> State[State Logic]
+          Wasm --> Wallet[Wallet Management]
+      </div>
+    </div>
+  </details>
+  <details>
+    <summary>Orchestration Layer: Node.js</summary>
+    <div class="details-content">
+      <p>This Wasm module is orchestrated by a <strong>Node.js</strong> runtime. The Node.js layer is responsible for all I/O and external communication, acting as the "host" for the secure Wasm core.</p>
+      <h3>Node.js Manages:</h3>
+      <ul>
+        <li>The libp2p network stack (connecting, gossiping, discovering peers)</li>
+        <li>All database interactions (LevelDB)</li>
+        <li>Coordinating the mining worker threads</li>
+        <li>The JSON API server and Command-Line Interface (CLI)</li>
+      </ul>
+      <div class="mermaid">
+graph TD
+      NodeJS[Node.js Runtime] -->|Hosts| Wasm[Wasm Core]
+      NodeJS --> Network[libp2p Network]
+      NodeJS --> DB["Database (LevelDB)"]
+      NodeJS --> Mining[Mining Workers]
+      NodeJS --> API[JSON API & CLI]
+      </div>
+    </div>
+  </details>
+  <details>
+    <summary>Networking: Pure libp2p</summary>
+    <div class="details-content">
+      <p>Nodes connect directly to each other over libp2p, using gossipsub for message propagation and the Kademlia DHT for peer discovery. With full support for NAT traversal and transports like <strong>WebRTC</strong>, <strong>TCP</strong>, and <strong>WebSockets</strong>, the network is robust and censorship-resistant.</p>
+      <div class="mermaid">
+        graph LR
+          Node1 -->|WebRTC| Node2
+          Node1 -->|TCP| Node3
+          Node2 -->|WebSockets| Node3
+          Node3 -->|Gossipsub| Node1
+          subgraph "Kademlia DHT"
+            Node1
+            Node2
+            Node3
+          end
+      </div>
+    </div>
+  </details>
+  <details>
+    <summary>Secure & Deterministic: Protobuf</summary>
+    <div class="details-content">
+      <p>All peer-to-peer messages and database entries use <strong>Protocol Buffers (Protobuf)</strong>. This is a secure, efficient, and unambiguous binary format that provides a strict contract for all communication. This eliminates a wide range of text-based parsing vulnerabilities (like JSON Prototype Pollution) and ensures all nodes, regardless of platform, reach identical consensus.</p>
+    </div>
+  </details>
+</section>
+<section>
+  <h2>Ecosystem & Tools</h2>
+ 
+  <details>
+    <summary>Command-Line Interface (CLI)</summary>
+    <div class="details-content">
+      <p>The node runs with a full command-line interface (CLI). You can create and restore wallets from a 12-word mnemonic phrase, load them into an active session, check your balance, start and stop the miner, and send private transactions.</p>
+    </div>
+  </details>
+<details>
+    <summary>Built-in Block Explorer & Live API</summary>
+    <div class="details-content">
+      <p>
+        pluriƀit comes with a secure, full-featured block explorer right out of the box. It runs as a separate, lightweight web server (on port 3000 by default) that provides a clean user interface for monitoring the network in real-time.
+      </p>
+      <h3>Explorer Features:</h3>
+      <ul>
+        <li><strong>Live Dashboard:</strong> View network stats like block height, total work, and UTXO count as they happen.</li>
+        <li><strong>Block Train:</strong> See new blocks roll in with a live-updating "block train" visual.</li>
+        <li><strong>Difficulty Charts:</strong> Visualize the network's VDF iterations and VRF threshold adjustments over time.</li>
+        <li><strong>Mempool Viewer:</strong> Inspect pending transactions, fees, and network congestion.</li>
+        <li><strong>Deep Search:</strong> Find any block by its height or hash, or look up a transaction by its hash to see where it was included.</li>
+      </ul>
+     
+      <h3>Powered by the JSON API</h3>
+      <p>
+        The explorer uses the node's robust JSON API (running on port 3001), which is also available for any other developer to build ecosystem tools, wallets, or monitoring services. Available endpoints include:
+      </p>
+      <ul>
+        <li><code>/api/stats</code>: Get current height, total work, and tip hash.</li>
+        <li><code>/api/mempool</code>: See pending transactions and total fees.</li>
+        <li><code>/api/block/[height]</code>: Get full block data for a specific height.</li>
+        <li><code>/api/block/hash/[hash]</code>: Find a block by its hash.</li>
+        <li><code>/api/tx/[tx_hash]</code>: Find which block a transaction was included in.</li>
+        <li><code>/api/blocks/recent</code>: Get a summary of the most recent blocks.</li>
+        <li><code>/api/metrics/difficulty</code>: Get historical data for difficulty charts.</li>
+      </ul>
+    </div>
+  </details>
+</section>
+<section>
+  <h2>Disclaimer</h2>
+  <p>This is an experimental project built to explore new concepts in cryptocurrency design. It is <strong>not intended for production use</strong> and should not be used to store value. The code is provided as-is for educational and research purposes.</p>
+</section>
 <footer>
   pluriƀit — plurality, privacy, accessibility.
 </footer>
-
 <script>
 console.log("pluriƀit landing page loaded.");
-</script>
+mermaid.initialize({ startOnLoad: true });
+// Add visible class to sections on load
+document.addEventListener('DOMContentLoaded', () => {
+  const sections = document.querySelectorAll('section');
+  sections.forEach((section, index) => {
+    setTimeout(() => {
+      section.classList.add('visible');
+    }, index * 200);
+  });
 
+  // Coin issuance chart
+  const issuanceCtx = document.getElementById('issuanceChart');
+  if (issuanceCtx) {
+    const halvingInterval = 525600;
+    const eraBlocks = 5256000;
+    const initialReward = 0.5; // in ƀ per block
+    const numEras = 2; // Visualize two eras
+    const numIntervals = Math.floor(eraBlocks / halvingInterval) * numEras;
+
+    const labels = [];
+    const rewards = [];
+    const supplies = [];
+    let currentReward = initialReward;
+    let totalSupply = 0;
+    let block = 0;
+
+    for (let i = 0; i < numIntervals; i++) {
+      labels.push(`Interval ${i + 1}`);
+      rewards.push(currentReward);
+      const intervalSupply = currentReward * halvingInterval;
+      totalSupply += intervalSupply;
+      supplies.push(totalSupply);
+
+      block += halvingInterval;
+      currentReward /= 2;
+
+      if (block >= eraBlocks && (block % eraBlocks === 0)) {
+        currentReward = initialReward;
+      }
+    }
+
+    new Chart(issuanceCtx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Block Reward (ƀ)',
+            data: rewards,
+            backgroundColor: 'rgba(78, 205, 196, 0.6)',
+            borderColor: 'rgba(78, 205, 196, 1)',
+            borderWidth: 1,
+            yAxisID: 'y',
+          },
+          {
+            type: 'line',
+            label: 'Cumulative Supply (ƀ)',
+            data: supplies,
+            backgroundColor: 'rgba(255, 107, 107, 0.2)',
+            borderColor: 'rgba(255, 107, 107, 1)',
+            borderWidth: 2,
+            fill: true,
+            yAxisID: 'y1',
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: {
+            stacked: true,
+          },
+          y: {
+            type: 'linear',
+            display: true,
+            position: 'left',
+            title: {
+              display: true,
+              text: 'Block Reward (ƀ)'
+            },
+          },
+          y1: {
+            type: 'linear',
+            display: true,
+            position: 'right',
+            title: {
+              display: true,
+              text: 'Cumulative Supply (ƀ)'
+            },
+            grid: {
+              drawOnChartArea: false,
+            },
+          }
+        }
+      }
+    });
+  }
+
+  // Difficulty adjustment chart
+  const difficultyCtx = document.getElementById('difficultyChart');
+  if (difficultyCtx) {
+    // Hypothetical data for illustration, with steps every 12 blocks
+    const blockNumbers = [];
+    const vdfIterations = [];
+    const vrfThreshold = [];
+    const intervals = 6;
+    const blocksPerInterval = 12;
+    let currentVdf = 1000;
+    let currentVrf = 0.5;
+    for (let i = 0; i < intervals; i++) {
+      // Adjust at the start of each interval
+      const adjustment = (Math.random() - 0.5) * 200; // Random adjustment for demo
+      currentVdf += adjustment;
+      currentVrf += (Math.random() - 0.5) * 0.1;
+      currentVrf = Math.max(0.1, Math.min(0.9, currentVrf));
+      // Flat line for 12 blocks
+      for (let j = 0; j < blocksPerInterval; j++) {
+        const block = i * blocksPerInterval + j + 1;
+        blockNumbers.push(`Block ${block}`);
+        vdfIterations.push(currentVdf);
+        vrfThreshold.push(currentVrf);
+      }
+    }
+
+    new Chart(difficultyCtx, {
+      type: 'line',
+      data: {
+        labels: blockNumbers,
+        datasets: [
+          {
+            label: 'VDF Iterations',
+            data: vdfIterations,
+            borderColor: 'rgba(78, 205, 196, 1)',
+            backgroundColor: 'rgba(78, 205, 196, 0.2)',
+            fill: true,
+            yAxisID: 'y',
+            stepped: 'after',
+          },
+          {
+            label: 'VRF Threshold',
+            data: vrfThreshold,
+            borderColor: 'rgba(255, 107, 107, 1)',
+            backgroundColor: 'rgba(255, 107, 107, 0.2)',
+            fill: true,
+            yAxisID: 'y1',
+            stepped: 'after',
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            type: 'linear',
+            display: true,
+            position: 'left',
+            title: {
+              display: true,
+              text: 'VDF Iterations'
+            },
+          },
+          y1: {
+            type: 'linear',
+            display: true,
+            position: 'right',
+            title: {
+              display: true,
+              text: 'VRF Threshold'
+            },
+            grid: {
+              drawOnChartArea: false,
+            },
+          }
+        }
+      }
+    });
+  }
+});
+</script>
 </body>
 </html>
