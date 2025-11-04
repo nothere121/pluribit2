@@ -109,7 +109,7 @@ export class PluribitP2P {
         this.log = log;
         this.node = null;
         this.handlers = new Map();
-        this.isBootstrap = options.isBootstrap || false;
+        this.isBootstrap = options.isBootstrap || (process.env.PLURIBIT_IS_BOOTSTRAP === 'true');
         this._peerChallenges = new Map(); // peer -> {challenge, timestamp, attempts}
         this._maxChallengeAttempts = 3;
         this._challengeDifficulty = '00000'; // Require 5 leading zeros in PoW (i.e. 1 in 16^5, or 1 in 1,048,576 hashes)
