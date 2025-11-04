@@ -18,7 +18,7 @@ import { gossipsub } from '@chainsafe/libp2p-gossipsub';
 import { bootstrap } from '@libp2p/bootstrap';
 import { identify } from '@libp2p/identify';
 import { ping } from '@libp2p/ping'; 
-import { createEd25519PeerId, createFromPubKey } from '@libp2p/peer-id-factory';
+import { createEd25519PeerId, createFromPubKey, createFromPrivKey } from '@libp2p/peer-id-factory';
 import { fromString as uint8ArrayFromString } from 'uint8arrays/from-string';
 import { toString as uint8ArrayToString } from 'uint8arrays/to-string';
 import bridge from './js_bridge.cjs';
@@ -1019,14 +1019,13 @@ async loadOrCreatePeerId() {
             const data = await fs.readFile(peerIdPath, 'utf-8');
             const stored = JSON.parse(data);
             
-            // Load using the private key bytes
-            const privKeyBytes = uint8ArrayFromString(stored.privKey, 'base64');
-            const peerId = await createEd25519PeerId({ privateKey: privKeyBytes });
+            // Import the marshalled key using libp2p's crypto utilities
+            const { unmarshalPrivateKey } = await import('@libp2p/crypto/keys');
+            const keyBytes = uint8ArrayFromString(stored.privKey, 'base64');
+            const privateKey = await unmarshalPrivateKey(keyBytes);
             
-            // Verify it matches the expected ID
-            if (peerId.toString() !== stored.id) {
-                this.log(`[P2P] WARNING: Loaded peer ID ${peerId.toString()} doesn't match stored ID ${stored.id}`, 'warn');
-            }
+            // Create peer ID from the unmarshalled private key
+            const peerId = await createFromPrivKey(privateKey);
             
             this.log(`[P2P] Successfully loaded permanent bootstrap ID: ${peerId.toString()}`, 'success');
             return peerId;
@@ -1040,53 +1039,59 @@ async loadOrCreatePeerId() {
     }
     
     // --- MINER: Load or create local key from file ---
-try {
-    await fs.mkdir('./pluribit-data', { recursive: true });
-    this.log('[P2P] Attempting to load peer-id.json...', 'debug');
-    
-    const data = await fs.readFile(peerIdPath, 'utf-8');
-    this.log('[P2P] File read successfully', 'debug');
-    
-    const stored = JSON.parse(data);
-    this.log(`[P2P] JSON parsed, ID: ${stored.id}`, 'debug');
+    try {
+        await fs.mkdir('./pluribit-data', { recursive: true });
+        this.log('[P2P] Attempting to load peer-id.json...', 'debug');
+        
+        const data = await fs.readFile(peerIdPath, 'utf-8');
+        this.log('[P2P] File read successfully', 'debug');
+        
+        const stored = JSON.parse(data);
+        this.log(`[P2P] JSON parsed, stored ID: ${stored.id}`, 'debug');
 
-    // Load using the private key bytes
-    const privKeyBytes = uint8ArrayFromString(stored.privKey, 'base64');
-    this.log(`[P2P] Private key decoded, ${privKeyBytes.length} bytes`, 'debug');
-    
-    const peerId = await createEd25519PeerId({ privateKey: privKeyBytes });
-    this.log(`[P2P] PeerId created: ${peerId.toString()}`, 'debug');
-    
-    // Verify it matches
-    if (peerId.toString() !== stored.id) {
-        this.log(`[P2P] WARNING: Loaded peer ID ${peerId.toString()} doesn't match stored ID ${stored.id}. Regenerating...`, 'warn');
-        throw new Error('ID mismatch - will regenerate');
-    }
-    
-    this.log(`[P2P] Loaded existing peer ID: ${peerId.toString()}`, 'info');
-    return peerId;
-    
-} catch (e) {
-    // Log the actual error to see what's failing
-    this.log(`[P2P] Failed to load peer ID: ${e.message}`, 'debug');
-    this.log(`[P2P] Error details: ${e.stack}`, 'debug');
-    
-    // Create new peer ID
-    this.log('[P2P] Creating new peer ID...', 'info');
+        // Import the marshalled key using libp2p's crypto utilities
+        const { unmarshalPrivateKey } = await import('@libp2p/crypto/keys');
+        const keyBytes = uint8ArrayFromString(stored.privKey, 'base64');
+        this.log(`[P2P] Key bytes decoded, ${keyBytes.length} bytes`, 'debug');
+        
+        const privateKey = await unmarshalPrivateKey(keyBytes);
+        this.log(`[P2P] Private key unmarshalled successfully`, 'debug');
+        
+        // Create peer ID from the unmarshalled private key
+        const peerId = await createFromPrivKey(privateKey);
+        this.log(`[P2P] PeerId created from key: ${peerId.toString()}`, 'debug');
+        
+        // Verify it matches what we stored
+        if (peerId.toString() !== stored.id) {
+            this.log(`[P2P] WARNING: Generated ID ${peerId.toString()} doesn't match stored ID ${stored.id}`, 'warn');
+            this.log(`[P2P] This might indicate key corruption. Regenerating...`, 'warn');
+            throw new Error('ID mismatch - regenerating');
+        }
+        
+        this.log(`[P2P] Successfully loaded existing peer ID: ${peerId.toString()}`, 'info');
+        return peerId;
+        
+    } catch (e) {
+        this.log(`[P2P] Failed to load existing peer ID: ${e.message}`, 'debug');
+        
+        // Create new peer ID
+        this.log('[P2P] Creating new peer ID...', 'info');
         const peerId = await createEd25519PeerId();
         
-        // Get the marshalled private key (this is the full 64-byte key)
-        const privKeyBytes = peerId.privateKey;
-        const pubKeyBytes = peerId.publicKey;
-        
-        if (!privKeyBytes || !pubKeyBytes) {
-            throw new Error('Generated PeerId missing key material');
+        if (!peerId.privateKey) {
+            throw new Error('Generated PeerId missing private key');
         }
+        
+        // Marshal the private key properly using libp2p's utilities
+        const { marshalPrivateKey, unmarshalPrivateKey } = await import('@libp2p/crypto/keys');
+        
+        // The privateKey property is already a Uint8Array of the marshalled key
+        const marshalledKey = peerId.privateKey;
         
         const data = {
             id: peerId.toString(),
-            privKey: uint8ArrayToString(privKeyBytes, 'base64'),
-            pubKey: uint8ArrayToString(pubKeyBytes, 'base64')
+            privKey: uint8ArrayToString(marshalledKey, 'base64'),
+            pubKey: uint8ArrayToString(peerId.publicKey, 'base64')
         };
         
         await fs.writeFile(peerIdPath, JSON.stringify(data, null, 2), { mode: 0o600 });
