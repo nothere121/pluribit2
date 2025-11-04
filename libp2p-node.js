@@ -1010,51 +1010,48 @@ export class PluribitP2P {
     }
 
     async loadOrCreatePeerId() {
-        // --- BOOTSTRAP: Load permanent key from environment ---
-        if (this.isBootstrap) {
-            this.log('[P2P] Attempting to load permanent bootstrap PeerID from environment...');
-            const PERMANENT_KEY_BASE64 = process.env.BOOTSTRAP_KEY;
+        const peerIdPath = './pluribit-data/peer-id.json';
 
-            if (!PERMANENT_KEY_BASE64) {
-                this.log('[P2P] FATAL: BOOTSTRAP_KEY environment variable is not set.', 'error');
-                this.log('[P2P] A bootstrap node MUST have a permanent key.', 'error');
-                process.exit(1);
-            }
-            
+        // --- BOOTSTRAP: MUST load from file ---
+        if (this.isBootstrap) {
+            this.log('[P2P] Attempting to load permanent bootstrap PeerID from file...');
             try {
-                const peerId = await createEd25519PeerId({
-                    privateKey: uint8ArrayFromString(PERMANENT_KEY_BASE64, 'base64')
-                });
+                const data = await fs.readFile(peerIdPath, 'utf-8');
+                const stored = JSON.parse(data);
+                
+                // Load the full 64-byte key from the file.
+                const fullMarshalledKey = uint8ArrayFromString(stored.privKey, 'base64');
+                const peerId = await createEd25519PeerId({ privateKey: fullMarshalledKey });
+                
                 this.log(`[P2P] Successfully loaded permanent bootstrap ID: ${peerId.toString()}`, 'success');
                 return peerId;
+
             } catch (e) {
-                this.log(`[P2P] FATAL: Failed to parse BOOTSTRAP_KEY: ${e.message}`, 'error');
+                this.log('[P2P] FATAL: Could not load "peer-id.json".', 'error');
+                this.log('[P2P] A bootstrap node MUST have a "peer-id.json" file.', 'error');
+                this.log('[P2P] Run this node without PLURIBIT_IS_BOOTSTRAP="true" once to generate one.', 'error');
                 process.exit(1);
             }
         }
         
-        // --- MINER: Load/create local key from file  ---
-        // This logic is unchanged
-        const peerIdPath = './pluribit-data/peer-id.json';
+        // --- MINER: Load or create local key from file (your original logic) ---
         try {
             await fs.mkdir('./pluribit-data', { recursive: true });
             const data = await fs.readFile(peerIdPath, 'utf-8');
             const stored = JSON.parse(data);
-            return await createEd25519PeerId({
-                privateKey: uint8ArrayFromString(stored.privKey, 'base64')
-            });
+            const fullMarshalledKey = uint8ArrayFromString(stored.privKey, 'base64');
+            return await createEd25519PeerId({ privateKey: fullMarshalledKey });
         } catch {
             const peerId = await createEd25519PeerId();
-            const privKey = peerId.privateKey;
+            const fullMarshalledKey = peerId.privateKey; // The 64-byte key
             const pubKey = peerId.publicKey;
-            if (!privKey || !pubKey) {
-                throw new Error('Failed to create peer ID with keys');
-            }
+            
             const data = {
                 id: peerId.toString(),
-                privKey: uint8ArrayToString(privKey, 'base64'),
+                privKey: uint8ArrayToString(fullMarshalledKey, 'base64'), // Save the 64-byte key
                 pubKey: uint8ArrayToString(pubKey, 'base64')
             };
+            
             await fs.writeFile(peerIdPath, JSON.stringify(data, null, 2), { mode: 0o600 });
             try { await fs.chmod(peerIdPath, 0o600); } catch {}
             this.log('[P2P] Created new local peer ID');

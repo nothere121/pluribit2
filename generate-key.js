@@ -5,10 +5,15 @@ import { toString as uint8ArrayToString } from 'uint8arrays/to-string';
 async function generate() {
   console.log('Generating new permanent PeerID...');
   const peerId = await createEd25519PeerId();
-  const privKey = peerId.privateKey;
   
-  if (!privKey) {
-    console.error('Failed to generate key!');
+  // --- THIS IS THE FIX ---
+  // The private key is directly on the peerId object.
+  // We access .privateKey.bytes, not .keypair.privateKey.bytes
+  const rawPrivKey = peerId.privateKey.bytes;
+  // --- END FIX ---
+
+  if (!rawPrivKey || rawPrivKey.length !== 32) {
+    console.error('Failed to generate 32-byte raw private key!');
     return;
   }
 
@@ -16,8 +21,8 @@ async function generate() {
   console.log('Your new permanent PeerID is:');
   console.log(peerId.toString());
   
-  console.log('\nYour permanent Private Key (base64) is:');
-  console.log(uint8ArrayToString(privKey, 'base64'));
+  console.log('\nYour permanent 32-byte Private Key (base64) is:');
+  console.log(uint8ArrayToString(rawPrivKey, 'base64'));
   
   console.log('\nCopy these values and save them somewhere safe.');
 }
