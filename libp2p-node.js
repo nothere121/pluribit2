@@ -720,15 +720,21 @@ export class PluribitP2P {
         // --- END MODIFICATION ---
 
         const peerId = await this.loadOrCreatePeerId();
-        // Create libp2p node
-        this.node = await createLibp2p({
-            peerId,
-            addresses: {
-                listen: [
-                    `/ip4/0.0.0.0/tcp/${this.config.listen.tcp}`,
-                    `/ip4/0.0.0.0/tcp/${this.config.listen.ws}/ws`
-                ]
-            },
+    // ADD THESE DEBUG LINES:
+    this.log(`[P2P DEBUG] loadOrCreatePeerId returned: ${peerId.toString()}`, 'debug');
+    this.log(`[P2P DEBUG] Has privateKey: ${!!peerId.privateKey}`, 'debug');
+    this.log(`[P2P DEBUG] Has publicKey: ${!!peerId.publicKey}`, 'debug');
+    this.log(`[P2P DEBUG] Type: ${peerId.type}`, 'debug');
+    
+    // Create libp2p node
+    this.node = await createLibp2p({
+        peerId,
+        addresses: {
+            listen: [
+                `/ip4/0.0.0.0/tcp/${this.config.listen.tcp}`,
+                `/ip4/0.0.0.0/tcp/${this.config.listen.ws}/ws`
+            ]
+        },
             transports: [
                 tcp(),
                 webSockets(),
@@ -802,7 +808,10 @@ export class PluribitP2P {
         // Start the node
         await this.node.start();
         this.log(`[P2P] Node started with ID: ${this.node.peerId.toString()}`);
-
+this.log(`[P2P DEBUG] Node peerId matches loaded peerId: ${this.node.peerId.toString() === peerId.toString()}`, 'debug');
+if (this.node.peerId.toString() !== peerId.toString()) {
+    this.log(`[P2P ERROR] MISMATCH! Loaded: ${peerId.toString()}, Node using: ${this.node.peerId.toString()}`, 'error');
+}
         // Self-verify for loopback messages (emitSelf: true in gossipsub)
         this._updateVerificationState(this.node.peerId.toString(), { 
             powSolved: true, 
