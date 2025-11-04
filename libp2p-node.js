@@ -1009,18 +1009,21 @@ export class PluribitP2P {
         return this.node;
     }
 
-    async loadOrCreatePeerId() {
+async loadOrCreatePeerId() {
         const peerIdPath = './pluribit-data/peer-id.json';
 
-        // --- BOOTSTRAP: MUST load from file ---
+        // --- BOOTSTRAP: Load permanent key from file ---
         if (this.isBootstrap) {
             this.log('[P2P] Attempting to load permanent bootstrap PeerID from file...');
             try {
                 const data = await fs.readFile(peerIdPath, 'utf-8');
                 const stored = JSON.parse(data);
                 
-                // Load the full 64-byte key from the file.
+                // --- FIX ---
+                // Load the 64-byte key from the 'privKey' field
                 const fullMarshalledKey = uint8ArrayFromString(stored.privKey, 'base64');
+                // --- END FIX ---
+
                 const peerId = await createEd25519PeerId({ privateKey: fullMarshalledKey });
                 
                 this.log(`[P2P] Successfully loaded permanent bootstrap ID: ${peerId.toString()}`, 'success');
@@ -1034,23 +1037,32 @@ export class PluribitP2P {
             }
         }
         
-        // --- MINER: Load or create local key from file (your original logic) ---
+        // --- MINER: Load or create local key from file ---
         try {
             await fs.mkdir('./pluribit-data', { recursive: true });
             const data = await fs.readFile(peerIdPath, 'utf-8');
             const stored = JSON.parse(data);
+
+            // --- FIX ---
+            // Load the 64-byte key from the 'privKey' field
             const fullMarshalledKey = uint8ArrayFromString(stored.privKey, 'base64');
+            // --- END FIX ---
+            
             return await createEd25519PeerId({ privateKey: fullMarshalledKey });
         } catch {
             const peerId = await createEd25519PeerId();
-            const fullMarshalledKey = peerId.privateKey; // The 64-byte key
+            
+            // --- FIX ---
+            // Save the 64-byte key as 'privKey'
+            const fullMarshalledKey = peerId.privateKey; 
             const pubKey = peerId.publicKey;
             
             const data = {
                 id: peerId.toString(),
-                privKey: uint8ArrayToString(fullMarshalledKey, 'base64'), // Save the 64-byte key
+                privKey: uint8ArrayToString(fullMarshalledKey, 'base64'), // Save as 'privKey'
                 pubKey: uint8ArrayToString(pubKey, 'base64')
             };
+            // --- END FIX ---
             
             await fs.writeFile(peerIdPath, JSON.stringify(data, null, 2), { mode: 0o600 });
             try { await fs.chmod(peerIdPath, 0o600); } catch {}
