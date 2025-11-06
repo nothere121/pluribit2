@@ -685,6 +685,7 @@ $root.p2p = (function() {
          * @interface IChallenge
          * @property {string|null} [challenge] Challenge challenge
          * @property {string|null} [from] Challenge from
+         * @property {string|null} [difficulty] Challenge difficulty
          */
 
         /**
@@ -719,6 +720,14 @@ $root.p2p = (function() {
         Challenge.prototype.from = "";
 
         /**
+         * Challenge difficulty.
+         * @member {string} difficulty
+         * @memberof p2p.Challenge
+         * @instance
+         */
+        Challenge.prototype.difficulty = "";
+
+        /**
          * Creates a new Challenge instance using the specified properties.
          * @function create
          * @memberof p2p.Challenge
@@ -746,6 +755,8 @@ $root.p2p = (function() {
                 writer.uint32(/* id 1, wireType 2 =*/10).string(message.challenge);
             if (message.from != null && Object.hasOwnProperty.call(message, "from"))
                 writer.uint32(/* id 2, wireType 2 =*/18).string(message.from);
+            if (message.difficulty != null && Object.hasOwnProperty.call(message, "difficulty"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.difficulty);
             return writer;
         };
 
@@ -790,6 +801,10 @@ $root.p2p = (function() {
                         message.from = reader.string();
                         break;
                     }
+                case 3: {
+                        message.difficulty = reader.string();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -831,6 +846,9 @@ $root.p2p = (function() {
             if (message.from != null && message.hasOwnProperty("from"))
                 if (!$util.isString(message.from))
                     return "from: string expected";
+            if (message.difficulty != null && message.hasOwnProperty("difficulty"))
+                if (!$util.isString(message.difficulty))
+                    return "difficulty: string expected";
             return null;
         };
 
@@ -850,6 +868,8 @@ $root.p2p = (function() {
                 message.challenge = String(object.challenge);
             if (object.from != null)
                 message.from = String(object.from);
+            if (object.difficulty != null)
+                message.difficulty = String(object.difficulty);
             return message;
         };
 
@@ -869,11 +889,14 @@ $root.p2p = (function() {
             if (options.defaults) {
                 object.challenge = "";
                 object.from = "";
+                object.difficulty = "";
             }
             if (message.challenge != null && message.hasOwnProperty("challenge"))
                 object.challenge = message.challenge;
             if (message.from != null && message.hasOwnProperty("from"))
                 object.from = message.from;
+            if (message.difficulty != null && message.hasOwnProperty("difficulty"))
+                object.difficulty = message.difficulty;
             return object;
         };
 

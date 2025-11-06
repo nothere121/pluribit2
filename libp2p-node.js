@@ -112,7 +112,15 @@ export class PluribitP2P {
         this.isBootstrap = options.isBootstrap || (process.env.PLURIBIT_IS_BOOTSTRAP === 'true');
         this._peerChallenges = new Map(); // peer -> {challenge, timestamp, attempts}
         this._maxChallengeAttempts = 3;
-        this._challengeDifficulty = '00000'; // Require 5 leading zeros in PoW (i.e. 1 in 16^5, or 1 in 1,048,576 hashes)
+        
+        // State for Dynamic Security ---
+        // Tracks IP addresses for exponential backoff on challenge failures
+        this._ipChallengeTracker = new Map(); // ip -> { failures: number, lastAttempt: number }
+        // Tracks connection attempts per minute for dynamic PoW
+        this._connectionAttempts = 0;
+        // The currently enforced PoW difficulty
+        this._currentChallengeDifficulty = CONFIG.P2P.DYNAMIC_POW.MIN_DIFFICULTY;
+
         // Periodic cleanup of stale challenges to prevent memory leak
         this._challengeGcTimer = setInterval(() => {
             const now = Date.now();
@@ -423,24 +431,39 @@ export class PluribitP2P {
      * @returns {Promise<boolean>}
      */
     async sendDirectChallenge(peerId) {
+        let connection;
+        let ip;
+
         try {
+            if (!this.node) throw new Error('Node not initialized');
+
+            // --- Get Connection and IP ---
+            const connections = this.node.getConnections();
+            connection = connections.find(c => c.remotePeer.toString() === peerId);
+            if (!connection) throw new Error('No connection to peer');
+            ip = this.getIpFromMultiaddr(connection.remoteAddr);
+            // --- End ---
+
             const challenge = crypto.randomBytes(32).toString('hex');
             
             this._peerChallenges.set(peerId, {
                 challenge,
                 timestamp: Date.now(),
                 attempts: 0
-            });
-            
-            if (!this.node) throw new Error('Node not initialized');
-            
-            const connections = this.node.getConnections();
-            const connection = connections.find(c => c.remotePeer.toString() === peerId);
-            if (!connection) throw new Error('No connection to peer');
+             });
             
             const stream = await connection.newStream('/pluribit/challenge/1.0.0');
             
-            const message = p2p.Challenge.create({ challenge, from: this.node.peerId.toString() });
+            // --- MODIFIED: Send CURRENT dynamic difficulty ---
+            const currentDifficulty = this._currentChallengeDifficulty;
+            const message = p2p.Challenge.create({ 
+                challenge, 
+                from: this.node.peerId.toString(),
+                // Tell the peer what difficulty they must solve
+                difficulty: currentDifficulty 
+            });
+            // --- END MODIFIED ---
+
             const encodedMessage = p2p.Challenge.encode(message).finish();
             
             await pipe([encodedMessage], stream.sink);
@@ -460,20 +483,54 @@ export class PluribitP2P {
                 .digest('hex');
             
             // @ts-ignore - protobuf message property access
-            if (verify === response.solution && (response.solution || '').startsWith(this._challengeDifficulty)) {
+            if (verify === response.solution && (response.solution || '').startsWith(currentDifficulty)) {
                 this._updateVerificationState(peerId, { powSolved: true, isSubscribed: undefined });
                 this._peerChallenges.delete(peerId);
-                this.log(`[P2P] ✓ Peer ${peerId} solved challenge`, 'success');
+                this.log(`[P2P] ✓ Peer ${peerId} solved challenge (difficulty: ${currentDifficulty.length})`, 'success');
+                
+                // --- NEW: On success, reset failure count for this IP ---
+                if (ip) {
+                    this._ipChallengeTracker.delete(ip);
+                }
+                // --- END NEW ---
+
                 return true;
             }
+
+            // --- NEW: On failure, increment failure count and hang up ---
+            this.log(`[P2P] ✗ Peer ${peerId} FAILED challenge (difficulty: ${currentDifficulty.length}). Hanging up.`, 'warn');
+            if (ip) {
+                const entry = this._ipChallengeTracker.get(ip) || { failures: 0, lastAttempt: Date.now() };
+                entry.failures++;
+                entry.lastAttempt = Date.now(); // Update last attempt time to start backoff
+                this._ipChallengeTracker.set(ip, entry);
+                this.log(`[SECURITY] IP ${ip} failure count incremented to ${entry.failures}.`, 'warn');
+            }
+            try { this.node.hangUp(peerId); } catch {}
+            // --- END NEW ---
             
             return false;
+
         } catch (e) {
             const err = /** @type {Error} */ (e);
             const msg = err?.message || '';
-            const isExpected = /protocol selection failed|No connection to peer/i.test(msg);
+            const isExpected = /protocol selection failed|No connection to peer|stream reset/i.test(msg);
             const logLevel = isExpected ? 'debug' : 'error';
             this.log(`[P2P] Failed to send challenge to ${peerId}: ${msg}`, logLevel);
+
+            // --- NEW: Punish failures from network errors too ---
+            if (ip && !isExpected) {
+                 const entry = this._ipChallengeTracker.get(ip) || { failures: 0, lastAttempt: Date.now() };
+                 entry.failures++;
+                 entry.lastAttempt = Date.now();
+                 this._ipChallengeTracker.set(ip, entry);
+                 this.log(`[SECURITY] IP ${ip} failure count incremented to ${entry.failures} due to challenge error.`, 'warn');
+                 if (connection) {
+                    try { connection.close(); } catch {}
+                 }
+            }
+            // --- END NEW ---
+
             return false;
         }
     }
@@ -787,10 +844,42 @@ export class PluribitP2P {
                     }
                 }),
 
-                pubsub: gossipsub({
+            pubsub: gossipsub({
                     // @ts-ignore - option name varies by version
                     allowPublishToZeroTopicPeers: true,
                     emitSelf: true,
+
+                    // --- NEW: Enable Peer Scoring ---
+                    // @ts-ignore - peer-scoring options
+                    scoreThresholds: {
+                        // Don't gossip to peers with a score below this
+                        gossipThreshold: CONFIG.P2P.GOSSIPSUB_SCORING.graftThreshold,
+                        // Don't publish to peers with a score below this
+                        publishThreshold: CONFIG.P2P.GOSSIPSUB_SCORING.pruneThreshold,
+                        // Required score to be seen as "good"
+                        seenThreshold: 0,
+                    },
+                    // @ts-ignore
+                    directPeers: [],
+                    // @ts-ignore
+                    peerScoreParams: {
+                        IPColocationFactorWeight: -10,
+                        IPColocationFactorThreshold: 5,
+                        // P7: Score limits
+                        scoreCap: CONFIG.P2P.GOSSIPSUB_SCORING.scoreCap,
+                        // P3b: Invalid message penalty
+                        invalidMessage: {
+                            penalty: CONFIG.P2P.GOSSIPSUB_SCORING.invalidMessagePenalty,
+                            cap: CONFIG.P2P.GOSSIPSUB_SCORING.scoreCap,
+                        },
+                        // P4: Duplicate message penalty
+                        duplicateMessage: {
+                            penalty: CONFIG.P2P.GOSSIPSUB_SCORING.duplicateMessagePenalty,
+                            cap: CONFIG.P2P.GOSSIPSUB_SCORING.scoreCap,
+                        },
+                        // Topic-specific parameters can be added here
+                    }
+                    // --- END NEW ---
                 }),
                 ping: ping(),
                 dcutr: dcutr(),
@@ -1031,6 +1120,34 @@ if (this.node.peerId.toString() !== peerId.toString()) {
             });
         }, CONFIG.P2P.RENDEZVOUS_DISCOVERY_INTERVAL_MS); // <-- USE THE CONFIG VALUE
         
+        // --- Dynamic PoW Adjustment Interval ---
+        setInterval(() => {
+            const rate = this._connectionAttempts;
+            this._connectionAttempts = 0; // Reset counter for the next minute
+
+            const { MIN_DIFFICULTY, MAX_DIFFICULTY, SURGE_THRESHOLD } = CONFIG.P2P.DYNAMIC_POW;
+            const minLen = MIN_DIFFICULTY.length;
+            const maxLen = MAX_DIFFICULTY.length;
+            let currentLen = this._currentChallengeDifficulty.length;
+
+            if (rate > SURGE_THRESHOLD) {
+                // Load increasing: increase difficulty
+                currentLen = Math.min(currentLen + 1, maxLen);
+                if (currentLen > this._currentChallengeDifficulty.length) {
+                    this._currentChallengeDifficulty = '0'.repeat(currentLen);
+                    this.log(`[SECURITY] Connection surge detected (${rate}/min). Increasing PoW difficulty to ${currentLen} zeros.`, 'warn');
+                }
+            } else if (rate < SURGE_THRESHOLD / 2) {
+                // Load decreasing: decrease difficulty
+                currentLen = Math.max(currentLen - 1, minLen);
+                if (currentLen < this._currentChallengeDifficulty.length) {
+                    this._currentChallengeDifficulty = '0'.repeat(currentLen);
+                    this.log(`[SECURITY] Network calm (${rate}/min). Reducing PoW difficulty to ${currentLen} zeros.`, 'info');
+                }
+            }
+        }, CONFIG.P2P.DYNAMIC_POW.ADJUSTMENT_INTERVAL_MS);
+               
+        
         return this.node;
     }
 
@@ -1154,6 +1271,25 @@ if (this.isBootstrap) {
         return state.powSolved && state.isSubscribed;
     }
 
+    /**
+     * Extracts an IP address (v4 or v6) from a multiaddr.
+     * @private
+     * @param {import('@multiformats/multiaddr').Multiaddr} ma
+     * @returns {string | null}
+     */
+    getIpFromMultiaddr(ma) {
+        try {
+            const tuples = ma.stringTuples();
+            // 4 = ip4, 41 = ip6
+            const ipTuple = tuples.find(t => t[0] === 4 || t[0] === 41);
+            return ipTuple ? ipTuple[1] : null;
+        } catch (e) {
+            this.log(`[SECURITY] Error parsing IP from multiaddr: ${e.message}`, 'warn');
+            return null;
+        }
+    }
+
+
     setupEventHandlers() {
         if (!this.node) return;
         
@@ -1219,7 +1355,38 @@ if (this.isBootstrap) {
         // Add connection events for debugging
         this.node.addEventListener('connection:open', (evt) => {
             const connection = evt.detail;
-            this.log(`[P2P] Connection opened to ${connection.remotePeer.toString()}`, 'debug');
+            const peerIdStr = connection.remotePeer.toString();
+            this.log(`[P2P] Connection opened to ${peerIdStr}`, 'debug');
+
+            // --- IP-Based Exponential Backoff ---
+            const ip = this.getIpFromMultiaddr(connection.remoteAddr);
+            if (!ip) {
+                this.log(`[SECURITY] Could not get IP for peer ${peerIdStr}, closing.`, 'warn');
+                try { connection.close(); } catch {}
+                return;
+            }
+
+            const now = Date.now();
+            const { BASE_BACKOFF_MS, MAX_BACKOFF_MS, MAX_FAILURES } = CONFIG.P2P.IP_BACKOFF;
+            const entry = this._ipChallengeTracker.get(ip) || { failures: 0, lastAttempt: 0 };
+
+            // Calculate backoff time: base * 2^failures, capped at max
+            const backoffTime = Math.min(
+                BASE_BACKOFF_MS * Math.pow(2, Math.min(entry.failures, MAX_FAILURES)),
+                MAX_BACKOFF_MS
+            );
+
+            if (now - entry.lastAttempt < backoffTime) {
+                this.log(`[SECURITY] IP ${ip} is in exponential backoff (${entry.failures} failures). Rejecting connection.`, 'warn');
+                try { connection.close(); } catch {}
+                return;
+            }
+            
+            // Mark this as the last attempt time (even if it fails later)
+            entry.lastAttempt = now;
+            this._ipChallengeTracker.set(ip, entry);
+            // Increment for dynamic PoW
+            this._connectionAttempts++;
         });
         
         this.node.addEventListener('connection:close', (evt) => {

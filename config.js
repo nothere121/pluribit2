@@ -1,6 +1,6 @@
 export const CONFIG = {
   // Network limits
-  MAX_MESSAGE_SIZE: 1024 * 1024, // 1mb: large enough for block headers, prevents memory bombs
+  MAX_MESSAGE_SIZE: 2*1024 * 1024, // 1mb: large enough for block headers, prevents memory bombs
   RATE_LIMIT_MESSAGES: 1200,      // 1200/min/peer to blunt flood attacks
   RATE_LIMIT_WINDOW: 60_000,
   
@@ -8,10 +8,39 @@ export const CONFIG = {
   P2P: {
     TCP_PORT: 26658,
     WS_PORT: 26659,
-    MAX_CONNECTIONS: 150,
-    MIN_CONNECTIONS: 5,
-    RENDEZVOUS_DISCOVERY_INTERVAL_MS: 60000 // 1 minute
+    MAX_CONNECTIONS: 25,
+    MIN_CONNECTIONS: 3,
+    RENDEZVOUS_DISCOVERY_INTERVAL_MS: 600000 // 10 minute
   },
+  
+  // --- NEW: IP Rate Limiting with Exponential Backoff ---
+    IP_BACKOFF: {
+      BASE_BACKOFF_MS: 10000,   // 10 seconds for first failure
+      MAX_BACKOFF_MS: 15 * 60 * 1000, // 15 minutes max
+      MAX_FAILURES: 10,           // After 10 failures, they hit the max backoff time
+    },
+
+    // --- NEW: Dynamic PoW Difficulty ---
+    DYNAMIC_POW: {
+      MIN_DIFFICULTY: '00000',        // Peacetime (5 zeros)
+      MAX_DIFFICULTY: '00000000',    // Max attack (8 zeros)
+      SURGE_THRESHOLD: 100,         // 100 connection attempts / minute to trigger increase
+      ADJUSTMENT_INTERVAL_MS: 60000, // Check load every 1 minute
+    },
+
+    // --- NEW: Gossipsub Peer Scoring Parameters ---
+    GOSSIPSUB_SCORING: {
+      // P7: Set a hard cap on the score
+      scoreCap: 100,
+      // P0: Thresholds to prune/ban peers
+      pruneThreshold: -50,
+      graftThreshold: -25,
+      // P3b: Penalty for sending invalid messages
+      invalidMessagePenalty: -100,
+      // P4: Penalty for being the first to send a duplicate
+      duplicateMessagePenalty: -10,
+    }
+  },  
   
   // Sync (IBD) settings
   SYNC: {
@@ -19,8 +48,8 @@ export const CONFIG = {
     INTER_REQUEST_DELAY_MS: 25,  // Minimal delay for rate limiting
     MAX_FETCH_ATTEMPTS: 15,       // Retries for a single failed block fetch
     PARALLEL_DOWNLOADS: 50,        // Number of concurrent block downloads
-    BATCH_SIZE: 100,             // Blocks per batch
-    CHECKPOINT_INTERVAL: 1000,   // Save progress every N blocks
+    BATCH_SIZE: 10,             // Blocks per batch
+    CHECKPOINT_INTERVAL: 10,   // Save progress every N blocks
 
     // --- RATIONALE (Hardening Recommendations) ---
     // These new settings harden the node against various sync-related attacks by
@@ -33,7 +62,7 @@ export const CONFIG = {
     PEER_COUNT_FOR_STRICT_CONSENSUS:51,
     MIN_AGREEING_PEERS: 1, // An absolute minimum number of peers that must agree on a tip.
     // (Fix #6) Prevents DoS from a peer spamming requests for the node's block hashes.
-    MIN_HASH_REQUEST_INTERVAL_MS: 1, // 1 seconds between requests per peer.
+    MIN_HASH_REQUEST_INTERVAL_MS: 5, // 5 seconds between requests per peer.
     // (Fix #10) Prevents peers from requesting absurdly old or future block hashes.
     MAX_HASH_REQUEST_RANGE: 100_000, // Peer can't ask for hashes more than this many blocks behind the tip.
     // (Circuit Breaker) Stops sync attempts after too many consecutive failures.

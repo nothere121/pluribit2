@@ -21,9 +21,11 @@ message VdfProof {
   bytes r = 4;
   uint64 iterations = 5;
 }
+
 message Challenge {
     string challenge = 1;
     string from = 2;
+    string difficulty = 3; 
 }
 
 message ChallengeResponse {
