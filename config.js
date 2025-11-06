@@ -39,8 +39,7 @@ export const CONFIG = {
       invalidMessagePenalty: -100,
       // P4: Penalty for being the first to send a duplicate
       duplicateMessagePenalty: -10,
-    }
-  },  
+    },
   
   // Sync (IBD) settings
   SYNC: {
