@@ -106,6 +106,28 @@ Privacy is mandatory and enforced at the protocol level.
   * Node.js (v18+) and `npm`
   * `wasm-pack`
 
+    ```bash
+    # Update package lists
+    sudo apt update
+
+    # Install Git, build tools, pkg-config, Protobuf, Clang, and OpenSSL Dev libs
+    sudo apt install git curl build-essential pkg-config protobuf-compiler clang libssl-dev -y
+
+
+    # A. Install Node Version Manager (NVM)
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    source ~/.bashrc
+    nvm install 20
+
+    # B. Install Rust (via rustup)
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    # (Choose option 1: Proceed with installation)
+    source ~/.cargo/env
+
+    # C. Install Rust Tools
+    cargo install wasm-pack
+    ```
+
 ### Installation & Build
 
 1.  **Clone the repository:**

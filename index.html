@@ -342,7 +342,7 @@
       <h3>How it works</h3>
       <p>The unique output of the VDF (the <code>y</code> value) is then used as the input for a <strong>Verifiable Random Function (VRF)</strong>. The VRF acts as a lottery, producing a fair, unpredictable, and verifiable random number using the producer's secret key.</p>
       <ul>
-        <li><strong>Provably Fair:</strong> The two-step (<code>VDF -> VRF</code>) process is crucial. It proves the miner *had* to wait for the VDF to finish before they could know if they won. They cannot "grind" for a winning VRF output by trying millions of inputs per second.</li>
+        <li><strong>Provably Fair:</strong> The two-step (<code>VDF -> VRF</code>) process proves the miner *had* to wait for the VDF to finish before they could know if they won. They cannot "grind" for a winning VRF output by trying millions of inputs per second.</li>
         <li><strong>Winning:</strong> If the VRF's random number is below the network's current difficulty threshold (e.g., <code>vrfOutputHex < thresholdHex</code>), the miner wins the right to produce the block.</li>
       </ul>
     </div>
