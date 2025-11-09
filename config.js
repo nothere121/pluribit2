@@ -47,9 +47,9 @@ export const CONFIG = {
     TIMEOUT_MS: 24 * 60 * 60 * 1000, // 24 hours for IBD
     INTER_REQUEST_DELAY_MS: 25,  // Minimal delay for rate limiting
     MAX_FETCH_ATTEMPTS: 15,       // Retries for a single failed block fetch
-    PARALLEL_DOWNLOADS: 100,        // Number of concurrent block downloads
-    BATCH_SIZE: 100,             // Blocks per batch
-    CHECKPOINT_INTERVAL: 100,   // Save progress every N blocks
+    PARALLEL_DOWNLOADS: 1,        // Number of concurrent block downloads
+    BATCH_SIZE: 1,             // Blocks per batch
+    CHECKPOINT_INTERVAL: 1,   // Save progress every N blocks
 
     // --- RATIONALE (Hardening Recommendations) ---
     // These new settings harden the node against various sync-related attacks by
