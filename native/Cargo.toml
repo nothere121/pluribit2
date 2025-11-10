@@ -9,9 +9,30 @@ crate-type = ["cdylib"]
 [dependencies]
 pluribit_core = { path = ".." }
 # Update neon to the latest version
-neon = "1.0"
+neon = { version = "1.1.1", features = ["serde"] }
 num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = "0.1"
 num-traits = "0.2"
 sha2 = "0.10"
 hex = "0.4"
+rocksdb = "0.22"
+lazy_static = "1.4"
+# --- Protobuf (Fixes E0432 for `prost`) ---
+prost = "0.12"
+
+# --- Serialization (Fixes E0433 for `serde`, `serde_json`, etc.) ---
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.22" # For wallet envelope encoding
+
+# --- Encryption (Fixes E0432/E0433 for `scrypt`, `chacha20poly1305`, `rand_core`) ---
+scrypt = "0.11"
+# The 'aead' feature is required for XChaCha20Poly1305
+chacha20poly1305 = "0.10"
+
+# The 'std' feature is needed for OsRng
+rand_core = { version = "0.6", features = ["std"] }
+
+# Add this for Neon <-> Serde bridging (fixes E0433)
+neon-serde4 = "1.0.0-1"
+

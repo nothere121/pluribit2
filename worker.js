@@ -18,8 +18,89 @@ if (typeof Promise.withResolvers !== 'function') {
     return { promise, resolve, reject };
   };
 }
-import bridge from './js_bridge.cjs';
-const { JSONStringifyWithBigInt, JSONParseWithBigInt, convertLongsToBigInts } = bridge; 
+
+// --- Native module import ---
+// -- gives us the miner and the db
+const require = createRequire(import.meta.url);
+const native_db = require('./native/index.node'); 
+
+/**
+ * @param {any} obj
+ * @returns {string}
+ */
+const JSONStringifyWithBigInt = (obj) => {
+  /**
+   * @param {string} key
+   * @param {any} value
+   * @returns {any}
+   */
+  function replacer(key, value) {
+    if (typeof value === 'bigint') {
+      return { __type: 'BigInt', value: value.toString() };
+    }
+    if (value instanceof Uint8Array) {
+      return { __type: 'Uint8Array', value: Buffer.from(value).toString('base64') };
+    }
+    if (Array.isArray(value) && value.length > 0 &&
+      value.every(v => typeof v === 'number' && v >= 0 && v <= 255)) {
+      const uint8 = new Uint8Array(value);
+      return { __type: 'Uint8Array', value: Buffer.from(uint8).toString('base64') };
+    }
+    return value;
+  }
+  return JSON.stringify(obj, replacer);
+};
+
+/**
+ * @param {string} str
+ * @returns {any}
+ */
+const JSONParseWithBigInt = (str) => {
+  /**
+   * @param {string} key
+   * @param {any} value
+   * @returns {any}
+   */
+  function reviver(key, value) {
+    if (value && typeof value === 'object' && value.__type) {
+      if (value.__type === 'BigInt') {
+        return BigInt(value.value);
+      }
+      if (value.__type === 'Uint8Array') {
+        return new Uint8Array(Buffer.from(value.value, 'base64'));
+      }
+    }
+    return value;
+  }
+  return JSON.parse(str, reviver);
+};
+
+function convertLongsToBigInts(obj) {
+  if (obj instanceof Uint8Array || Buffer.isBuffer(obj)) {
+    return obj;
+  }
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  // Check if it's a Long.js object
+  if (typeof obj.low === 'number' && typeof obj.high === 'number' && typeof obj.unsigned === 'boolean') {
+    // Correctly convert unsigned 64-bit Long to BigInt
+    return (BigInt(obj.high) << 32n) + BigInt(obj.low >>> 0);
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(convertLongsToBigInts);
+  }
+  const newObj = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      newObj[key] = convertLongsToBigInts(obj[key]);
+    }
+  }
+  return newObj;
+}
+// --- END: Added helper functions ---
+
+
 import { pipe } from 'it-pipe';
 import http from 'http';
 import util from 'node:util';
@@ -27,39 +108,37 @@ import { parentPort, Worker as ThreadWorker } from 'worker_threads';
 import crypto from 'crypto';    
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import { multiaddr } from '@multiformats/multiaddr';
 import { CONFIG } from './config.js';
 let blockRequestCleanupTimer = null;
-
-
-
-
-
 
 // --- MODULE IMPORTS ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Manually expose DB functions to the global scope for Wasm
-import * as db from './js_bridge.cjs';
-global.load_block_from_db = db.load_block_from_db;
-global.get_tip_height_from_db = db.get_tip_height_from_db;
-global.save_total_work_to_db = db.save_total_work_to_db;
-global.get_total_work_from_db = db.get_total_work_from_db;
-global.loadBlocks = db.loadBlocks;
-global.saveBlock = db.saveBlock;
-global.save_utxo = db.save_utxo;
-global.load_utxo = db.load_utxo;
-global.delete_utxo = db.delete_utxo;
-global.clear_all_utxos = db.clear_all_utxos;
-global.loadAllUtxos = db.loadAllUtxos;
-global.saveBlockWithHash = db.saveBlockWithHash;
-global.loadBlockByHash = db.loadBlockByHash;
-global.save_reorg_marker = db.save_reorg_marker;
-global.clear_reorg_marker = db.clear_reorg_marker;
-global.check_incomplete_reorg = db.check_incomplete_reorg;
-global.save_block_to_staging = db.save_block_to_staging;
-global.commit_staged_reorg = db.commit_staged_reorg;
+// --- CHANGED: Manually expose DB functions from NATIVE module ---
+// RATIONALE: Wrap all native DB functions in async wrappers.
+// The WASM module (wasm-bindgen-futures) expects these functions to return Promises.
+// The native addon functions are synchronous, so this bridge makes them async.
+global.load_block_from_db = async (...args) => native_db.load_block_from_db(...args);
+global.get_tip_height_from_db = async (...args) => native_db.get_tip_height_from_db(...args);
+global.save_total_work_to_db = async (...args) => native_db.save_total_work_to_db(...args);
+global.get_total_work_from_db = async (...args) => native_db.get_total_work_from_db(...args);
+global.loadBlocks = async (...args) => native_db.loadBlocks(...args);
+global.saveBlock = async (...args) => native_db.saveBlock(...args);
+global.save_utxo = async (...args) => native_db.save_utxo(...args);
+global.load_utxo = async (...args) => native_db.load_utxo(...args);
+global.delete_utxo = async (...args) => native_db.delete_utxo(...args);
+global.clear_all_utxos = async (...args) => native_db.clear_all_utxos(...args);
+global.loadAllUtxos = async (...args) => native_db.loadAllUtxos(...args);
+global.saveBlockWithHash = async (...args) => native_db.saveBlockWithHash(...args);
+global.loadBlockByHash = async (...args) => native_db.loadBlockByHash(...args);
+global.save_reorg_marker = async (...args) => native_db.save_reorg_marker(...args);
+global.clear_reorg_marker = async (...args) => native_db.clear_reorg_marker(...args);
+global.check_incomplete_reorg = async (...args) => native_db.check_incomplete_reorg(...args);
+global.save_block_to_staging = async (...args) => native_db.save_block_to_staging(...args);
+global.commit_staged_reorg = async (...args) => native_db.commit_staged_reorg(...args);
 
 
 // ==================== CORRECTED ADDITIONS START HERE ====================
@@ -67,9 +146,10 @@ global.commit_staged_reorg = db.commit_staged_reorg;
 // and expose them to Rust (WASM) on the 'global' object, just
 // like all the other database functions.
 
-global.save_coinbase_index = db.save_coinbase_index;
-global.delete_coinbase_index = db.delete_coinbase_index;
-global.loadAllCoinbaseIndexes = db.loadAllCoinbaseIndexes;
+global.save_coinbase_index = async (...args) => native_db.save_coinbase_index(...args);
+global.delete_coinbase_index = async (...args) => native_db.delete_coinbase_index(...args);
+global.loadAllCoinbaseIndexes = async (...args) => native_db.loadAllCoinbaseIndexes(...args);
+// --- END: Changed global assignments ---
 
 // ===================== CORRECTED ADDITIONS END HERE =====================
 
@@ -244,11 +324,11 @@ function startApiServer() {
 
 
             if (url.pathname === '/api/stats') {
-                const tipHeight = await db.getTipHeight();
-                const totalWork = await db.loadTotalWork();
+                const tipHeight =  native_db.getTipHeight();
+                const totalWork =  native_db.loadTotalWork();
                 const utxoSetSize = pluribit.get_utxo_set_size();
 
-                const tipBlock = tipHeight > 0n ? await db.loadBlock(tipHeight) : null;
+                const tipBlock = tipHeight > 0n ?  native_db.loadBlock(tipHeight) : null;
                 
                 res.writeHead(200);
                 res.end(JSONStringifyWithBigInt({
@@ -283,12 +363,12 @@ function startApiServer() {
             else if (hashMatch) { // <<< Check for HASH match first
                 const hash = hashMatch[1]; // Get captured hash from regex group 1
                 log(`[API /api/block/hash/] Matched hash: ${hash.substring(0,12)}...`);
-                const tipHeight = await db.getTipHeight();
+                const tipHeight =  native_db.getTipHeight();
                  
                 let foundBlock = null; // Initialize foundBlock
                 // Search backwards (consider adding a depth limit if needed)
                 for (let h = tipHeight; h >= 0n; h--) {
-                    const block = await db.loadBlock(h);
+                    const block =  native_db.loadBlock(h);
                     if (block && block.hash === hash) {
                         foundBlock = block; // Assign the found block
                         break; // Exit loop once found
@@ -309,7 +389,7 @@ function startApiServer() {
                     const height = BigInt(heightStr);
                     log(`[API /api/block/:height] Matched height: ${height}`);
                 
-                const block = await db.loadBlock(height);
+                const block =  native_db.loadBlock(height);
                 if (!block) {
                     res.writeHead(404);
                     res.end(JSONStringifyWithBigInt({ error: 'Block not found' }));
@@ -325,11 +405,11 @@ function startApiServer() {
             }
             else if (url.pathname.startsWith('/api/blocks/recent')) {
                 const count = BigInt(Math.min(parseInt(url.searchParams.get('count') || '10'), 100));
-                const tipHeight = await db.getTipHeight();
+                const tipHeight =  native_db.getTipHeight();
                 const blocks = [];
                 
                 for (let i = 0n; i < count && tipHeight - i >= 0n; i++) {
-                    const block = await db.loadBlock(tipHeight - i);
+                    const block =  native_db.loadBlock(tipHeight - i);
                     if (block) {
                         
                         let minerDisplay = 'N/A';
@@ -370,13 +450,13 @@ function startApiServer() {
                 res.end(JSONStringifyWithBigInt(blocks));
             }
             else if (url.pathname === '/api/metrics/difficulty') {
-                const tipHeight = await db.getTipHeight();
+                const tipHeight =  native_db.getTipHeight();
                 const samples = BigInt(Math.min(100, Number(tipHeight)));
                 const metrics = [];
                 
                 const startHeight = tipHeight - samples > 0n ? tipHeight - samples : 0n;
                 for (let i = startHeight; i <= tipHeight; i++) {
-                    const block = await db.loadBlock(i);
+                    const block =  native_db.loadBlock(i);
                     if (block) {
                         metrics.push({
                             height: block.height,
@@ -391,7 +471,7 @@ function startApiServer() {
                 res.end(JSONStringifyWithBigInt(metrics));
             }
             else if (url.pathname === '/api/metrics/rewards') {
-                const tipHeight = await db.getTipHeight();
+                const tipHeight =  native_db.getTipHeight();
                 const samples = BigInt(Math.min(100, Number(tipHeight)));
                 const rewards = [];
                 
@@ -412,7 +492,7 @@ function startApiServer() {
                 res.end(JSONStringifyWithBigInt(rewards));
             }
             else if (url.pathname === '/api/metrics/supply') {
-                const tipHeight = await db.getTipHeight();
+                const tipHeight =  native_db.getTipHeight();
                 
                 const INITIAL_BASE_REWARD = 50_000_000n;
                 const HALVING_INTERVAL = 525_600n;
@@ -468,12 +548,12 @@ function startApiServer() {
 
                 log(`[API /api/tx/] Searching for transaction hash: ${txHash.substring(0, 12)}...`);
                 let foundBlock = null;
-                const tipHeight = await db.getTipHeight();
+                const tipHeight =  native_db.getTipHeight();
                 // Search backwards from the tip (limit depth for performance)
                 const searchDepth = Math.min(Number(tipHeight), 1000); // Example: Search last 1000 blocks
 
                 for (let h = tipHeight; h > tipHeight - BigInt(searchDepth) && h >= 0n; h--) {
-                    const block = await db.loadBlock(h); // Load from LevelDB
+                    const block =  native_db.loadBlock(h); // Load from LevelDB
                     if (block && block.transactions) {
                         for (const tx of block.transactions) {
                             // Check kernel excess (assuming it's the TX hash)
@@ -573,7 +653,7 @@ function log(message, level = 'info') {
 async function checkAndRecoverFromIncompleteReorg() {
     try {
         // This function now returns raw bytes (as a hex string)
-        const markerHex = await db.check_incomplete_reorg();
+        const markerHex =  native_db.check_incomplete_reorg();
         if (!markerHex) {
             log('[RECOVERY] No incomplete reorg detected', 'debug');
             return;
@@ -594,7 +674,7 @@ async function checkAndRecoverFromIncompleteReorg() {
         // Strategy: Rollback to the original tip
         log(`[RECOVERY] Attempting rollback to height ${marker.originalTipHeight}...`, 'warn');
         
-        const originalTipBlock = await db.loadBlock(marker.originalTipHeight);
+        const originalTipBlock =  native_db.loadBlock(marker.originalTipHeight);
         if (!originalTipBlock) {
             log(`[RECOVERY] ✗ FATAL: Cannot find original tip block at height ${marker.originalTipHeight}!`, 'error');
             log('[RECOVERY] Manual database inspection and repair required.', 'error');
@@ -614,7 +694,7 @@ async function checkAndRecoverFromIncompleteReorg() {
             log('[RECOVERY] Attempting to resync chain state...', 'warn');
             await pluribit.clear_utxo_set();
             for (let h = 0n; h <= marker.originalTipHeight; h++) {
-                const block = await db.loadBlock(h);
+                const block =  native_db.loadBlock(h);
                 if (block) {
                     await pluribit.process_block_for_recovery(block);
                 }
@@ -623,11 +703,11 @@ async function checkAndRecoverFromIncompleteReorg() {
         }
         
         // Clear the reorg marker now that we've recovered
-        await db.clear_reorg_marker();
+         native_db.clear_reorg_marker();
         log('[RECOVERY] ✓ Recovery complete - reorg marker cleared', 'success');
         
         // ... (rest of the function is unchanged) ...
-        const dbTipHeight = await db.getTipHeight();
+        const dbTipHeight =  native_db.getTipHeight();
         const rustState = await pluribit.get_blockchain_state();
         if (dbTipHeight.toString() !== rustState.current_height.toString()) {
             log(`[RECOVERY] ✗ WARNING: Heights still don't match! DB=${dbTipHeight}, Rust=${rustState.current_height}`, 'error');
@@ -806,12 +886,12 @@ export async function main() {
 
                 case 'auditDetailed':
                     try {
-                        const tip = await db.getTipHeight();
+                        const tip =  native_db.getTipHeight();
                         console.log(`Tip height: ${tip}`);
                         // ✅ Use BigInt comparison instead of Math.min
                         const maxHeight = tip < 5n ? tip : 5n;
                         for (let h = 0n; h <= maxHeight; h++) {
-                            const block = await db.loadBlock(h);
+                            const block =  native_db.loadBlock(h);
                             const coinbase = block.transactions.find(tx => tx.inputs.length === 0);
                             console.log(`Block ${h}: ${coinbase ? coinbase.outputs.length + ' coinbase outputs' : 'no coinbase'}`);
                         }
@@ -822,13 +902,13 @@ export async function main() {
 
                 case 'verifySupply':
                     try {
-                        const tip = await db.getTipHeight();
+                        const tip =  native_db.getTipHeight();
                         let totalCoinbaseOutputs = 0;
                         let uniqueCommitments = new Set();
                         
                         for (let h = 1n; h <= tip; h++) {
 
-                            const block = await db.loadBlock(h);
+                            const block =  native_db.loadBlock(h);
                             for (const tx of block.transactions) {
                                 if (tx.inputs.length === 0) { // Coinbase
                                     for (const output of tx.outputs) {
@@ -857,7 +937,7 @@ export async function main() {
                 case 'getSupply':
                     try {
                         // Debug: check both sources
-                        const dbTip = await db.getTipHeight();
+                        const dbTip =  native_db.getTipHeight();
                         const rustTip = await pluribit.get_blockchain_state();
                         log(`DB tip: ${dbTip}, Rust chain state tip: ${rustTip.current_height}`, 'info');
                         
@@ -1105,7 +1185,7 @@ async function triggerReorgPlan(blockHash) {
                 log('[REORG] ✓ Atomic reorg completed successfully', 'success');
                 
                 // Verify database consistency after reorg
-                const dbTip = await db.getTipHeight();
+                const dbTip =  native_db.getTipHeight();
                 const rustState = await pluribit.get_blockchain_state();
                 
                 if (dbTip.toString() !== rustState.current_height.toString()) {
@@ -1122,8 +1202,8 @@ async function triggerReorgPlan(blockHash) {
                 // Attempt recovery by resetting to database state
                 try {
                     log('[REORG] Attempting emergency recovery...', 'warn');
-                    const dbTipHeight = await db.getTipHeight();
-                    const dbTipBlock = await db.loadBlock(dbTipHeight);
+                    const dbTipHeight =  native_db.getTipHeight();
+                    const dbTipBlock =  native_db.loadBlock(dbTipHeight);
                     
                     if (dbTipBlock) {
                         // Reset Rust state to match database
@@ -1188,9 +1268,9 @@ async function syncForward(targetHeight, targetHash, trustedPeers) {
 
     const startTime = Date.now();
     try {
-        let currentHeight = await db.getTipHeight();
+        let currentHeight =  native_db.getTipHeight();
         const syncStartHeight = currentHeight;
-        let previousBlock = await db.loadBlock(currentHeight);
+        let previousBlock =  native_db.loadBlock(currentHeight);
         syncState.syncProgress.currentHeight = currentHeight;
         syncState.syncProgress.targetHeight = targetHeight;
 
@@ -1361,7 +1441,7 @@ async function syncForward(targetHeight, targetHash, trustedPeers) {
                                 
                 if (blockHeightBigInt % BigInt(CHECKPOINT_INTERVAL) === 0n) {
                     const chainState = await pluribit.get_blockchain_state();
-                    await db.saveTotalWork(chainState.total_work);
+                     native_db.saveTotalWork(chainState.total_work);
                     log(`[SYNC] Checkpoint saved at height ${blockHeightBigInt}`, 'info');
                 }                              
 
@@ -1445,7 +1525,7 @@ async function startPoSTMining() {
         if (!workerState.minerActive) return;
 
         // === NEW: Validate state consistency before mining ===
-        const dbTipHeight = await db.getTipHeight();
+        const dbTipHeight =  native_db.getTipHeight();
         let chain = await pluribit.get_blockchain_state();  // Use 'let' so we can reassign
         const rustTipHeight = BigInt(chain.current_height);
         
@@ -1454,7 +1534,7 @@ async function startPoSTMining() {
             log(`[MINING]    Database tip height: ${dbTipHeight}`, 'error');
             log(`[MINING]    Rust memory tip height: ${rustTipHeight}`, 'error');
             
-            const dbTipBlock = await db.loadBlock(dbTipHeight);
+            const dbTipBlock =  native_db.loadBlock(dbTipHeight);
             if (dbTipBlock) {
                 log(`[MINING]    Database tip hash: ${dbTipBlock.hash.substring(0,12)}...`, 'error');
             }
@@ -1591,7 +1671,7 @@ async function handleRemoteBlockDownloaded({ block }) {
                 // This is a good place to trigger a sync check, as we've clearly missed blocks.
                 setTimeout(safe(bootstrapSync), 500);
             }
-            await db.saveDeferredBlock(block);
+             native_db.saveDeferredBlock(block);
             return;
         }
 
@@ -1658,7 +1738,7 @@ async function handleRemoteBlockDownloaded({ block }) {
                     // Use the converted block object here
                     await pluribit.wallet_session_scan_block(walletId, blockForWasm); 
                     const updatedJson = await pluribit.wallet_session_export(walletId);
-                    await db.saveWallet(walletId, updatedJson);
+                     native_db.saveWallet(walletId, updatedJson);
                     const newBalance = await pluribit.wallet_session_get_balance(walletId);
                     parentPort.postMessage({ type: 'walletBalance', payload: { wallet_id: walletId, balance: newBalance }});
                     log(`Balance updated for ${walletId} after new block.`, 'debug');
@@ -1790,7 +1870,7 @@ function cleanupForkCache(keepAboveHeight) {
     reorgState.requestedAt.clear();
 }
 
-// SIMPLIFIED Network Initialization
+//  Network Initialization
 async function initializeNetwork() {
 // Periodic reorg state debugging
 setInterval(safe(debugReorgState), 60000); // Every 60 seconds
@@ -1806,7 +1886,7 @@ setInterval(safe(debugReorgState), 60000); // Every 60 seconds
 
     
     // Now it's safe to initialize database
-    await db.initializeDatabase();
+     native_db.initializeDatabase();
     
     await checkAndRecoverFromIncompleteReorg();
 
@@ -1818,13 +1898,13 @@ setInterval(safe(debugReorgState), 60000); // Every 60 seconds
     // REMOVED: The old logic that loaded all blocks into an array.
 
     // Ensure genesis block exists in DB for new chains.
-    const tipHeight = await db.getTipHeight();
-    if (tipHeight === 0n && !(await db.loadBlock(0))) { 
+    const tipHeight =  native_db.getTipHeight();
+    if (tipHeight === 0n && !( native_db.loadBlock(0))) { 
         log('Creating and saving new genesis block to DB.', 'info');
         // We get the genesis block from Rust and save it to the DB at height 0.
         const genesisBlock = await pluribit.create_genesis_block();
         log(`[JS PRE-SAVE GENESIS] Coinbase output 0 viewTag: ${genesisBlock?.transactions?.[0]?.outputs?.[0]?.viewTag ?? 'N/A'}`, 'debug'); // <-- ADD THIS LINE
-        await db.saveBlock(genesisBlock);
+         native_db.saveBlock(genesisBlock);
     }
 
     // NEW: Call the async Rust function to initialize its state from our DB.
@@ -1853,7 +1933,7 @@ setInterval(safe(debugReorgState), 60000); // Every 60 seconds
 
     const MAX_DEFERRED_BLOCKS_ON_STARTUP = 1000;
     try {
-        let leftoverBlocks = await db.loadAllDeferredBlocks();
+        let leftoverBlocks =  native_db.loadAllDeferredBlocks();
         if (leftoverBlocks.length > 0) {
             log(`[RECOVERY] Found ${leftoverBlocks.length} leftover deferred blocks. Processing now...`, 'warn');
             if (leftoverBlocks.length > MAX_DEFERRED_BLOCKS_ON_STARTUP) {
@@ -1863,7 +1943,7 @@ setInterval(safe(debugReorgState), 60000); // Every 60 seconds
             for (const block of leftoverBlocks) {
                 await handleRemoteBlockDownloaded({ block });
             }
-            await db.clearDeferredBlocks();
+             native_db.clearDeferredBlocks();
             log(`[RECOVERY] Finished processing leftover blocks.`, 'success');
         }
     } catch (e) {
@@ -2346,7 +2426,7 @@ await p2p.subscribe(TOPICS.SWAP_PROPOSE, async (proposal, { from }) => {
             syncState.peerHashRequestTimes.set(peerIdStr, now);
             
             // RATIONALE (Fix #10): Validate the requested start height to prevent abuse.
-            const tipHeight = await db.getTipHeight();
+            const tipHeight =  native_db.getTipHeight();
             // FIX: Convert the config value to a BigInt before performing arithmetic.
             if (start_height < tipHeight - BigInt(CONFIG.SYNC.MAX_HASH_REQUEST_RANGE)) {
                 log(`[SYNC] Ignoring hash request for start height ${start_height} (too far behind tip ${tipHeight})`, 'warn');
@@ -2493,7 +2573,7 @@ async function handleChannelCloseNonce(message, { from }) {
             session.myNoncePoint,
             session.theirNoncePoint,
             counterpartyPubkey,
-            await db.getTipHeight()
+             native_db.getTipHeight()
         );
 
         // 3. Store our partial sig
@@ -2888,7 +2968,7 @@ async function handleChannelFundNonce(message, { from }) {
             session.theirNoncePoint,
             counterpartyPubkey,
             myFundingInputs, // Pass real inputs here
-            await db.getTipHeight() // Current height
+             native_db.getTipHeight() // Current height
         );
         
         // 3. Store our partial sig and the incomplete tx
@@ -3466,7 +3546,7 @@ async function updateWalletsAfterReorg() {
         for (const walletId of workerState.wallets.keys()) {
             try {
                 const updatedJson = await pluribit.wallet_session_export(walletId);
-                await db.saveWallet(walletId, updatedJson);
+                 native_db.saveWallet(walletId, updatedJson);
                 log(`[REORG] Wallet '${walletId}' state saved successfully.`);
                 const newBalance = await pluribit.wallet_session_get_balance(walletId);
                 parentPort.postMessage({ type: 'walletBalance', payload: { wallet_id: walletId, balance: newBalance }});
@@ -3483,7 +3563,7 @@ async function updateWalletsAfterReorg() {
 
 async function handleCreateWalletWithMnemonic({ walletId }) {
     if (!walletId) return log('Wallet ID cannot be empty.', 'error');
-    if (await db.walletExists(walletId)) {
+    if ( native_db.walletExists(walletId)) {
         return log(`Wallet '${walletId}' already exists. Use 'load'.`, 'error');
     }
     try {
@@ -3492,7 +3572,7 @@ async function handleCreateWalletWithMnemonic({ walletId }) {
 
         // Export immediately to save the newly created wallet state
         const blob = await pluribit.wallet_session_export(walletId);
-        await db.saveWallet(walletId, blob);
+         native_db.saveWallet(walletId, blob);
 
         log(`New wallet '${walletId}' created successfully.`, 'success');
         log('IMPORTANT: Write down your 12-word mnemonic phrase and keep it safe:', 'warn'); // Use 'warn' level?
@@ -3508,7 +3588,7 @@ async function handleCreateWalletWithMnemonic({ walletId }) {
 
 async function handleRestoreWalletFromMnemonic({ walletId, phrase }) {
     if (!walletId) return log('Wallet ID cannot be empty.', 'error');
-    if (await db.walletExists(walletId)) {
+    if ( native_db.walletExists(walletId)) {
         return log(`Wallet '${walletId}' already exists. Use 'load'.`, 'error');
     }
     if (!phrase || phrase.split(' ').length !== 12) {
@@ -3520,7 +3600,7 @@ async function handleRestoreWalletFromMnemonic({ walletId, phrase }) {
 
         // Export immediately to save the restored wallet state
         const blob = await pluribit.wallet_session_export(walletId);
-        await db.saveWallet(walletId, blob);
+         native_db.saveWallet(walletId, blob);
 
         log(`Wallet '${walletId}' restored successfully from mnemonic phrase.`, 'success');
         log(`Use 'load ${walletId}' to activate it.`, 'info');
@@ -3539,7 +3619,7 @@ async function handleLoadWallet({ walletId }) {
           workerState.wallets.clear();
           let walletRecord;
           try {
-            walletRecord = await db.loadWallet(walletId);
+            walletRecord =  native_db.loadWallet(walletId);
           } catch (e) {
             if (e?.code === 'WALLET_PASSPHRASE_REQUIRED') {
               return log(`Wallet '${walletId}' is encrypted. Set PLURIBIT_WALLET_PASSPHRASE and retry.`, 'error');
@@ -3559,7 +3639,7 @@ async function handleLoadWallet({ walletId }) {
         const walletHeight = await pluribit.wallet_session_get_synced_height(walletId);
 
         // 2. Get the blockchain's current tip height
-        const chainTipHeight = await db.getTipHeight();
+        const chainTipHeight =  native_db.getTipHeight();
 
         // 3. Scan *only* the missing blocks (O(k) scan)
         if (walletHeight < chainTipHeight) {
@@ -3575,7 +3655,7 @@ async function handleLoadWallet({ walletId }) {
 
         // Persist updated state (from Rust session) and report summary
         const persisted = await pluribit.wallet_session_export(walletId);
-        await db.saveWallet(walletId, persisted);
+         native_db.saveWallet(walletId, persisted);
         const balance = await pluribit.wallet_session_get_balance(walletId);
         const address = await pluribit.wallet_session_get_address(walletId);
 
@@ -3644,7 +3724,7 @@ async function handleCreateTransaction({ from, to, amount, fee }) {
 
     // 4. ONLY if broadcast succeeds, persist the new wallet state.
     const persisted = await pluribit.wallet_session_export(from);
-    await db.saveWallet(from, persisted);
+     native_db.saveWallet(from, persisted);
 
     // 5. Notify the UI of success.
     const excessHex = result.transaction.kernels[0].excess.map(b => b.toString(16).padStart(2, '0')).join('');
