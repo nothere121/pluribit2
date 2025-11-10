@@ -8,47 +8,32 @@ const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Module loading with native/WASM fallback
+// --- MODULE LOADING (SIMPLIFIED) ---
+// We only need the native module now, as it contains the full mining loop.
 let pluribit;
-let wasmModule; // Keep WASM module for VRF
-let isNative = false;
 
 async function loadModule() {
-    // Always load WASM for VRF functions
-    try {
-        const wasmPath = path.join(__dirname, './pkg-node/pluribit_core.js');
-        const { default: _, ...wasm } = await import(wasmPath);
-        wasmModule = wasm;
-    } catch (wasmError) {
-        parentPort.postMessage({ 
-            type: 'STATUS', 
-            message: `Failed to load WASM module: ${wasmError.message}` 
-        });
-        throw wasmError;
-    }
-
-    // Try to load native module for VDF
     try {
         const nativePath = path.join(__dirname, 'native', 'index.node');
         pluribit = require(nativePath);
-        isNative = true;
         parentPort.postMessage({ 
             type: 'STATUS', 
-            message: 'Using native VDF implementation (10-50x faster)' 
+            message: 'Using native mining loop (10-50x faster)' // Updated message
         });
     } catch (e) {
-        // Fall back to WASM for VDF too
-        pluribit = wasmModule;
-        isNative = false;
         parentPort.postMessage({ 
             type: 'STATUS', 
-            message: 'Using WASM VDF implementation' 
+            message: `FATAL: Failed to load native module: ${e.message}` // Updated message
         });
+        throw e;
     }
 }
+// --- END SIMPLIFIED LOADING ---
 
 let currentJobId = null; // Use a job ID to manage state and prevent race conditions
 
+// --- REWRITTEN MINING FUNCTION ---
+const BATCH_SIZE = 1000n; // Process 1000 nonces in native code per batch
 
 async function findMiningCandidate(params) {
   const { jobId, height, minerPubkey, minerSecretKey, prevHash, vrfThreshold, vdfIterations } = params;
@@ -58,47 +43,34 @@ async function findMiningCandidate(params) {
         type: 'STATUS', 
         message: `Starting mining job #${jobId} for block #${height}` 
     });
-  // Loop only as long as this is the active job
+
+  // This loop is async, allowing 'STOP' messages to be processed between batches.
   while (currentJobId === jobId) {
         try {
-            // Construct the VDF input
-            const vdf_input = `${height}${prevHash}${Buffer.from(minerPubkey).toString('hex')}${nonce}`;
-            // Perform VDF computation
-            let vdf_proof;
-            if (isNative) {
-                // The native addon now accepts BigInt directly, so no conversion is needed.
-                const result = pluribit.performVdfComputation(vdf_input, vdfIterations);
-                vdf_proof = {
-                    y: Buffer.from(result.y, 'hex'),
-                    pi: Buffer.from(result.pi, 'hex'),
-                    l: Buffer.from(result.l, 'hex'),
-                    r: Buffer.from(result.r, 'hex'),
-                    iterations: BigInt(result.iterations) // The native module returns a Number, so we cast it up to BigInt
-                };
-            } else {
-                // The WASM module expects a BigInt, which vdfIterations already is.
-                vdf_proof = await wasmModule.perform_vdf_computation(
-                    vdf_input,
-                    vdfIterations
-                );
-            }
-            
-            // Always use WASM for VRF (native doesn't have it)
-            const vrf_proof = await wasmModule.create_vrf_proof(minerSecretKey, vdf_proof.y);
-            
-            // Check if VRF output meets threshold
-            const vrfOutputHex = Buffer.from(vrf_proof.output).toString('hex');
-            const thresholdHex = Buffer.from(vrfThreshold).toString('hex');
-            
-            if (vrfOutputHex < thresholdHex) {
-                // Won the lottery!
+            // This is a SYNCHRONOUS, BLOCKING call to the native addon.
+            // It blocks the worker's event loop for the duration of the batch.
+            const result = pluribit.findMiningCandidateBatch(
+                height,
+                minerPubkey,
+                minerSecretKey,
+                prevHash,
+                vrfThreshold,
+                vdfIterations,
+                nonce,
+                BATCH_SIZE
+            );
+
+            if (result) {
+                // We found a candidate!
                 parentPort.postMessage({
                     type: 'CANDIDATE_FOUND',
                     jobId,
                     candidate: {
-                        nonce: nonce.toString(),
-                        vdf_proof,
-                        vrf_proof,  // Include the VRF proof
+                        // The native code returns the core parts
+                        nonce: BigInt(result.nonce), // Convert string nonce back to BigInt
+                        vdf_proof: result.vdf_proof,
+                        vrf_proof: result.vrf_proof,
+                        // We fill in the rest from the job params
                         height,
                         prevHash,
                         miner_pubkey: minerPubkey,
@@ -109,32 +81,39 @@ async function findMiningCandidate(params) {
                 
                 parentPort.postMessage({ 
                     type: 'STATUS', 
-                    message: `Won lottery at nonce ${nonce}! VRF: ${vrfOutputHex.substring(0,12)}...` 
+                    message: `Won lottery at nonce ${result.nonce}! VRF: ${Buffer.from(result.vrf_proof.output).toString('hex').substring(0,12)}...` 
                 });
                 return; // Stop mining this block
             }
             
-            // Didn't win, increment nonce
-            nonce += 1n;
+            // No candidate found in this batch, prepare for the next
+            nonce += BATCH_SIZE;
             
-            // Periodic status update
-            if (nonce % 1000n === 0n) {
+            // Periodic status update (e.g., every 10 batches)
+            if (nonce % (BATCH_SIZE * 10n) === 0n) {
                 parentPort.postMessage({
                     type: 'STATUS',
                     message: `Mining block #${height}: Tried ${nonce} nonces...`
                 });
             }
             
+            // *** CRITICAL ***
+            // Yield to the event loop to allow `parentPort.on('message')`
+            // to process a potential 'STOP' message.
+            await new Promise(resolve => setImmediate(resolve));
+            
         } catch (e) {
             parentPort.postMessage({ 
                 type: 'STATUS',
                 message: `Error at nonce ${nonce}: ${e?.message || e}`
             });
-            nonce += 1n;
+            nonce += BATCH_SIZE; // Skip batch on error
+            // Also yield on error
+            await new Promise(resolve => setImmediate(resolve));
         }
     }
     
-  // Announce that this specific job has stopped.
+  // Loop was stopped by a 'STOP' message
   if (currentJobId !== jobId) {
     parentPort.postMessage({
       type: 'STATUS',
@@ -142,6 +121,8 @@ async function findMiningCandidate(params) {
     });
   }
 }
+// --- END REWRITTEN FUNCTION ---
+
 
 // This ensures the module is loaded *before* we start listening for messages.
 async function main() {
@@ -152,14 +133,16 @@ async function main() {
       currentJobId = null; // Atomically stop any running job.
     } else if (msg.type === 'MINE_BLOCK') {
       currentJobId = msg.jobId; // Atomically set the new active job.
+      // Fire off the mining loop. It will run and yield until
+      // it finds a block or `currentJobId` is set to null.
       findMiningCandidate(msg).catch(e => {
                 parentPort.postMessage({ 
                     type: 'STATUS', 
                     message: `Uncaught error in mining task: ${e?.message || e}` 
                 });
             });
-        }
-    });
+    }
+  });
 }
 
 // Run the main function and catch any initialization errors.

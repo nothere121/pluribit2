@@ -5,6 +5,7 @@ use pluribit_core::vdf::VDF;
 use pluribit_core::wasm_types::WasmU64;
 
 mod db;
+mod mining_loop;
 
 fn perform_vdf_computation(mut cx: FunctionContext) -> JsResult<JsObject> {
     // 1. Get arguments
@@ -57,7 +58,10 @@ fn perform_vdf_computation(mut cx: FunctionContext) -> JsResult<JsObject> {
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
     // VDF function (for mining-worker.js)
     cx.export_function("performVdfComputation", perform_vdf_computation)?;
-    
+
+    // Mining loop function
+    cx.export_function("findMiningCandidateBatch", mining_loop::find_mining_candidate_batch)?; 
+
     // Database functions
     cx.export_function("initializeDatabase", db::initialize_database)?;
 
