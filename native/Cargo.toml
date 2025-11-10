@@ -19,7 +19,7 @@ rocksdb = "0.22"
 lazy_static = "1.4"
 # --- Protobuf (Fixes E0432 for `prost`) ---
 prost = "0.12"
-
+curve25519-dalek = { version = "4", features = ["serde", "rand_core"] }
 # --- Serialization (Fixes E0433 for `serde`, `serde_json`, etc.) ---
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
