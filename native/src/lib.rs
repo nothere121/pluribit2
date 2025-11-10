@@ -4,7 +4,166 @@ use neon::types::JsBigInt;
 use pluribit_core::vdf::VDF;
 use pluribit_core::wasm_types::WasmU64;
 
+use pluribit_core::vrf::{self, VrfProof};
+use pluribit_core::block::Block; // We need this for the VDF input format
+use curve25519_dalek::scalar::Scalar;
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_TABLE;
+use neon::event::{Task, Channel};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use serde::Serialize;
+
 mod db;
+
+// This struct holds all the parameters for our mining task
+struct MiningTask {
+    height: u64,
+    miner_secret_key: [u8; 32],
+    prev_hash: String,
+    vrf_threshold: [u8; 32],
+    vdf_iterations: u64,
+    // This allows the main thread to stop the task
+    cancelled: Arc<AtomicBool>, 
+    channel: Channel,
+}
+
+// This is the struct we'll return when we find a solution
+#[derive(Serialize, Clone)]
+struct MiningSolution {
+    nonce: String, // Use String for WasmU64/BigInt safety
+    vrf_proof: VrfProof,
+    vdf_proof: pluribit_core::vdf::VDFProof,
+    miner_pubkey: Vec<u8>,
+    vrf_threshold: Vec<u8>,
+    vdf_iterations: String, // Use String for WaSsU64/BigInt safety
+}
+
+// This is the logic that runs on the background thread
+impl Task for MiningTask {
+    type Output = Option<MiningSolution>;
+    type Error = String;
+    type JsEvent = JsValue; // We'll send status updates (JsString)
+
+    fn compute(self) -> Result<Self::Output, Self::Error> {
+        let vdf = VDF::new_with_default_modulus().map_err(|e| e.to_string())?;
+        let secret_key = Scalar::from_bytes_mod_order(self.miner_secret_key);
+        let public_key = &secret_key * &*RISTRETTO_BASEPOINT_TABLE;
+        let miner_pubkey = public_key.compress().to_bytes();
+
+        for nonce in 0..u64::MAX {
+            // 1. Check for cancellation from the main thread
+            if self.cancelled.load(Ordering::SeqCst) {
+                return Ok(None); // Job was cancelled
+            }
+
+            // 2. Perform VDF (the slow part)
+            let vdf_input = format!("{}{}{}{}", self.height, self.prev_hash, hex::encode(miner_pubkey), nonce);
+            let vdf_proof = vdf.compute_with_proof(vdf_input.as_bytes(), WasmU64::from(self.vdf_iterations))
+                .map_err(|e| e.to_string())?;
+
+            // 3. Perform VRF
+            let vrf_proof = vrf::create_vrf(&secret_key, &vdf_proof.y);
+
+            // 4. Check for a win
+            if vrf_proof.output < self.vrf_threshold {
+                // Found a solution!
+                let solution = MiningSolution {
+                    nonce: nonce.to_string(),
+                    vrf_proof,
+                    vdf_proof,
+                    miner_pubkey: miner_pubkey.to_vec(),
+                    vrf_threshold: self.vrf_threshold.to_vec(),
+                    vdf_iterations: self.vdf_iterations.to_string(),
+                };
+                return Ok(Some(solution));
+            }
+            
+            // 5. Send a status update every 1000 nonces
+            if nonce % 1000 == 0 && nonce > 0 {
+                let status_msg = format!("Mining block #{}: Tried {} nonces...", self.height, nonce);
+                self.channel.send(move |mut cx| {
+                    Ok(cx.string(status_msg))
+                });
+            }
+        }
+        Ok(None) // Loop finished without finding anything (unlikely)
+    }
+
+    // This runs on the main event loop when compute() finishes
+    fn resolve(self, mut cx: TaskContext, result: Result<Self::Output, Self::Error>) -> JsResult<JsValue> {
+        match result {
+            Ok(Some(solution)) => {
+                // We found a solution, serialize it to a JS object
+                neon_serde4::to_value(&mut cx, &solution)
+                    .or_else(|e| cx.throw_error(format!("Failed to serialize solution: {}", e)))
+            },
+            Ok(None) => {
+                // Task was cancelled or finished, return null
+                Ok(cx.null().upcast())
+            },
+            Err(e) => {
+                // An error occurred
+                cx.throw_error(e)
+            }
+        }
+    }
+
+    // This handles the status update messages from compute()
+    fn_poll(self, mut cx: TaskContext) -> JsResult<JsValue> {
+        Ok(cx.undefined().upcast())
+    }
+}
+
+// This is the new function we'll export to JavaScript
+fn find_mining_solution(mut cx: FunctionContext) -> JsResult<JsPromise> {
+    let height = cx.argument::<JsBigInt>(0)?.to_u64(&mut cx).unwrap();
+    let miner_secret_key: Handle<JsBuffer> = cx.argument(1)?;
+    let prev_hash = cx.argument::<JsString>(2)?.value(&mut cx);
+    let vrf_threshold: Handle<JsBuffer> = cx.argument(3)?;
+    let vdf_iterations = cx.argument::<JsBigInt>(4)?.to_u64(&mut cx).unwrap();
+    
+    // Copy data from JS
+    let secret_key_bytes = miner_secret_key.as_slice(&cx).to_vec();
+    let vrf_threshold_bytes = vrf_threshold.as_slice(&cx).to_vec();
+
+    if secret_key_bytes.len() != 32 { return cx.throw_error("minerSecretKey must be 32 bytes"); }
+    if vrf_threshold_bytes.len() != 32 { return cx.throw_error("vrfThreshold must be 32 bytes"); }
+
+    let mut sk = [0u8; 32];
+    sk.copy_from_slice(&secret_key_bytes);
+    
+    let mut vrf_thresh = [0u8; 32];
+    vrf_thresh.copy_from_slice(&vrf_threshold_bytes);
+
+    let channel = cx.channel();
+    let cancelled = Arc::new(AtomicBool::new(false));
+
+    let task = MiningTask {
+        height,
+        miner_secret_key: sk,
+        prev_hash,
+        vrf_threshold: vrf_thresh,
+        vdf_iterations,
+        cancelled: Arc::clone(&cancelled),
+        channel,
+    };
+
+    // Schedule the task and get its promise
+    let (promise, resolver) = cx.promise();
+    task.schedule_with(&mut cx, resolver);
+
+    // Create a new object that holds the promise and the cancellation flag
+    let obj = cx.empty_object();
+    obj.set(&mut cx, "promise", promise)?;
+    
+    // Create a function for JS to call to abort the task
+    let abort_fn = JsFunction::new(&mut cx, move |mut cx| {
+        cancelled.store(true, Ordering::SeqCst);
+        Ok(cx.undefined())
+    })?;
+    obj.set(&mut cx, "abort", abort_fn)?;
+
+    Ok(obj.upcast())
+}
 
 fn perform_vdf_computation(mut cx: FunctionContext) -> JsResult<JsObject> {
     // 1. Get arguments
@@ -57,6 +216,7 @@ fn perform_vdf_computation(mut cx: FunctionContext) -> JsResult<JsObject> {
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
     // VDF function (for mining-worker.js)
     cx.export_function("performVdfComputation", perform_vdf_computation)?;
+    cx.export_function("findMiningSolution", find_mining_solution)?;
     
     // Database functions
     cx.export_function("initializeDatabase", db::initialize_database)?;

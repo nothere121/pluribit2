@@ -35,9 +35,6 @@ const { p2p } = require('./src/p2p_pb.cjs');
 const { Block } = p2p;
 export { Block as P2PBlock, p2p };
 
-
-
-
 // ---- Signing helpers (stable stringify + sha256) ----
 /**
  * @param {any} obj

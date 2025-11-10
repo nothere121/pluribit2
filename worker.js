@@ -707,7 +707,7 @@ async function checkAndRecoverFromIncompleteReorg() {
         log('[RECOVERY] ✓ Recovery complete - reorg marker cleared', 'success');
         
         // ... (rest of the function is unchanged) ...
-        const dbTipHeight =  native_db.getTipHeight();
+        const dbTipHeight = BigInt(native_db.getTipHeight());
         const rustState = await pluribit.get_blockchain_state();
         if (dbTipHeight.toString() !== rustState.current_height.toString()) {
             log(`[RECOVERY] ✗ WARNING: Heights still don't match! DB=${dbTipHeight}, Rust=${rustState.current_height}`, 'error');
@@ -1202,7 +1202,7 @@ async function triggerReorgPlan(blockHash) {
                 // Attempt recovery by resetting to database state
                 try {
                     log('[REORG] Attempting emergency recovery...', 'warn');
-                    const dbTipHeight =  native_db.getTipHeight();
+                    const dbTipHeight = BigInt(native_db.getTipHeight());
                     const dbTipBlock =  native_db.loadBlock(dbTipHeight);
                     
                     if (dbTipBlock) {
@@ -1525,7 +1525,7 @@ async function startPoSTMining() {
         if (!workerState.minerActive) return;
 
         // === NEW: Validate state consistency before mining ===
-        const dbTipHeight =  native_db.getTipHeight();
+        const dbTipHeight = BigInt(native_db.getTipHeight());
         let chain = await pluribit.get_blockchain_state();  // Use 'let' so we can reassign
         const rustTipHeight = BigInt(chain.current_height);
         
