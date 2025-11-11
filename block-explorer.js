@@ -1093,33 +1093,48 @@ app.get('/', (req, res) => {
         function parseUint8Array(data) {
             if (!data) return new Uint8Array(0);
             if (data instanceof Uint8Array) return data;
-            if (data.value && data.__type === 'Uint8Array') {
-                // Decode base64
+
+            if (data.type === 'Buffer' && typeof data.data === 'string') {
+                const hex = data.data;
+                if (hex.length === 0) return new Uint8Array(0);
+                
+                // Ensure it's valid hex
+                if (!/^[a-f0-9]+$/i.test(hex) || hex.length % 2 !== 0) {
+                    console.error('Invalid hex string in Buffer data:', hex);
+                    return new Uint8Array(0);
+                }
+                
+                // Convert hex string to a byte array
                 try {
-                    return Uint8Array.from(atob(data.value), function(c) { return c.charCodeAt(0); });
+                    const bytes = new Uint8Array(hex.length / 2);
+                    for (let i = 0; i < hex.length; i += 2) {
+                        bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+                    }
+                    return bytes;
                 } catch (e) {
-                    console.error('Failed to decode Uint8Array:', e);
+                    console.error('Failed to parse hex string:', e);
                     return new Uint8Array(0);
                 }
             }
-            if (Array.isArray(data)) return new Uint8Array(data);
 
-            // NEW ROBUST FIX: Handle object-like arrays {"0": 1, "1": 2, ...}
+            // Fallback for object-like arrays {"0": 1, "1": 2, ...}
             if (typeof data === 'object' && data !== null && !Array.isArray(data) && data['0'] !== undefined) {
                 try {
-                    // Get all numeric keys, sort them numerically, and map to their values.
                     const arr = Object.keys(data)
                         .filter(k => /^\d+$/.test(k)) // Only take numeric keys
                         .sort((a, b) => parseInt(a, 10) - parseInt(b, 10)) // Sort them
                         .map(key => data[key]); // Get the values
-
                     return new Uint8Array(arr);
                 } catch (e) {
                     console.error('Failed to parse object-like Uint8Array:', e);
                     return new Uint8Array(0);
                 }
             }
+            
+            // Fallback for simple arrays
+            if (Array.isArray(data)) return new Uint8Array(data);
 
+            console.warn('Unrecognized Uint8Array format:', data);
             return new Uint8Array(0);
         }
         
@@ -1195,10 +1210,14 @@ app.get('/', (req, res) => {
         async function loadStats() {
             try {
                 const res = await fetch('/api/stats');
-                const stats = JSON.parse(await res.text(), customReviver);
+                const stats = await res.json(); // <-- FIX: Use .json(), remove customReviver
                 
-                document.getElementById('height').textContent = stats.height.toLocaleString();
-                document.getElementById('work').textContent = formatNumber(stats.totalWork);
+                // FIX: Explicitly convert strings to BigInt for math and display
+                const height = BigInt(stats.height);
+                const totalWork = BigInt(stats.totalWork);
+
+                document.getElementById('height').textContent = height.toLocaleString();
+                document.getElementById('work').textContent = formatNumber(totalWork);
                 document.getElementById('utxo').textContent = stats.utxoCount.toLocaleString();
                 
                 // Replicate worker's reward logic
@@ -1206,7 +1225,7 @@ app.get('/', (req, res) => {
                 const HALVING_INTERVAL = 525600n;
                 const REWARD_RESET_INTERVAL = 5256000n;
                 
-                const h = stats.height;
+                const h = height; // <-- FIX: Use the BigInt version
                 let reward = 0n;
                 
                 if (h > 0n) {
@@ -1226,7 +1245,7 @@ app.get('/', (req, res) => {
         async function loadMempool() {
             try {
                 const res = await fetch('/api/mempool');
-                const data = JSON.parse(await res.text(), customReviver);
+                const data = await res.json();
                 
                 state.mempool = data;
                 
@@ -1372,8 +1391,7 @@ app.get('/', (req, res) => {
             if (tx.outputs && tx.outputs.length > 0) {
                 for (let i = 0; i < tx.outputs.length; i++) {
                     const output = tx.outputs[i];
-                    try {
-                        // ✅ FIX 3: Removed .data
+                    try {                       
                         const commitmentData = parseUint8Array(output.commitment);
                         const commitmentHex = Array.from(commitmentData).map(b => b.toString(16).padStart(2, '0')).join('');
                         outputsHtml += '<div class="io-item">' +
@@ -1453,12 +1471,12 @@ app.get('/', (req, res) => {
         async function loadBlocks() {
             try {
                 const res = await fetch('/api/blocks/recent?count=20');
-                const blocks = JSON.parse(await res.text(), customReviver);
+                const blocks = await res.json(); // <-- FIX: Use .json(), remove customReviver
 
                 const train = document.getElementById('blockTrain'); // Get train element
 
-                if (blocks.length > 0 && blocks[0].height > state.lastBlockHeight) {
-                    state.lastBlockHeight = blocks[0].height;
+                if (blocks.length > 0 && Number(blocks[0].height) > state.lastBlockHeight) {
+                    state.lastBlockHeight = Number(blocks[0].height);
                     if (state.blocks.length > 0) {
                         updateBlockTrain(blocks[0], true); // Add new block
                     }
@@ -1546,7 +1564,7 @@ app.get('/', (req, res) => {
             div.className = 'train-block' + (isNew ? ' new' : '');
             div.onclick = () => viewBlock(block.height);
             div.innerHTML =
-                '<div class="train-block-height">#' + block.height.toLocaleString() + '</div>' +
+                '<div class="train-block-height">#' + Number(block.height).toLocaleString() + '</div>' +
                 '<div class="train-block-time">' + formatTime(block.timestamp) + '</div>' +
                 '<div class="train-block-txs">' + block.txCount + ' tx</div>';
             return div;
@@ -1555,14 +1573,14 @@ app.get('/', (req, res) => {
         async function loadDifficultyMetrics() {
             try {
                 const res = await fetch('/api/metrics/difficulty');
-                const metrics = JSON.parse(await res.text(), customReviver);
+                const metrics = await res.json();
                 
                 const ctx = document.getElementById('difficultyChart');
                 const theme = document.documentElement.getAttribute('data-theme') || 'dark';
                 const colors = getChartColors(theme);
                 
                 const vrfData = metrics.map(m => {
-                    const bytes = new parseUint8Array(m.vrfThreshold);
+                    const bytes = parseUint8Array(m.vrfThreshold);
                     return parseInt(Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 8), 16);
                 });
                 
@@ -1669,7 +1687,7 @@ app.get('/', (req, res) => {
         async function loadSupply() {
             try {
                 const res = await fetch('/api/metrics/supply');
-                const supply = JSON.parse(await res.text(), customReviver);
+                const supply = await res.json();
         
                 document.getElementById('totalSupply').textContent = formatBits(supply.totalSupply);
                 document.getElementById('stockToFlow').textContent = Number(supply.stockToFlow).toFixed(2);
@@ -1695,7 +1713,7 @@ app.get('/', (req, res) => {
                     minerDisplay = block.miner;
                 } else if (block.minerPubkey) {
                     try {
-                        const minerData = parseUint8Array(block.minerPubkey.data);
+                        const minerData = parseUint8Array(block.minerPubkey);
                         if (minerData.length > 0) {
                             const minerBytes = Array.from(minerData);
                             minerDisplay = minerBytes.map(function(b) { 
@@ -1710,7 +1728,7 @@ app.get('/', (req, res) => {
                 return '<div class="block-row" onclick="viewBlock(' + block.height + ')">' +
                     '<div class="block-main">' +
                         '<div>' +
-                            '<div class="block-height">#' + block.height.toLocaleString() + '</div>' +
+                            '<div class="block-height">#' + Number(block.height).toLocaleString() + '</div>' +
                             '<div class="block-time">' + formatTime(block.timestamp) + '</div>' +
                         '</div>' +
                         '<div class="tx-badge">' +
@@ -1752,7 +1770,7 @@ app.get('/', (req, res) => {
             try {
                 const res = await fetch('/api/block/' + height);
                 if (!res.ok) throw new Error('Block not found');
-                const block = JSON.parse(await res.text(), customReviver);
+                const block = await res.json();
                 
                 let txListHtml = '';
                 if (block.transactions && block.transactions.length > 0) {
@@ -1794,7 +1812,7 @@ app.get('/', (req, res) => {
                             for (let idx = 0; idx < tx.inputs.length; idx++) {
                                 const inp = tx.inputs[idx];
                                 try {
-                                    const commitmentData = parseUint8Array(inp.commitment.data);
+                                    const commitmentData = parseUint8Array(inp.commitment);
                                     const commitmentBytes = Array.from(commitmentData);
                                     const commitmentHex = commitmentBytes.map(function(b) { 
                                         return b.toString(16).padStart(2, '0'); 
@@ -1817,15 +1835,15 @@ app.get('/', (req, res) => {
                             for (let idx = 0; idx < tx.outputs.length; idx++) {
                                 const out = tx.outputs[idx];
                                 try {
-                                    const commitmentData = parseUint8Array(out.commitment.data);
+                                    const commitmentData = parseUint8Array(out.commitment);
                                     const commitmentBytes = Array.from(commitmentData);
                                     const commitmentHex = commitmentBytes.map(function(b) { 
                                         return b.toString(16).padStart(2, '0'); 
                                     }).join('');
                                     
                                 // ✅ USE THE HELPER FUNCTION
-                                const hasEphemeralKey = parseUint8Array(out.ephemeralKey.data).length > 0;
-                                const hasStealthPayload = parseUint8Array(out.stealthPayload.data).length > 0;
+                                const hasEphemeralKey = parseUint8Array(out.ephemeralKey).length > 0;
+                                const hasStealthPayload = parseUint8Array(out.stealthPayload).length > 0;
                                     
                                     section += '<div class="io-item">' +
                                         'Output ' + (idx + 1) + ': ' + truncateHash(commitmentHex) +
@@ -1845,7 +1863,7 @@ app.get('/', (req, res) => {
                             for (let idx = 0; idx < tx.kernels.length; idx++) {
                                 const kernel = tx.kernels[idx];
                                 try {
-                                    const excessData = parseUint8Array(kernel.excess.data);
+                                    const excessData = parseUint8Array(kernel.excess);
                                     const excessBytes = Array.from(excessData);
                                     const excessHex = excessBytes.map(function(b) { 
                                         return b.toString(16).padStart(2, '0'); 
@@ -1872,7 +1890,7 @@ app.get('/', (req, res) => {
                 // Parse miner pubkey
                 let minerDisplay = 'N/A';
                 try {
-                    const minerData = parseUint8Array(block.minerPubkey.data);
+                    const minerData = parseUint8Array(block.minerPubkey);
                     if (minerData.length > 0) {
                         // Check if it's all zeros (likely genesis)
                         if (minerData.every(b => b === 0)) {
@@ -1891,7 +1909,7 @@ app.get('/', (req, res) => {
                 // Parse VRF threshold
                 let vrfDisplay = 'N/A';
                 try {
-                    const vrfData = parseUint8Array(block.vrfThreshold.data);
+                    const vrfData = parseUint8Array(block.vrfThreshold);
                     if (vrfData.length > 0) {
                         const vrfBytes = Array.from(vrfData).slice(0, 8);
                         vrfDisplay = vrfBytes.map(function(b) { 
@@ -1981,7 +1999,7 @@ app.get('/', (req, res) => {
             try {
                 const res = await fetch('/api/block/hash/' + query);
                 if (res.ok) {
-                    const block = JSON.parse(await res.text(), customReviver);
+                    const block = await res.json();
                     viewBlock(block.height);
                 } else {
                     alert('Block not found');

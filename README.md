@@ -34,7 +34,7 @@ An experimental, privacy-focused cryptocurrency featuring a new consensus mechan
 Pluriƀit uses a hybrid architecture to combine performance, security, and development speed.
 
   * **Rust Core (`pluribit_core`)**: Handles the project's core cryptography and consensus rules, compiled to WebAssembly. It manages all critical consensus logic, state validation, transaction construction, and MimbleWimble primitives.
-  * **Node.js Orchestration Layer (`pluribit-node`)**: The main process that runs the node. It manages the libp2p network stack, database interactions (LevelDB), mining coordination via worker threads, and a JSON RPC server for the block explorer.
+  * **Node.js Orchestration Layer (`pluribit-node`)**: The main process that runs the node. It manages the libp2p network stack, database interactions (via neon - RocksDB), mining coordination via worker threads, and a JSON RPC server for the block explorer.
   * **Web Block Explorer**: A simple web interface for viewing blockchain statistics, blocks, and mempool status, served directly by the Node.js process.
 
 -----

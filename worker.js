@@ -34,21 +34,28 @@ const JSONStringifyWithBigInt = (obj) => {
    * @param {any} value
    * @returns {any}
    */
-  function replacer(key, value) {
-    if (typeof value === 'bigint') {
-      return { __type: 'BigInt', value: value.toString() };
-    }
-    if (value instanceof Uint8Array) {
-      return { __type: 'Uint8Array', value: Buffer.from(value).toString('base64') };
-    }
-    if (Array.isArray(value) && value.length > 0 &&
-      value.every(v => typeof v === 'number' && v >= 0 && v <= 255)) {
-      const uint8 = new Uint8Array(value);
-      return { __type: 'Uint8Array', value: Buffer.from(uint8).toString('base64') };
-    }
+    function replacer(key, value) {
+    // FIX: Convert BigInts to plain strings
+        if (typeof value === 'bigint') {
+          return value.toString();
+        }
+        
+        // FIX: Convert all byte arrays to hex strings
+        if (Buffer.isBuffer(value)) {
+            return value.toString('hex');
+        }
+        if (value instanceof Uint8Array) {
+          return Buffer.from(value).toString('hex');
+        }
+        if (Array.isArray(value) && value.length > 0 &&
+          value.every(v => typeof v === 'number' && v >= 0 && v <= 255)) {
+          const uint8 = new Uint8Array(value);
+          return Buffer.from(uint8).toString('hex');
+        }
+    
     return value;
   }
-  return JSON.stringify(obj, replacer);
+  return JSON.stringify(obj, replacer, 2); // Added 2-space formatting
 };
 
 /**
@@ -79,8 +86,19 @@ function convertLongsToBigInts(obj) {
   if (obj instanceof Uint8Array || Buffer.isBuffer(obj)) {
     return obj;
   }
-  if (obj === null || typeof obj !== 'object') {
-    return obj;
+if (obj === null || typeof obj !== 'object') {
+    // --- FIX: Teach this function to handle numeric strings ---
+    if (typeof obj === 'string') {
+      try {
+        // This will succeed for "12" or "356000"
+        return BigInt(obj);
+      } catch (e) {
+        // This will fail for "hello", so just return the string
+        return obj;
+      }
+    }
+    // --- END FIX ---
+    return obj; // This handles numbers, booleans, null
   }
   // Check if it's a Long.js object
   if (typeof obj.low === 'number' && typeof obj.high === 'number' && typeof obj.unsigned === 'boolean') {
@@ -375,12 +393,15 @@ function startApiServer() {
 
             if (url.pathname === '/api/stats') {
                 const tipHeightObj = native_db.getTipHeight();
-                const tipHeight = convertLongsToBigInts(tipHeightObj);
+                const tipHeight = BigInt(convertLongsToBigInts(tipHeightObj)); // <-- FIX 1: Convert string to BigInt
                 const totalWorkObj = native_db.loadTotalWork();
-                const totalWork = convertLongsToBigInts(totalWorkObj);
+                const totalWork = BigInt(convertLongsToBigInts(totalWorkObj)); // <-- FIX 1: Convert string to BigInt
                 const utxoSetSize = pluribit.get_utxo_set_size();
-                const tipBlockObj = tipHeight > 0n ? native_db.loadBlock(tipHeight) : null;
-                const tipBlock = tipBlockObj ? convertLongsToBigInts(tipBlockObj) : null;
+
+                // FIX 2: Decode Protobuf bytes
+                const tipBlockBytes = tipHeight > 0n ? native_db.loadBlock(tipHeight) : null;
+                const tipBlockDecoded = tipBlockBytes ? p2p.Block.decode(tipBlockBytes) : null;
+                const tipBlock = tipBlockDecoded ? convertLongsToBigInts(tipBlockDecoded) : null;
                 
                 res.writeHead(200);
                 res.end(JSONStringifyWithBigInt({
@@ -416,13 +437,15 @@ function startApiServer() {
                 const hash = hashMatch[1]; // Get captured hash from regex group 1
                 log(`[API /api/block/hash/] Matched hash: ${hash.substring(0,12)}...`);
                 const tipHeightObj = native_db.getTipHeight();
-                const tipHeight = convertLongsToBigInts(tipHeightObj);
+                const tipHeight = BigInt(convertLongsToBigInts(tipHeightObj)); // <-- FIX 1: Convert string to BigInt
 
                 let foundBlock = null; // Initialize foundBlock
                 // Search backwards (consider adding a depth limit if needed)
                 for (let h = tipHeight; h >= 0n; h--) {
-                    const blockObj = native_db.loadBlock(h);
-                    const block = convertLongsToBigInts(blockObj);
+                    // FIX 2: Decode Protobuf bytes
+                    const blockBytes = native_db.loadBlock(h);
+                    const blockDecoded = blockBytes ? p2p.Block.decode(blockBytes) : null;
+                    const block = blockDecoded ? convertLongsToBigInts(blockDecoded) : null;
                     if (block && block.hash === hash) {
                         foundBlock = block; // Assign the found block
                         break; // Exit loop once found
@@ -443,8 +466,10 @@ function startApiServer() {
                     const height = BigInt(heightStr);
                     log(`[API /api/block/:height] Matched height: ${height}`);
 
-                    const blockObj = native_db.loadBlock(height);
-                    const block = convertLongsToBigInts(blockObj);
+                    // FIX: Decode Protobuf bytes
+                    const blockBytes = native_db.loadBlock(height);
+                    const blockDecoded = blockBytes ? p2p.Block.decode(blockBytes) : null;
+                    const block = blockDecoded ? convertLongsToBigInts(blockDecoded) : null;
                     if (!block) {
                         res.writeHead(404);
                         res.end(JSONStringifyWithBigInt({ error: 'Block not found' }));
@@ -461,12 +486,14 @@ function startApiServer() {
             else if (url.pathname.startsWith('/api/blocks/recent')) {
                 const count = BigInt(Math.min(parseInt(url.searchParams.get('count') || '10'), 100));
                 const tipHeightObj = native_db.getTipHeight();
-                const tipHeight = convertLongsToBigInts(tipHeightObj);
+                const tipHeight = BigInt(convertLongsToBigInts(tipHeightObj)); // <-- FIX 1: Convert string to BigInt
                 const blocks = [];
 
                 for (let i = 0n; i < count && tipHeight - i >= 0n; i++) {
-                    const blockObj = native_db.loadBlock(tipHeight - i);
-                    const block = convertLongsToBigInts(blockObj);
+                    // FIX 2: Decode Protobuf bytes
+                    const blockBytes = native_db.loadBlock(tipHeight - i);
+                    const blockDecoded = blockBytes ? p2p.Block.decode(blockBytes) : null;
+                    const block = blockDecoded ? convertLongsToBigInts(blockDecoded) : null;
                     if (block) {
                        
                         let minerDisplay = 'N/A';
@@ -509,14 +536,16 @@ function startApiServer() {
             }
             else if (url.pathname === '/api/metrics/difficulty') {
                 const tipHeightObj = native_db.getTipHeight();
-                const tipHeight = convertLongsToBigInts(tipHeightObj);
+                const tipHeight = BigInt(convertLongsToBigInts(tipHeightObj)); // <-- FIX 1: Convert string to BigInt
                 const samples = BigInt(Math.min(100, Number(tipHeight)));
                 const metrics = [];
 
                 const startHeight = tipHeight - samples > 0n ? tipHeight - samples : 0n;
                 for (let i = startHeight; i <= tipHeight; i++) {
-                    const blockObj = native_db.loadBlock(i);
-                    const block = convertLongsToBigInts(blockObj);
+                    // FIX 2: Decode Protobuf bytes
+                    const blockBytes = native_db.loadBlock(i);
+                    const blockDecoded = blockBytes ? p2p.Block.decode(blockBytes) : null;
+                    const block = blockDecoded ? convertLongsToBigInts(blockDecoded) : null;
                     if (block) {
                         metrics.push({
                             height: block.height,
@@ -532,7 +561,7 @@ function startApiServer() {
             }
             else if (url.pathname === '/api/metrics/rewards') {
                 const tipHeightObj = native_db.getTipHeight();
-                const tipHeight = convertLongsToBigInts(tipHeightObj);
+                const tipHeight = BigInt(convertLongsToBigInts(tipHeightObj)); // <-- FIX: Convert string to BigInt
                 const samples = BigInt(Math.min(100, Number(tipHeight)));
                 const rewards = [];
                 
@@ -554,7 +583,7 @@ function startApiServer() {
             }
             else if (url.pathname === '/api/metrics/supply') {
                 const tipHeightObj = native_db.getTipHeight();
-                const tipHeight = convertLongsToBigInts(tipHeightObj);
+                const tipHeight = BigInt(convertLongsToBigInts(tipHeightObj)); // <-- FIX: Convert string to BigInt
                 
                 const INITIAL_BASE_REWARD = 50_000_000n;
                 const HALVING_INTERVAL = 525_600n;
@@ -598,8 +627,8 @@ function startApiServer() {
                     annualIssuanceInCoins: parseFloat(toCoinString(annualIssuance))
                 }));
             }
-            else if (pathname.startsWith('/api/tx/')) { // <<< ADD TRANSACTION SEARCH ENDPOINT
-                const txHash = pathname.split('/')[3]; // Get hash from path
+            else if (url.pathname.startsWith('/api/tx/')) {// <<< ADD TRANSACTION SEARCH ENDPOINT
+                const txHash = url.pathname.split('/')[3];// Get hash from path
                 // Validate hash format (64 hex characters)
                 if (!/^[a-f0-9]{64}$/i.test(txHash)) {
                     res.writeHead(400); // Bad Request
@@ -609,12 +638,14 @@ function startApiServer() {
                 log(`[API /api/tx/] Searching for transaction hash: ${txHash.substring(0, 12)}...`);
                 let foundBlock = null;
                 const tipHeightObj = native_db.getTipHeight();
-                const tipHeight = convertLongsToBigInts(tipHeightObj);
+                const tipHeight = BigInt(convertLongsToBigInts(tipHeightObj)); // <-- FIX 1: Convert string to BigInt
                 // Search backwards from the tip (limit depth for performance)
                 const searchDepth = Math.min(Number(tipHeight), 1000); // Example: Search last 1000 blocks
                 for (let h = tipHeight; h > tipHeight - BigInt(searchDepth) && h >= 0n; h--) {
-                    const blockObj = native_db.loadBlock(h); // Load from LevelDB
-                    const block = convertLongsToBigInts(blockObj);
+                    // FIX 2: Decode Protobuf bytes
+                    const blockBytes = native_db.loadBlock(h); // Load from LevelDB
+                    const blockDecoded = blockBytes ? p2p.Block.decode(blockBytes) : null;
+                    const block = blockDecoded ? convertLongsToBigInts(blockDecoded) : null;
                     if (block && block.transactions) {
                         for (const tx of block.transactions) {
                             // Check kernel excess (assuming it's the TX hash)
@@ -735,7 +766,10 @@ async function checkAndRecoverFromIncompleteReorg() {
         // Strategy: Rollback to the original tip
         log(`[RECOVERY] Attempting rollback to height ${marker.originalTipHeight}...`, 'warn');
         
-        const originalTipBlock =  native_db.loadBlock(marker.originalTipHeight);
+        const originalTipBlockBytes = native_db.loadBlock(marker.originalTipHeight);
+        const originalTipBlockDecoded = originalTipBlockBytes ? p2p.Block.decode(originalTipBlockBytes) : null;
+        const originalTipBlock = originalTipBlockDecoded ? convertLongsToBigInts(originalTipBlockDecoded) : null;
+        
         if (!originalTipBlock) {
             log(`[RECOVERY] ✗ FATAL: Cannot find original tip block at height ${marker.originalTipHeight}!`, 'error');
             log('[RECOVERY] Manual database inspection and repair required.', 'error');
@@ -797,8 +831,9 @@ export async function main() {
                 case 'inspectBlock':
                     try {
                         const height = BigInt(params.height); // Use BigInt for consistency
-                        const block = await global.load_block_from_db(height); // Assuming global exists
-
+                        const blockBytes = await global.load_block_from_db(height); // Renamed for clarity
+                        const blockDecoded = blockBytes ? p2p.Block.decode(blockBytes) : null;
+                        const block = blockDecoded ? convertLongsToBigInts(blockDecoded) : null;
                         if (block) {
                             log(`--- Block ${height} Inspection ---`);
                             const coinbase = block.transactions.find(tx => !tx.inputs || tx.inputs.length === 0); // Safer find
@@ -949,10 +984,11 @@ export async function main() {
                     try {
                         const tip =  native_db.getTipHeight();
                         console.log(`Tip height: ${tip}`);
-                        // ✅ Use BigInt comparison instead of Math.min
                         const maxHeight = tip < 5n ? tip : 5n;
                         for (let h = 0n; h <= maxHeight; h++) {
-                            const block =  native_db.loadBlock(h);
+                            const blockBytes = native_db.loadBlock(h);
+                            const blockDecoded = blockBytes ? p2p.Block.decode(blockBytes) : null;
+                            const block = blockDecoded ? convertLongsToBigInts(blockDecoded) : null;
                             const coinbase = block.transactions.find(tx => tx.inputs.length === 0);
                             console.log(`Block ${h}: ${coinbase ? coinbase.outputs.length + ' coinbase outputs' : 'no coinbase'}`);
                         }
@@ -969,7 +1005,9 @@ export async function main() {
                         
                         for (let h = 1n; h <= tip; h++) {
 
-                            const block =  native_db.loadBlock(h);
+                            const blockBytes = native_db.loadBlock(h);
+                            const blockDecoded = blockBytes ? p2p.Block.decode(blockBytes) : null;
+                            const block = blockDecoded ? convertLongsToBigInts(blockDecoded) : null;
                             for (const tx of block.transactions) {
                                 if (tx.inputs.length === 0) { // Coinbase
                                     for (const output of tx.outputs) {
@@ -1331,7 +1369,9 @@ async function syncForward(targetHeight, targetHash, trustedPeers) {
     try {
         let currentHeight =  native_db.getTipHeight();
         const syncStartHeight = currentHeight;
-        let previousBlock =  native_db.loadBlock(currentHeight);
+        const previousBlockBytes = native_db.loadBlock(currentHeight);
+        const previousBlockDecoded = previousBlockBytes ? p2p.Block.decode(previousBlockBytes) : null;
+        let previousBlock = previousBlockDecoded ? convertLongsToBigInts(previousBlockDecoded) : null;
         syncState.syncProgress.currentHeight = currentHeight;
         syncState.syncProgress.targetHeight = targetHeight;
 
@@ -1403,7 +1443,9 @@ async function syncForward(targetHeight, targetHash, trustedPeers) {
                 const blockHeightBigInt = BigInt(block.height.toString());
 
                 // NEW: Check if we already have a block at this height in our canonical chain
-                const canonicalBlockAtHeight = await load_block_from_db(blockHeightBigInt);
+                const canonicalBlockBytes = await load_block_from_db(blockHeightBigInt);
+                const canonicalBlockDecoded = canonicalBlockBytes ? p2p.Block.decode(canonicalBlockBytes) : null;
+                const canonicalBlockAtHeight = canonicalBlockDecoded ? convertLongsToBigInts(canonicalBlockDecoded) : null;
                 
                 if (canonicalBlockAtHeight) {
                     if (canonicalBlockAtHeight.hash === block.hash) {
@@ -1594,7 +1636,9 @@ async function startPoSTMining() {
             log(`[MINING] Database tip height: ${dbTipHeight}`, 'error');
             log(`[MINING] Rust memory tip height: ${rustTipHeight}`, 'error');
            
-            const dbTipBlock = native_db.loadBlock(dbTipHeight);
+            const dbTipBlockBytes = native_db.loadBlock(dbTipHeight);
+            const dbTipBlockDecoded = dbTipBlockBytes ? p2p.Block.decode(dbTipBlockBytes) : null;
+            const dbTipBlock = dbTipBlockDecoded ? convertLongsToBigInts(dbTipBlockDecoded) : null;
             if (dbTipBlock) {
                 log(`[MINING] Database tip hash: ${dbTipBlock.hash.substring(0,12)}...`, 'error');
             }
@@ -1955,7 +1999,7 @@ setInterval(safe(debugReorgState), 60000); // Every 60 seconds
 
     // Ensure genesis block exists in DB for new chains.
     const tipHeightObj = native_db.getTipHeight();
-    const tipHeight = convertLongsToBigInts(tipHeightObj);
+    const tipHeight = BigInt(tipHeightObj);
     if (tipHeight === 0n && !( native_db.loadBlock(0))) { 
         log('Creating and saving new genesis block to DB.', 'info');
         // We get the genesis block from Rust and save it to the DB at height 0.
@@ -2484,7 +2528,7 @@ await p2p.subscribe(TOPICS.SWAP_PROPOSE, async (proposal, { from }) => {
             
             // RATIONALE (Fix #10): Validate the requested start height to prevent abuse.
             const tipHeightObj = native_db.getTipHeight();
-            const tipHeight = convertLongsToBigInts(tipHeightObj);
+            const tipHeight = BigInt(tipHeightObj);
             // FIX: Convert the config value to a BigInt before performing arithmetic.
             if (start_height < tipHeight - BigInt(CONFIG.SYNC.MAX_HASH_REQUEST_RANGE)) {
                 log(`[SYNC] Ignoring hash request for start height ${start_height} (too far behind tip ${tipHeight})`, 'warn');
@@ -3698,7 +3742,7 @@ async function handleLoadWallet({ walletId }) {
 
         // 2. Get the blockchain's current tip height
         const chainTipHeightObj =  native_db.getTipHeight();
-        const chainTipHeight = convertLongsToBigInts(chainTipHeightObj);
+        const chainTipHeight = BigInt(chainTipHeightObj);
 
         // 3. Scan *only* the missing blocks (O(k) scan)
         if (walletHeight < chainTipHeight) {
