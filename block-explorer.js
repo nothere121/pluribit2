@@ -14,7 +14,7 @@ app.use(helmet({
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://unpkg.com"],
             scriptSrcAttr: ["'unsafe-inline'"], // This allows onclick handlers
             imgSrc: ["'self'", "data:"],
         }
@@ -159,6 +159,7 @@ app.get('/', (req, res) => {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -1090,53 +1091,60 @@ app.get('/', (req, res) => {
             return value;
         }
         
-        function parseUint8Array(data) {
-            if (!data) return new Uint8Array(0);
-            if (data instanceof Uint8Array) return data;
-
-            if (data.type === 'Buffer' && typeof data.data === 'string') {
-                const hex = data.data;
-                if (hex.length === 0) return new Uint8Array(0);
-                
-                // Ensure it's valid hex
-                if (!/^[a-f0-9]+$/i.test(hex) || hex.length % 2 !== 0) {
-                    console.error('Invalid hex string in Buffer data:', hex);
-                    return new Uint8Array(0);
-                }
-                
-                // Convert hex string to a byte array
-                try {
-                    const bytes = new Uint8Array(hex.length / 2);
-                    for (let i = 0; i < hex.length; i += 2) {
-                        bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
-                    }
-                    return bytes;
-                } catch (e) {
-                    console.error('Failed to parse hex string:', e);
-                    return new Uint8Array(0);
-                }
-            }
-
-            // Fallback for object-like arrays {"0": 1, "1": 2, ...}
-            if (typeof data === 'object' && data !== null && !Array.isArray(data) && data['0'] !== undefined) {
-                try {
-                    const arr = Object.keys(data)
-                        .filter(k => /^\d+$/.test(k)) // Only take numeric keys
-                        .sort((a, b) => parseInt(a, 10) - parseInt(b, 10)) // Sort them
-                        .map(key => data[key]); // Get the values
-                    return new Uint8Array(arr);
-                } catch (e) {
-                    console.error('Failed to parse object-like Uint8Array:', e);
-                    return new Uint8Array(0);
-                }
-            }
-            
-            // Fallback for simple arrays
-            if (Array.isArray(data)) return new Uint8Array(data);
-
-            console.warn('Unrecognized Uint8Array format:', data);
+function parseUint8Array(data) {
+    if (!data) return new Uint8Array(0);
+    if (data instanceof Uint8Array) return data;
+    
+    // ADDED: Handle plain hex strings (as in JSON data)
+    if (typeof data === 'string' && /^[a-f0-9]+$/i.test(data) && data.length % 2 === 0) {
+        const bytes = new Uint8Array(data.length / 2);
+        for (let i = 0; i < data.length; i += 2) {
+            bytes[i / 2] = parseInt(data.substring(i, i + 2), 16);
+        }
+        return bytes;
+    }
+    
+    if (data.type === 'Buffer' && typeof data.data === 'string') {
+        const hex = data.data;
+        if (hex.length === 0) return new Uint8Array(0);
+       
+        // Ensure it's valid hex
+        if (!/^[a-f0-9]+$/i.test(hex) || hex.length % 2 !== 0) {
+            console.error('Invalid hex string in Buffer data:', hex);
             return new Uint8Array(0);
         }
+       
+        // Convert hex string to a byte array
+        try {
+            const bytes = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < hex.length; i += 2) {
+                bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+            }
+            return bytes;
+        } catch (e) {
+            console.error('Failed to parse hex string:', e);
+            return new Uint8Array(0);
+        }
+    }
+    // Fallback for object-like arrays {"0": 1, "1": 2, ...}
+    if (typeof data === 'object' && data !== null && !Array.isArray(data) && data['0'] !== undefined) {
+        try {
+            const arr = Object.keys(data)
+                .filter(k => /^\d+$/.test(k)) // Only take numeric keys
+                .sort((a, b) => parseInt(a, 10) - parseInt(b, 10)) // Sort them
+                .map(key => data[key]); // Get the values
+            return new Uint8Array(arr);
+        } catch (e) {
+            console.error('Failed to parse object-like Uint8Array:', e);
+            return new Uint8Array(0);
+        }
+    }
+   
+    // Fallback for simple arrays
+    if (Array.isArray(data)) return new Uint8Array(data);
+    console.warn('Unrecognized Uint8Array format:', data);
+    return new Uint8Array(0);
+}
         
         function switchView(view) {
             state.currentView = view;
@@ -1841,7 +1849,6 @@ app.get('/', (req, res) => {
                                         return b.toString(16).padStart(2, '0'); 
                                     }).join('');
                                     
-                                // ✅ USE THE HELPER FUNCTION
                                 const hasEphemeralKey = parseUint8Array(out.ephemeralKey).length > 0;
                                 const hasStealthPayload = parseUint8Array(out.stealthPayload).length > 0;
                                     
@@ -1972,16 +1979,188 @@ app.get('/', (req, res) => {
                     '</div>' +
                     (txListHtml ? '<div class="detail-section"><div class="detail-section-title">Transactions</div>' + txListHtml + '</div>' : '') +
                     '<div class="detail-section">' +
+                        '<div class="detail-section-title">Transaction Graph</div>' +
+                        '<div id="txGraph" style="height: 400px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);"></div>' +
+                    '</div>' +                    
+                    '<div class="detail-section">' +
                         '<div class="detail-section-title">Raw Data</div>' +
                         // Use the new stringifier here
                         '<div class="code-block">' + JSONStringifyWithBigInt(block) + '</div>' + // <-- FIX HERE
                     '</div>';
+                    drawTxGraph(block.transactions);
             } catch (e) {
                 // Ensure error message is displayed safely
                 const errorMessage = e instanceof Error ? e.message : String(e);
                 modalBody.innerHTML = '<div class="loading"><p style="color: var(--text-dim);">Failed to load block: ' + escapeHtml(errorMessage) + '</p></div>';
             }
         }
+
+        // Function to render transaction graph using vis.js
+function drawTxGraph(transactions) {
+    if (!transactions || transactions.length === 0) {
+        document.getElementById('txGraph').innerHTML = '<div class="empty-state"><p>No transactions to display.</p></div>';
+        return;
+    }
+
+    // Detect theme and set hex colors (vis.js doesn't handle CSS vars well)
+    const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const isDark = theme === 'dark';
+    const colors = {
+        txBg: isDark ? '#f59e0b' : '#f59e0b', // Orange for tx box
+        inputBg: isDark ? '#4ECDC4' : '#4ECDC4', // Teal/accent for inputs
+        outputBg: isDark ? '#22c55e' : '#22c55e', // Green/success for outputs
+        prevOutputBg: isDark ? '#9090a8' : '#6c757d', // Dim for previous outputs
+        border: isDark ? '#252530' : '#D3D9E2',
+        font: isDark ? '#e8e8f0' : '#293241', // Text color
+        arrow: isDark ? '#9090a8' : '#6c757d' // Dim text for arrows
+    };
+
+    const nodes = new vis.DataSet();
+    const edges = new vis.DataSet();
+
+    transactions.forEach((tx, txIndex) => {
+        const txNodeId = 'tx' + txIndex;
+        nodes.add({
+            id: txNodeId,
+            label: 'Tx ' + (txIndex + 1) + (tx.kernels && tx.kernels.length > 0 && tx.inputs.length === 0 ? ' (Coinbase)' : ''),
+            shape: 'box',
+            color: { background: colors.txBg, border: colors.border },
+            font: { color: colors.font },
+            type: 'tx' // ADDED: Node type for identification
+        });
+
+        (tx.inputs || []).forEach((inp, inpIndex) => {
+            let commHex = 'Invalid';
+            let fullCommHex = ''; // ADDED: Store full hex for matching
+            try {
+                const commData = parseUint8Array(inp.commitment);
+                fullCommHex = Array.from(commData).map(b => b.toString(16).padStart(2, '0')).join('');
+                commHex = fullCommHex.slice(0, 12) + '...' + fullCommHex.slice(-8);
+            } catch {}
+            const inpId = 'in' + txIndex + '-' + inpIndex;
+            nodes.add({
+                id: inpId,
+                label: 'Input: ' + commHex,
+                shape: 'ellipse',
+                color: { background: colors.inputBg, border: colors.border },
+                font: { color: colors.font },
+                type: 'input', // ADDED: Node type
+                commitment: fullCommHex, // ADDED: Full commitment for lookup
+                sourceHeight: inp.sourceHeight // ADDED: For fetching source block
+            });
+            edges.add({
+                from: inpId,
+                to: txNodeId,
+                arrows: 'to',
+                color: { color: colors.arrow }
+            });
+        });
+
+        (tx.outputs || []).forEach((out, outIndex) => {
+            let commHex = 'Invalid';
+            try {
+                const commData = parseUint8Array(out.commitment);
+                commHex = Array.from(commData).map(b => b.toString(16).padStart(2, '0')).join('');
+                commHex = commHex.slice(0, 12) + '...' + commHex.slice(-8);
+            } catch {}
+            const outId = 'out' + txIndex + '-' + outIndex;
+            nodes.add({
+                id: outId,
+                label: 'Output: ' + commHex,
+                shape: 'ellipse',
+                color: { background: colors.outputBg, border: colors.border },
+                font: { color: colors.font },
+                type: 'output' // ADDED: Node type
+            });
+            edges.add({
+                from: txNodeId,
+                to: outId,
+                arrows: 'to',
+                color: { color: colors.arrow }
+            });
+        });
+    });
+
+    const container = document.getElementById('txGraph');
+    const data = { nodes: nodes, edges: edges };
+    const options = {
+        layout: {
+            hierarchical: {
+                direction: 'LR',
+                sortMethod: 'directed',
+                nodeSpacing: 200,
+                levelSeparation: 200
+            }
+        },
+        edges: {
+            smooth: { type: 'continuous' },
+            arrows: { to: { scaleFactor: 0.5 } }
+        },
+        physics: false,
+        interaction: { zoomView: true, dragView: true },
+        // ADDED: Manipulation to allow redrawing
+        manipulation: { enabled: false }
+    };
+
+    const network = new vis.Network(container, data, options);
+
+    // ADDED: Click handler to expand inputs backward
+    network.on('click', async function(params) {
+        if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0];
+            const node = nodes.get(nodeId);
+            if (node.type === 'input' && node.sourceHeight && node.commitment) {
+                try {
+                    // Fetch source block
+                    const res = await fetch('/api/block/' + node.sourceHeight);
+                    if (!res.ok) throw new Error('Source block not found');
+                    const sourceBlock = await res.json();
+
+                    // Find matching output in source block's transactions
+                    let foundOutput = null;
+                    for (const tx of sourceBlock.transactions || []) {
+                        for (const out of tx.outputs || []) {
+                            const outCommData = parseUint8Array(out.commitment);
+                            const outCommHex = Array.from(outCommData).map(b => b.toString(16).padStart(2, '0')).join('');
+                            if (outCommHex === node.commitment) {
+                                foundOutput = out;
+                                break;
+                            }
+                        }
+                        if (foundOutput) break;
+                    }
+
+                    if (foundOutput) {
+                        // Add previous output node
+                        const prevOutId = 'prevOut-' + nodeId; // Unique ID
+                        let prevCommHex = node.commitment.slice(0, 12) + '...' + node.commitment.slice(-8);
+                        nodes.add({
+                            id: prevOutId,
+                            label: 'Prev Output: ' + prevCommHex,
+                            shape: 'ellipse',
+                            color: { background: colors.prevOutputBg, border: colors.border },
+                            font: { color: colors.font },
+                            type: 'prevOutput'
+                        });
+                        edges.add({
+                            from: prevOutId,
+                            to: nodeId,
+                            arrows: 'to',
+                            color: { color: colors.arrow }
+                        });
+
+                        // Redraw the network
+                        network.setData({ nodes: nodes, edges: edges });
+                    } else {
+                        console.warn('No matching output found in source block ' + node.sourceHeight);
+                    }
+                } catch (e) {
+                    console.error('Failed to expand input:', e);
+                }
+            }
+        }
+    });
+}
 
         function closeModal() {
             document.getElementById('blockModal').classList.remove('active');

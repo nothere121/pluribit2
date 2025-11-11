@@ -291,3 +291,306 @@ message P2pMessage {
     ChannelPartialSig channel_close_sig = 19;
   }
 }
+// ===================================================================
+//
+// RUST-LED ARCHITECTURE ADDITIONS
+//
+// These messages define the new, unified API bridge between the
+// JavaScript I/O layer (Node.js) and the Rust Wasm core (the "brain").
+//
+// ===================================================================
+
+
+// -------------------------------------------------------------------
+// 1. JavaScript-to-Rust: Command Wrapper
+//    (Used for CLI commands and system events)
+// -------------------------------------------------------------------
+
+// This is the single wrapper for ALL commands JS sends to Rust.
+// Rust's `handle_command` function will receive this.
+message JSToRust_Command {
+  oneof command {
+    // System Initialization
+    InitializeRequest initialize = 1;
+
+    // Wallet Management
+    CreateWalletRequest create_wallet = 2;
+    RestoreWalletRequest restore_wallet = 3;
+    LoadWalletRequest load_wallet = 4;
+    GetBalanceRequest get_balance = 5;
+    CreateTransactionRequest create_transaction = 6;
+
+    // Node & Chain
+    ToggleMinerRequest toggle_miner = 7;
+    GetStatusRequest get_status = 8;
+    GetSupplyRequest get_supply = 9;
+    GetPeersRequest get_peers = 10;
+    ConnectPeerRequest connect_peer = 11;
+
+    // System Ticks
+    SyncTickRequest sync_tick = 12;
+
+    // Atomic Swaps
+    SwapInitiateRequest swap_initiate = 13;
+    SwapListRequest swap_list = 14;
+    SwapRespondRequest swap_respond = 15;
+    SwapClaimRequest swap_claim = 16;
+    SwapRefundRequest swap_refund = 17;
+
+    // Payment Channels
+    ChannelOpenRequest channel_open = 18;
+    ChannelListRequest channel_list = 19;
+    ChannelAcceptRequest channel_accept = 20;
+    ChannelFundRequest channel_fund = 21;
+    ChannelPayRequest channel_pay = 22;
+    ChannelCloseRequest channel_close = 23;
+  }
+}
+
+// -------------------------------------------------------------------
+// 2. JavaScript-to-Rust: Network Event Wrapper
+//    (Used for all network events from libp2p)
+// -------------------------------------------------------------------
+
+// This is the single wrapper for ALL network events JS sends to Rust.
+// Rust's `handle_network_message` function will receive this.
+message JSToRust_NetworkEvent {
+  oneof event {
+    // Note: We pass the *raw bytes* from libp2p.
+    // Rust will decode the `P2pMessage` internally.
+    P2pMessageReceived p2p_message = 1;
+    PeerConnected peer_connected = 2;
+    PeerDisconnected peer_disconnected = 3;
+    PeerVerified peer_verified = 4;
+  }
+}
+
+// -------------------------------------------------------------------
+// 3. Rust-to-JavaScript: Command Wrapper
+//    (Used for all commands Rust sends back to JS)
+// -------------------------------------------------------------------
+
+// This is the single wrapper for ALL command batches Rust sends to JS.
+// This is the return value of both `handle_command` and `handle_network_message`.
+message RustToJs_CommandBatch {
+  repeated RustCommand commands = 1;
+}
+
+// A single command for the "dumb" JS layer to execute.
+message RustCommand {
+  oneof command {
+    // Core I/O
+    LogMessage log_message = 1;
+    PublishP2pMessage p2p_publish = 2;
+    SendDirectP2pMessage p2p_send_direct = 3;
+    HangUpPeer p2p_hang_up = 4;
+
+    // UI Updates
+    UpdateUiBalance update_ui_balance = 5;
+    UpdateUiMinerStatus update_ui_miner_status = 6;
+    UpdateUiSyncProgress update_ui_sync_progress = 7;
+    UiNetworkInitialized ui_network_initialized = 8;
+    UiWalletLoaded ui_wallet_loaded = 9;
+    UiPeerList ui_peer_list = 10;
+    UiTotalSupply ui_total_supply = 11;
+  }
+}
+
+// ===================================================================
+//
+// INNER MESSAGE DEFINITIONS
+//
+// ===================================================================
+
+// --- Definitions for JSToRust_Command ---
+
+message InitializeRequest {
+  // Empty - just signals the command
+}
+
+message CreateWalletRequest {
+  string wallet_id = 1;
+}
+
+message RestoreWalletRequest {
+  string wallet_id = 1;
+  string phrase = 2;
+}
+
+message LoadWalletRequest {
+  string wallet_id = 1;
+}
+
+message GetBalanceRequest {
+  string wallet_id = 1;
+}
+
+message CreateTransactionRequest {
+  string from_wallet_id = 1;
+  string to_address = 2;
+  uint64 amount = 3; // Protobuf handles u64 -> BigInt
+  uint64 fee = 4;
+}
+
+message ToggleMinerRequest {
+  string miner_id = 1;
+}
+
+message GetStatusRequest {
+  // Empty
+}
+
+message GetSupplyRequest {
+  // Empty
+}
+
+message GetPeersRequest {
+  // Empty
+}
+
+message ConnectPeerRequest {
+  string multiaddr = 1;
+}
+
+message SyncTickRequest {
+  // Empty - just signals the tick
+}
+
+message SwapInitiateRequest {
+  string wallet_id = 1;
+  string counterparty_pubkey = 2;
+  uint64 plb_amount = 3;
+  uint64 btc_amount = 4;
+  uint64 timeout_blocks = 5;
+}
+
+message SwapListRequest {
+  // Empty
+}
+
+message SwapRespondRequest {
+  string wallet_id = 1;
+  string swap_id = 2;
+  string btc_address = 3;
+  string btc_txid = 4;
+  uint32 btc_vout = 5;
+}
+
+message SwapClaimRequest {
+  string wallet_id = 1;
+  string swap_id = 2;
+  string adaptor_secret_hex = 3;
+}
+
+message SwapRefundRequest {
+  string wallet_id = 1;
+  string swap_id = 2;
+}
+
+message ChannelOpenRequest {
+  string wallet_id = 1;
+  string counterparty_pubkey = 2;
+  uint64 my_amount = 3;
+  uint64 their_amount = 4;
+}
+
+message ChannelListRequest {
+  // Empty
+}
+
+message ChannelAcceptRequest {
+  string wallet_id = 1;
+  string proposal_id = 2;
+}
+
+message ChannelFundRequest {
+  string wallet_id = 1;
+  string channel_id = 2;
+}
+
+message ChannelPayRequest {
+  string wallet_id = 1;
+  string channel_id = 2;
+  uint64 amount = 3;
+}
+
+message ChannelCloseRequest {
+  string wallet_id = 1;
+  string channel_id = 2;
+}
+
+// --- Definitions for JSToRust_NetworkEvent ---
+
+message P2pMessageReceived {
+  string topic = 1;
+  bytes data = 2; // Raw bytes from libp2p
+  string from_peer_id = 3;
+}
+
+message PeerConnected {
+  string peer_id = 1;
+}
+
+message PeerDisconnected {
+  string peer_id = 1;
+}
+
+message PeerVerified {
+  string peer_id = 1;
+}
+
+// --- Definitions for RustToJs_CommandBatch ---
+
+message LogMessage {
+  string level = 1; // "info", "warn", "error", "debug"
+  string message = 2;
+}
+
+message PublishP2pMessage {
+  string topic = 1;
+  bytes data = 2; // Raw, *already encoded* P2pMessage bytes
+}
+
+message SendDirectP2pMessage {
+  string peer_id = 1;
+  string protocol = 2;
+  bytes data = 3; // Raw bytes of the message
+}
+
+message HangUpPeer {
+  string peer_id = 1;
+  string reason = 2;
+}
+
+message UpdateUiBalance {
+  string wallet_id = 1;
+  string balance_string = 2; // Use string for u64 safety
+}
+
+message UpdateUiMinerStatus {
+  bool is_mining = 1;
+}
+
+message UpdateUiSyncProgress {
+  uint64 current = 1;
+  uint64 target = 2;
+  uint64 start_time = 3; // JS timestamp (ms)
+}
+
+message UiNetworkInitialized {
+  // Empty
+}
+
+message UiWalletLoaded {
+  string wallet_id = 1;
+  string balance = 2;
+  string address = 3;
+}
+
+message UiPeerList {
+  repeated string peer_ids = 1;
+}
+
+message UiTotalSupply {
+  string supply_string = 1;
+}

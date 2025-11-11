@@ -19,7 +19,8 @@ use crate::vdf::{VDF, VDFProof};
 use crate::blockchain::get_current_base_reward;
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_TABLE;
 use rand::thread_rng;
-
+use prost::Message;
+use crate::error::PluribitError;
 use crate::transaction::{Transaction, TransactionOutput, TransactionKernel};
 use crate::block::Block; 
 use crate::constants::MAX_TX_POOL_SIZE;
@@ -133,6 +134,7 @@ lazy_static! {
         Mutex::new(HashMap::new());
 }
 
+
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 extern "C" {
@@ -145,6 +147,7 @@ fn native_log(s: &str) {
     // On native targets, just print to the console.
     println!("{}", s);
 }
+
 
 // Universal log function that dispatches to the correct implementation
 pub fn log(s: &str) {
@@ -233,7 +236,491 @@ extern "C" {
     #[wasm_bindgen(js_name = "loadAllCoinbaseIndexes")]
     fn load_all_coinbase_indexes_raw() -> js_sys::Promise;
     
+    #[wasm_bindgen(js_name = postRustCommands)]
+    fn post_rust_commands_raw(response_bytes: Vec<u8>);
+    
 }
+
+// Helper to send an async response back to JS
+fn post_rust_commands(response: p2p::RustToJsCommandBatch) {
+    let mut response_bytes = Vec::new();
+    if response.encode(&mut response_bytes).is_ok() {
+        post_rust_commands_raw(response_bytes);
+    } else {
+        log("FATAL: Failed to encode async RustToJs_CommandBatch");
+    }
+}
+
+#[wasm_bindgen]
+pub fn handle_command(request_bytes: Vec<u8>) -> Vec<u8> {
+    // 1. Decode the command from JavaScript
+    let cmd_result = p2p::JsToRustCommand::decode(request_bytes.as_slice());
+
+    // 2. Create a response batch
+    let mut response = p2p::RustToJsCommandBatch::default();
+
+    // 3. Match on the command
+    match cmd_result {
+        Ok(cmd) => {
+            match cmd.command {
+                // --- Wallet Management ---
+                Some(p2p::js_to_rust_command::Command::CreateWallet(req)) => {
+                    handle_create_wallet_internal(&mut response, req);
+                }
+                Some(p2p::js_to_rust_command::Command::RestoreWallet(req)) => {
+                    handle_restore_wallet_internal(&mut response, req);
+                }
+                Some(p2p::js_to_rust_command::Command::LoadWallet(req)) => {
+                    // This is async, so we spawn a future
+                    wasm_bindgen_futures::spawn_local(handle_load_wallet_internal(req));
+                    // Log that the command was *received*
+                    // The async task will send the real response later.
+                    add_log_command(&mut response, "info", "Wallet load started...");
+                }
+                Some(p2p::js_to_rust_command::Command::GetBalance(req)) => {
+                    handle_get_balance_internal(&mut response, req);
+                }
+                Some(p2p::js_to_rust_command::Command::CreateTransaction(req)) => {
+                    // This is async (wallet state must be exported)
+                    wasm_bindgen_futures::spawn_local(handle_create_transaction_internal(req));
+                    add_log_command(&mut response, "info", "Transaction creation initiated...");
+                }
+
+                // --- Node & Chain ---
+                Some(p2p::js_to_rust_command::Command::ToggleMiner(req)) => {
+                    // This is async (needs to get keys, start worker)
+                    wasm_bindgen_futures::spawn_local(handle_toggle_miner_internal(req));
+                }
+                Some(p2p::js_to_rust_command::Command::GetStatus(_)) => {
+                    handle_get_status_internal(&mut response);
+                }
+                Some(p2p::js_to_rust_command::Command::GetSupply(_)) => {
+                    // This is async
+                    wasm_bindgen_futures::spawn_local(handle_get_supply_internal());
+                }
+                Some(p2p::js_to_rust_command::Command::GetPeers(_)) => {
+                    handle_get_peers_internal(&mut response);
+                }
+                Some(p2p::js_to_rust_command::Command::ConnectPeer(req)) => {
+                    handle_connect_peer_internal(&mut response, req);
+                }
+
+                // --- System Ticks ---
+                Some(p2p::js_to_rust_command::Command::SyncTick(req)) => {
+                    // This is async
+                    wasm_bindgen_futures::spawn_local(handle_sync_tick_internal(req));
+                }
+
+                // --- Atomic Swaps ---
+                Some(p2p::js_to_rust_command::Command::SwapInitiate(req)) => {
+                    wasm_bindgen_futures::spawn_local(handle_swap_initiate_internal(req));
+                }
+                Some(p2p::js_to_rust_command::Command::SwapList(_)) => {
+                    handle_swap_list_internal(&mut response);
+                }
+                Some(p2p::js_to_rust_command::Command::SwapRespond(req)) => {
+                    wasm_bindgen_futures::spawn_local(handle_swap_respond_internal(req));
+                }
+                Some(p2p::js_to_rust_command::Command::SwapClaim(req)) => {
+                    wasm_bindgen_futures::spawn_local(handle_swap_claim_internal(req));
+                }
+                Some(p2p::js_to_rust_command::Command::SwapRefund(req)) => {
+                    wasm_bindgen_futures::spawn_local(handle_swap_refund_internal(req));
+                }
+
+                // --- Payment Channels (Stubs) ---
+                Some(p2p::js_to_rust_command::Command::ChannelOpen(req)) => {
+                     wasm_bindgen_futures::spawn_local(handle_channel_open_internal(req));
+                }
+                Some(p2p::js_to_rust_command::Command::ChannelList(_)) => {
+                    handle_channel_list_internal(&mut response);
+                }
+                Some(p2p::js_to_rust_command::Command::ChannelAccept(req)) => {
+                    wasm_bindgen_futures::spawn_local(handle_channel_accept_internal(req));
+                }
+                Some(p2p::js_to_rust_command::Command::ChannelFund(req)) => {
+                    wasm_bindgen_futures::spawn_local(handle_channel_fund_internal(req));
+                }
+                Some(p2p::js_to_rust_command::Command::ChannelPay(req)) => {
+                    wasm_bindgen_futures::spawn_local(handle_channel_pay_internal(req));
+                }
+                Some(p2p::js_to_rust_command::Command::ChannelClose(req)) => {
+                    wasm_bindgen_futures::spawn_local(handle_channel_close_internal(req));
+                }
+
+                // --- Catch-all ---
+                None | Some(_) => {
+                    add_log_command(&mut response, "error", "Received unknown or unimplemented command");
+                }
+            }
+        },
+        Err(e) => {
+            add_log_command(&mut response, "error", &format!("Failed to decode JSToRust_Command: {}", e));
+        }
+    }
+
+    // 4. Encode the response batch and return it
+    let mut response_bytes = Vec::new();
+    match response.encode(&mut response_bytes) {
+        Ok(_) => {
+            // Success, response_bytes is now populated
+            response_bytes
+        }
+        Err(e) => {
+            // Fallback if response encoding fails
+            log(&format!("FATAL: Failed to encode RustToJs_CommandBatch: {}", e));
+            // Return an empty (but valid) encoded batch
+            p2p::RustToJsCommandBatch::default().encode_to_vec()
+        }
+    }
+}
+
+// ===================================================================
+// INTERNAL HELPER FUNCTIONS
+// (These are the stubs you need to implement)
+// ===================================================================
+
+// --- Command Response Helpers ---
+
+/// Helper to add a log command to the response batch
+fn add_log_command(response: &mut p2p::RustToJsCommandBatch, level: &str, message: &str) {
+    response.commands.push(p2p::RustCommand {
+        command: Some(p2p::rust_command::Command::LogMessage(p2p::LogMessage {
+            level: level.to_string(),
+            message: message.to_string(),
+        })),
+    });
+}
+
+/// Helper to add a P2P publish command to the response batch
+fn add_p2p_publish_command(response: &mut p2p::RustToJsCommandBatch, topic: String, data: Vec<u8>) {
+    response.commands.push(p2p::RustCommand {
+        command: Some(p2p::rust_command::Command::P2pPublish(p2p::PublishP2pMessage {
+            topic,
+            data,
+        })),
+    });
+}
+
+// --- Wallet Management Helpers ---
+fn wallet_session_get_balance_internal(wallet_id: &str) -> Result<u64, PluribitError> {
+    let map = WALLET_SESSIONS.lock().unwrap();
+    let w = map.get(wallet_id).ok_or_else(|| PluribitError::StateError("Wallet not loaded".into()))?;
+    Ok(w.balance())
+}
+
+fn handle_create_wallet_internal(response: &mut p2p::RustToJsCommandBatch, req: p2p::CreateWalletRequest) {
+    // This is synchronous, so we can just call the internal logic from src/lib.rs
+    match wallet_session_create_with_mnemonic(&req.wallet_id) {
+        Ok(phrase) => {
+            add_log_command(response, "success", &format!("Wallet '{}' created.", req.wallet_id));
+            add_log_command(response, "warn", "IMPORTANT: Write down your 12-word mnemonic phrase:");
+            add_log_command(response, "info", &phrase);
+            add_log_command(response, "warn", "This phrase is required to restore your wallet.");
+            // TODO: We also need to tell JS to save the wallet blob
+            // let blob = wallet_session_export(&req.wallet_id).unwrap();
+            // add_save_wallet_command(response, req.wallet_id, blob);
+        }
+        Err(e) => {
+            add_log_command(response, "error", &format!("Failed to create wallet: {:?}", e));
+        }
+    }
+}
+
+fn handle_restore_wallet_internal(response: &mut p2p::RustToJsCommandBatch, req: p2p::RestoreWalletRequest) {
+    match wallet_session_restore_from_mnemonic(&req.wallet_id, &req.phrase) {
+        Ok(_) => {
+            add_log_command(response, "success", &format!("Wallet '{}' restored successfully.", req.wallet_id));
+             // TODO: We also need to tell JS to save the wallet blob
+            // let blob = wallet_session_export(&req.wallet_id).unwrap();
+            // add_save_wallet_command(response, req.wallet_id, blob);
+        }
+        Err(e) => {
+             add_log_command(response, "error", &format!("Failed to restore wallet: {:?}", e));
+        }
+    }
+}
+
+async fn handle_load_wallet_internal(req: p2p::LoadWalletRequest) {
+    let wallet_id = req.wallet_id;
+    let mut response = p2p::RustToJsCommandBatch::default();
+
+    // Replicate the logic from worker.js's handleLoadWallet
+    
+    // We must acquire the lock *outside* any .await points.
+    // This is complex. Let's start by just clearing.
+    {
+        let mut map = WALLET_SESSIONS.lock().unwrap();
+        map.clear();
+    }
+    // TODO: Clear workerState.wallets in JS via a new command
+
+    // 1. Load wallet JSON from DB (this is an async JS call)
+    let wallet_json: String = match load_wallet_json_from_db(&wallet_id).await {
+        Ok(Some(json)) => json,
+        Ok(None) => {
+            add_log_command(&mut response, "error", &format!("Wallet '{}' not found.", wallet_id));
+            post_rust_commands(response);
+            return;
+        }
+        Err(e) => {
+            add_log_command(&mut response, "error", &format!("Failed to load wallet '{}': {:?}", wallet_id, e));
+            post_rust_commands(response);
+            return;
+        }
+    };
+
+    // 2. Open the wallet session (synchronous)
+    if let Err(e) = wallet_session_open_internal(&wallet_id, &wallet_json) {
+        add_log_command(&mut response, "error", &format!("Failed to open wallet session: {}", e.to_string()));
+        post_rust_commands(response);
+        return;
+    }
+
+    add_log_command(&mut response, "info", &format!("Wallet '{}' loaded. Checking for missed blocks...", wallet_id));
+
+    // 3. Get wallet synced height (synchronous)
+    let wallet_height = match wallet_session_get_synced_height(&wallet_id) {
+        Ok(h) => h,
+        Err(e) => {
+            add_log_command(&mut response, "error", &format!("Failed to get wallet sync height: {:?}", e));
+            post_rust_commands(response);
+            return;
+        }
+    };
+
+    // 4. Get chain tip height (asynchronous)
+    let chain_tip_height = match get_tip_height_from_db().await {
+        Ok(h) => h,
+        Err(e) => {
+            add_log_command(&mut response, "error", &format!("Failed to get tip height: {:?}", e));
+            post_rust_commands(response);
+            return;
+        }
+    };
+
+    // 5. Scan missing blocks (asynchronous)
+    if wallet_height < chain_tip_height {
+        add_log_command(&mut response, "info", &format!("[WALLET] Scanning from height {} to {}...", wallet_height + 1, chain_tip_height));
+        if let Err(e) = wallet_session_scan_range(&wallet_id, wallet_height + 1, chain_tip_height).await {
+            add_log_command(&mut response, "error", &format!("Failed to scan range: {:?}", e));
+            post_rust_commands(response);
+            return;
+        }
+    } else {
+        add_log_command(&mut response, "info", "[WALLET] Wallet is already fully synced.");
+    }
+
+    // 6. Persist updated wallet state (asynchronous)
+    let persisted_json = match wallet_session_export(&wallet_id) {
+        Ok(json) => json,
+        Err(e) => {
+            add_log_command(&mut response, "error", &format!("Failed to export wallet: {:?}", e));
+            post_rust_commands(response);
+            return;
+        }
+    };
+    if let Err(e) = save_wallet_to_db(&wallet_id, &persisted_json).await {
+        add_log_command(&mut response, "error", &format!("Failed to save wallet: {:?}", e));
+        post_rust_commands(response);
+        return;
+    }
+
+    // 7. Get final balance and address (synchronous)
+    let balance = wallet_session_get_balance_internal(&wallet_id).unwrap_or(0);
+    let address = wallet_session_get_address(&wallet_id).unwrap_or("Error".to_string());
+
+    // 8. Add the final UI command
+    response.commands.push(p2p::RustCommand {
+        command: Some(p2p::rust_command::Command::UiWalletLoaded(p2p::UiWalletLoaded {
+            wallet_id: wallet_id.to_string(),
+            balance: balance.to_string(),
+            address: address,
+        })),
+    });
+
+    // 9. Send the complete batch of commands back to JS
+    post_rust_commands(response);
+}
+
+// --- ADD these new/modified helper functions to src/lib.rs ---
+
+// This helper calls the JS bridge to load the wallet JSON
+async fn load_wallet_json_from_db(wallet_id: &str) -> Result<Option<String>, JsValue> {
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(js_name = load_wallet_from_db)]
+        fn load_wallet_raw(wallet_id: &str) -> js_sys::Promise;
+    }
+    
+    let promise = load_wallet_raw(wallet_id);
+    let result_js = wasm_bindgen_futures::JsFuture::from(promise).await?;
+    
+    if result_js.is_null() || result_js.is_undefined() {
+        return Ok(None);
+    }
+    
+    // The native_db.loadWallet function returns the JSON string directly
+    result_js.as_string().ok_or_else(|| JsValue::from_str("DB returned non-string for wallet"))
+        .map(Some)
+}
+
+// This helper calls the JS bridge to save the wallet JSON
+async fn save_wallet_to_db(wallet_id: &str, wallet_json: &str) -> Result<(), JsValue> {
+    #[wasm_bindgen]
+    extern "C" {
+        // Use a global name, just like the others
+        #[wasm_bindgen(js_name = save_wallet_to_db)]
+        fn save_wallet_raw(wallet_id: &str, wallet_json: &str) -> js_sys::Promise;
+    }
+
+    let promise = save_wallet_raw(wallet_id, wallet_json); // This now calls global `save_wallet_to_db`
+    wasm_bindgen_futures::JsFuture::from(promise).await?;
+    Ok(())
+}
+
+// This is the internal, synchronous version of wallet_session_get_address
+fn wallet_session_get_address_internal(wallet_id: &str) -> Result<String, PluribitError> {
+    let map = WALLET_SESSIONS.lock().map_err(|e| PluribitError::LockError(e.to_string()))?;
+    let w = map.get(wallet_id).ok_or_else(|| PluribitError::StateError("Wallet not loaded".into()))?;
+    let scan_pub_bytes = w.scan_pub.compress().to_bytes();
+    crate::address::encode_stealth_address(&scan_pub_bytes)
+        .map_err(|e| PluribitError::ValidationError(e.to_string()))
+}
+
+fn handle_get_balance_internal(response: &mut p2p::RustToJsCommandBatch, req: p2p::GetBalanceRequest) {
+    // This is the function we already refactored
+    match wallet_session_get_balance_internal(&req.wallet_id) {
+        Ok(balance) => {
+            response.commands.push(p2p::RustCommand {
+                command: Some(p2p::rust_command::Command::UpdateUiBalance(p2p::UpdateUiBalance {
+                    wallet_id: req.wallet_id,
+                    balance_string: balance.to_string(),
+                })),
+            });
+        }
+        Err(e) => {
+            add_log_command(response, "error", &format!("Failed to get balance: {}", e.to_string()));
+        }
+    }
+}
+
+async fn handle_create_transaction_internal(req: p2p::CreateTransactionRequest) {
+    log("TODO: Implement handle_create_transaction_internal");
+    // 1. Call wallet_session_send_to_stealth_internal
+    // 2. If OK, get the transaction bytes
+    // 3. Create a P2pMessage wrapper
+    // 4. Create a RustToJs_CommandBatch
+    // 5. Add a p2p_publish command to the batch
+    // 6. Send the batch back to JS
+}
+
+// --- Node & Chain Helpers ---
+
+async fn handle_toggle_miner_internal(req: p2p::ToggleMinerRequest) {
+    log("TODO: Implement handle_toggle_miner_internal");
+    // This is complex. It needs to:
+    // 1. Lock a new `GlobalState.miner_state`
+    // 2. If starting, get keys with `wallet_session_get_spend_privkey`
+    // 3. Create a `StartMining` command for JS to spin up the mining *worker*
+    // 4. If stopping, create a `StopMining` command
+}
+
+fn handle_get_status_internal(response: &mut p2p::RustToJsCommandBatch) {
+    log("TODO: Implement handle_get_status_internal");
+    // 1. Lock BLOCKCHAIN
+    // 2. Get height, work, etc.
+    // 3. Add LogMessage commands to response
+}
+
+async fn handle_get_supply_internal() {
+    log("TODO: Implement handle_get_supply_internal");
+    // 1. Call audit_total_supply
+    // 2. Create RustToJs_CommandBatch
+    // 3. Add UiTotalSupply command
+    // 4. Send batch back to JS
+}
+
+fn handle_get_peers_internal(response: &mut p2p::RustToJsCommandBatch) {
+    log("TODO: Implement handle_get_peers_internal");
+    // 1. This state is in JS (workerState.p2p.getConnectedPeers)
+    // 2. This command should be *removed* from Rust.
+    // 3. The JS 'peers' command in main.js should just call worker.postMessage({ action: 'getPeers' })
+    // 4. worker.js should handle it directly without calling Rust.
+    add_log_command(response, "warn", "GetPeers logic should be handled in worker.js, not Rust.");
+}
+
+fn handle_connect_peer_internal(response: &mut p2p::RustToJsCommandBatch, req: p2p::ConnectPeerRequest) {
+    log("TODO: Implement handle_connect_peer_internal");
+    // 1. This is an I/O command.
+    // 2. This command should be *removed* from Rust.
+    // 3. The JS 'connect' command in main.js should just call worker.postMessage({ action: 'connectPeer', ... })
+    // 4. worker.js should handle it directly without calling Rust.
+    add_log_command(response, "warn", "ConnectPeer logic should be handled in worker.js, not Rust.");
+}
+
+// --- System Tick Helpers ---
+
+async fn handle_sync_tick_internal(_req: p2p::SyncTickRequest) {
+    log("TODO: Implement handle_sync_tick_internal");
+    // This will replace the logic in worker.js `bootstrapSync`
+    // 1. Lock STATE
+    // 2. Check sync_state.status
+    // 3. If "IDLE", change to "CONSENSUS"
+    // 4. Create P2P message for TipRequest
+    // 5. Create RustToJs_CommandBatch
+    // 6. Add p2p_publish command
+    // 7. Send batch back to JS
+}
+
+// --- L2 Helpers (Stubs) ---
+
+async fn handle_swap_initiate_internal(req: p2p::SwapInitiateRequest) {
+    log("TODO: Implement handle_swap_initiate_internal");
+}
+
+fn handle_swap_list_internal(response: &mut p2p::RustToJsCommandBatch) {
+    log("TODO: Implement handle_swap_list_internal");
+}
+
+async fn handle_swap_respond_internal(req: p2p::SwapRespondRequest) {
+    log("TODO: Implement handle_swap_respond_internal");
+}
+
+async fn handle_swap_claim_internal(req: p2p::SwapClaimRequest) {
+    log("TODO: Implement handle_swap_claim_internal");
+}
+
+async fn handle_swap_refund_internal(req: p2p::SwapRefundRequest) {
+    log("TODO: Implement handle_swap_refund_internal");
+}
+
+async fn handle_channel_open_internal(req: p2p::ChannelOpenRequest) {
+    log("TODO: Implement handle_channel_open_internal");
+}
+
+fn handle_channel_list_internal(response: &mut p2p::RustToJsCommandBatch) {
+    log("TODO: Implement handle_channel_list_internal");
+}
+
+async fn handle_channel_accept_internal(req: p2p::ChannelAcceptRequest) {
+    log("TODO: Implement handle_channel_accept_internal");
+}
+
+async fn handle_channel_fund_internal(req: p2p::ChannelFundRequest) {
+    log("TODO: Implement handle_channel_fund_internal");
+}
+
+async fn handle_channel_pay_internal(req: p2p::ChannelPayRequest) {
+    log("TODO: Implement handle_channel_pay_internal");
+}
+
+async fn handle_channel_close_internal(req: p2p::ChannelCloseRequest) {
+    log("TODO: Implement handle_channel_close_internal");
+}
+
+
+
 
 // --- START: Add async helpers for new bridge functions ---
 async fn save_coinbase_index_to_db(commitment: &[u8], height: u64) -> Result<(), JsValue> {
@@ -266,7 +753,6 @@ async fn load_all_coinbase_indexes_from_db() -> Result<HashMap<Vec<u8>, u64>, Js
 
 // helper
 async fn save_block_with_hash(block: &Block) -> Result<(), JsValue> {
-    use prost::Message;
     let p2p_block = p2p::Block::from(block.clone());
     let block_bytes = p2p_block.encode_to_vec();
     let block_bytes_js = serde_wasm_bindgen::to_value(&block_bytes)?; // <-- Pass bytes
@@ -275,7 +761,6 @@ async fn save_block_with_hash(block: &Block) -> Result<(), JsValue> {
 }
 
 async fn load_block_by_hash(hash: &str) -> Result<Option<Block>, JsValue> {
-    use prost::Message; // <-- Add prost
     let promise = load_block_by_hash_raw(hash);
     let result_js = wasm_bindgen_futures::JsFuture::from(promise).await?;
     if result_js.is_null() || result_js.is_undefined() {
@@ -306,7 +791,6 @@ async fn clear_reorg_marker() -> Result<(), JsValue> {
 }
 
 async fn save_block_to_staging(block: &Block) -> Result<(), JsValue> {
-    use prost::Message;
     let p2p_block = p2p::Block::from(block.clone());
     let block_bytes = p2p_block.encode_to_vec();
     let block_bytes_js = serde_wasm_bindgen::to_value(&block_bytes)?; // <-- Pass bytes
@@ -315,7 +799,6 @@ async fn save_block_to_staging(block: &Block) -> Result<(), JsValue> {
 }
 
 async fn commit_staged_reorg(blocks: &Vec<Block>, old_heights: &Vec<u64>, new_tip_height: u64, new_tip_hash: &str) -> Result<(), JsValue> {
-    use prost::Message;
     // Convert Vec<Block> to Vec<Vec<u8>>
     let blocks_bytes_vec: Vec<Vec<u8>> = blocks.iter().map(|b| {
         let p2p_block = p2p::Block::from(b.clone());
@@ -332,7 +815,6 @@ async fn commit_staged_reorg(blocks: &Vec<Block>, old_heights: &Vec<u64>, new_ti
 
 // Helper function to convert the raw JS Promise for saving a block
 async fn save_block_to_db(block: Block) -> Result<(), JsValue> {
-    use prost::Message;
     // Convert to P2P struct
     let p2p_block = p2p::Block::from(block);
     // Encode to bytes
@@ -346,7 +828,6 @@ async fn save_block_to_db(block: Block) -> Result<(), JsValue> {
 }
 
 async fn save_reorg_marker_proto(marker: &p2p::ReorgMarker) -> Result<(), JsValue> {
-    use prost::Message;
     let marker_bytes = marker.encode_to_vec();
     // Convert the raw bytes to a hex string for safe storage in JS LevelDB
     let marker_hex = hex::encode(marker_bytes);
@@ -524,7 +1005,6 @@ pub async fn delete_utxo_from_db(commitment: &[u8]) -> Result<(), JsValue> {
 // Helper functions to convert the raw JS Promise into a Rust Future
 // that yields a result we can use.
 async fn load_block_from_db(height: u64) -> Result<Option<Block>, JsValue> {
-    use prost::Message; // <-- Add prost
     let promise = load_block_from_db_raw(height);
     let result_js = wasm_bindgen_futures::JsFuture::from(promise).await?;
     if result_js.is_null() || result_js.is_undefined() {
@@ -545,7 +1025,6 @@ async fn load_block_from_db(height: u64) -> Result<Option<Block>, JsValue> {
 }
 
 async fn load_blocks_from_db(start: u64, end: u64) -> Result<Vec<Block>, JsValue> {
-    use prost::Message; // <-- Add prost
     let promise = load_blocks_from_db_raw(start, end);
     let result_js = wasm_bindgen_futures::JsFuture::from(promise).await?;
     if result_js.is_null() || result_js.is_undefined() {
@@ -1243,16 +1722,17 @@ pub fn wallet_session_create(wallet_id: &str) -> Result<(), JsValue> {
     Ok(())
 }
 
-/// Load a wallet into a session from a persisted JSON blob (plaintext for now).
-#[wasm_bindgen]
-pub fn wallet_session_open(wallet_id: &str, wallet_json: &str) -> Result<(), JsValue> {
+/// Loads a wallet from JSON into the in-memory session map.
+fn wallet_session_open_internal(wallet_id: &str, wallet_json: &str) -> Result<(), PluribitError> {
     let w: wallet::Wallet = serde_json::from_str(wallet_json)
-        .map_err(|e| JsValue::from_str(&format!("Wallet parse failed: {}", e)))?;
-    let mut map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
+        .map_err(|e| PluribitError::DeserializationError(format!("Wallet parse failed: {}", e)))?;
+
+    let mut map = WALLET_SESSIONS.lock()
+        .map_err(|e| PluribitError::LockError(e.to_string()))?;
+
     map.insert(wallet_id.to_string(), w);
     Ok(())
 }
-
 /// Export the current session wallet as JSON (for persistence).
 #[wasm_bindgen]
 pub fn wallet_session_export(wallet_id: &str) -> Result<String, JsValue> {
@@ -1268,13 +1748,6 @@ pub fn wallet_session_get_address(wallet_id: &str) -> Result<String, JsValue> {
     let scan_pub_bytes = w.scan_pub.compress().to_bytes();
     crate::address::encode_stealth_address(&scan_pub_bytes)
         .map_err(|e| JsValue::from_str(&e.to_string()))
-}
-
-#[wasm_bindgen]
-pub fn wallet_session_get_balance(wallet_id: &str) -> Result<u64, JsValue> {
-    let map = WALLET_SESSIONS.lock().map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let w = map.get(wallet_id).ok_or_else(|| JsValue::from_str("Wallet not loaded"))?;
-    Ok(w.balance())
 }
 
 /// Scans a specific range of blocks (O(k)) 
@@ -1904,7 +2377,6 @@ async fn validate_side_or_orphan(
 /// - Else -> valid side block; JS may ask for reorg via plan_reorg_for_tip.
 #[wasm_bindgen(js_name = "ingest_block_bytes")]
 pub async fn ingest_block_bytes(block_bytes: Vec<u8>) -> Result<JsValue, JsValue> {
-    use prost::Message;
     
     // 1. Decode and compute hash
     let p2p_block = p2p::Block::decode(&block_bytes[..])
@@ -3711,7 +4183,6 @@ pub fn wallet_clear_pending_utxos(commitments_js: JsValue) -> Result<(), JsValue
 /// Scan a single block (used during live sync).
 #[wasm_bindgen]
 pub fn wallet_session_scan_block(wallet_id: &str, block_bytes: Vec<u8>) -> Result<(), JsValue> { // <-- CHANGED: from block_js: JsValue
-    use prost::Message; // <-- Add prost
 
     // 1. Decode bytes into p2p::Block
     let p2p_block = p2p::Block::decode(&block_bytes[..])

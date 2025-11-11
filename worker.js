@@ -218,9 +218,21 @@ global.save_coinbase_index = async (...args) => native_db.save_coinbase_index(..
 global.delete_coinbase_index = async (...args) => native_db.delete_coinbase_index(...args);
 global.loadAllCoinbaseIndexes = async (...args) => native_db.loadAllCoinbaseIndexes(...args); // Returns JS object, OK
 // --- END: Changed global assignments ---
+global.load_wallet_from_db = async (walletId) => native_db.loadWallet(walletId);
+global.save_wallet_to_db = async (walletId, walletJson) => native_db.saveWallet(walletId, walletJson);
 
 // ===================== CORRECTED ADDITIONS END HERE =====================
-
+// This new function is called *by* Rust for async responses
+global.postRustCommands = (responseBytes) => {
+    // We can't await this, so we just log errors
+    try {
+        if (responseBytes) {
+            executeRustCommands(responseBytes);
+        }
+    } catch (e) {
+        log(`Error executing async Rust command: ${e.message}`, 'error');
+    }
+};
 const wasmPath = path.join(__dirname, './pkg-node/pluribit_core.js');
 const { default: init, ...pluribit } = await import(wasmPath);
 
@@ -822,8 +834,20 @@ async function checkAndRecoverFromIncompleteReorg() {
 export async function main() {
     log('Worker starting initialization...');
     parentPort.on('message', async (event) => {
-        const { action, ...params } = event;
+        const { action, payload, ...params } = event;
         try {
+            
+            if (action === 'handle_command') {
+                // 1. Pass the raw bytes from main.js directly to Rust
+                const responseBytes = pluribit.handle_command(payload);
+
+                // 2. Execute any commands Rust sent back
+                if (responseBytes) {
+                    executeRustCommands(responseBytes);
+                }
+                return; // Exit here
+            }
+            
             switch (action) {
                 case 'initializeNetwork': await initializeNetwork(); break;
                case 'createWalletWithMnemonic': await handleCreateWalletWithMnemonic(params); break; 
@@ -887,43 +911,29 @@ export async function main() {
                         log(`Error inspecting block ${params.height}: ${e.message}`, 'error');
                     }
                     break; // Added missing break
-                case 'loadWallet': 
-                    await handleLoadWallet(params);
-                    
-                    // DEBUG: Check for duplicate commitments
-                    const walletId = params.walletId; // ✅ Extract from params
-                    const walletJson = await pluribit.wallet_session_export(walletId);
-                    const wallet = JSON.parse(walletJson);
-                    
-                    const commitments = new Set();
-                    const duplicates = [];
-                    
-                    for (const utxo of wallet.owned_utxos || []) {
-                        const key = Buffer.from(utxo.commitment).toString('hex');
-                        if (commitments.has(key)) {
-                            duplicates.push(key);
-                        }
-                        commitments.add(key);
-                    }
-                    
-                    if (duplicates.length > 0) {
-                        log(`⚠️  Wallet ${walletId} has ${duplicates.length} duplicate UTXOs!`);
-                        duplicates.forEach(d => log(`  Duplicate: ${d.slice(0, 16)}...`));
-                    } else {
-                        log(`✅ Wallet ${walletId} has no duplicates (${commitments.size} unique UTXOs)`);
-                    }
-                    break;
+
                 case 'createTransaction': await handleCreateTransaction(params); break;
-                case 'setMinerActive':
+                case 'setMinerActive': {
+                    let finalState = false;
                     if (!params.active) {
                         await stopMining();
+                        finalState = false;
                     } else {
                         workerState.minerActive = true;
                         workerState.minerId = params.minerId;
-                        await startPoSTMining(); // Use the worker-based mining
+                        const started = await startPoSTMining(); 
+                        
+                        if (!started) { 
+                            log('Failed to start miner (e.g., state inconsistency check failed).', 'error');
+                            workerState.minerActive = false; // Reset the state
+                            finalState = false;
+                        } else {
+                            finalState = true;
+                        }
                     }
-                    parentPort.postMessage({ type: 'minerStatus', payload: { active: params.active } });
+                    parentPort.postMessage({ type: 'minerStatus', payload: { active: finalState } });
                     break;
+                }
                 case 'getBalance':
                     try {
                         // Call the session-based balance function directly.
@@ -1249,7 +1259,7 @@ async function fetchBlocksParallel(blockHashes, peerIds) {
     return results;
     }
     
-    
+
 async function triggerReorgPlan(blockHash) {
     try {
         const blockHashShort = blockHash.substring(0, 12);
@@ -1625,7 +1635,7 @@ async function syncForward(targetHeight, targetHash, trustedPeers) {
 async function startPoSTMining() {
     const release = await globalMutex.acquire();
     try {
-        if (!workerState.minerActive) return;
+        if (!workerState.minerActive) return false;
         // === NEW: Validate state consistency before mining ===
         const dbTipHeight = BigInt(native_db.getTipHeight());
         let chain = await pluribit.get_blockchain_state(); // Use 'let' so we can reassign
@@ -1655,7 +1665,7 @@ async function startPoSTMining() {
             } catch (resyncError) {
                 log(`[MINING] ✗ Resync failed: ${resyncError.message}`, 'error');
                 log('[MINING] Cannot start mining - manual recovery required', 'error');
-                return;
+                return false;
             }
         }
         // === END NEW CODE ===
@@ -1700,6 +1710,7 @@ async function startPoSTMining() {
             vrfThreshold: ensureUint8Array(vrfThresholdToUse), // ← FIXED: Ensure (already is, but safe)
             vdfIterations: vdfIterationsToUse
         });
+        return true;
     } finally {
         // Always release the lock when the function is done
         release();
@@ -2096,6 +2107,61 @@ blockRequestCleanupTimer = setInterval(() => {
     parentPort.postMessage({ type: 'networkInitialized' });
    // Start API server for block explorer
     startApiServer();
+    
+    // --- NEW: Bootstrap Connection Watchdog ---
+    // RATIONALE: This timer periodically checks if we are still connected to
+    // our primary bootstrap nodes. If a connection is dropped, it will
+    // automatically attempt to redial. This ensures a persistent link
+    // to the core network peers defined in your config.
+    const BOOTSTRAP_WATCHDOG_INTERVAL_MS = 30000; // Check every 30 second
+    let bootstrapAddresses = []; // Store the multiaddrs
+
+    try {
+        // Get the list of bootstrap multiaddrs from the p2p config
+        // This list is loaded from bootstrap-config.json in libp2p-node.js 
+        const bootstrapAddrStrings = workerState.p2p.config.bootstrap || []; 
+        bootstrapAddresses = bootstrapAddrStrings.map(addrStr => multiaddr(addrStr)); 
+    } catch (e) {
+        log(`[WATCHDOG] Failed to parse bootstrap addresses: ${e.message}`, 'error');
+    }
+
+    if (bootstrapAddresses.length > 0) {
+        log(`[WATCHDOG] Enabled: Monitoring connection to ${bootstrapAddresses.length} bootstrap peer(s).`, 'info');
+
+        setInterval(safe(async () => {
+            if (!workerState.p2p || !workerState.p2p.node) return;
+
+            // Get all currently connected peer IDs
+            const connectedPeers = workerState.p2p.node.getConnections().map(c => c.remotePeer.toString());
+            const connectedPeerSet = new Set(connectedPeers);
+
+            for (const addr of bootstrapAddresses) {
+                try {
+                    // Get the PeerId from the multiaddr (if it has one)
+                    const peerId = addr.getPeerId();
+                    if (!peerId) {
+                        log(`[WATCHDOG] Bootstrap address ${addr.toString()} has no PeerId, cannot monitor.`, 'debug');
+                        continue;
+                    }
+
+                    // Check if we are connected
+                    if (!connectedPeerSet.has(peerId)) {
+                        log(`[WATCHDOG] Not connected to bootstrap peer ${peerId}. Attempting to dial...`, 'warn');
+                        // Use the dial method, same as the 'connectPeer' command 
+                        await workerState.p2p.node.dial(addr);
+                        log(`[WATCHDOG] Dial attempt sent to ${peerId}.`, 'info');
+                    } else {
+                        log(`[WATCHDOG] Connection to bootstrap peer ${peerId} is active.`, 'debug');
+                    }
+                } catch (e) {
+                    log(`[WATCHDOG] Error processing bootstrap peer ${addr.toString()}: ${e.message}`, 'warn');
+                }
+            }
+        }), BOOTSTRAP_WATCHDOG_INTERVAL_MS);
+    }
+    // --- END: Bootstrap Connection Watchdog ---
+    
+    
     log('Network initialization complete.', 'success');
 }
 
@@ -3638,7 +3704,52 @@ async function handleSwapAliceSig(message, { from }) {
     }
 }
 
+// This new function executes the command list Rust sends back
+function executeRustCommands(responseBytes) {
+    if (!responseBytes || responseBytes.length === 0) return;
 
+    // 1. Decode the response batch from Rust
+    const response = p2p.RustToJs_CommandBatch.decode(responseBytes);
+
+    // 2. Loop over and execute each command
+    for (const cmd of response.commands) {
+        if (cmd.logMessage) {
+            // Rust tells us to log something.
+            // We just use our existing log function.
+            // main.js will automatically handle redrawing the prompt.
+            log(cmd.logMessage.message, cmd.logMessage.level);
+        }
+        
+        if (cmd.updateUiBalance) {
+             parentPort.postMessage({ 
+                 type: 'walletBalance', 
+                 payload: { 
+                     wallet_id: cmd.updateUiBalance.walletId, 
+                     balance: cmd.updateUiBalance.balanceString 
+                 }
+             });
+         }
+
+
+        if (cmd.uiWalletLoaded) {
+            // Rust tells us a wallet was loaded.
+            // We just forward the data to main.js, which handles the UI.
+            parentPort.postMessage({
+                type: 'walletLoaded', // We can re-use the existing 'walletLoaded' event!
+                payload: {
+                    walletId: cmd.uiWalletLoaded.walletId,
+                    balance: cmd.uiWalletLoaded.balance,
+                    address: cmd.uiWalletLoaded.address
+                }
+            });
+        }
+
+        // if (cmd.p2pPublish) {
+        //     // This is correct for later
+        //     workerState.p2p.publish(cmd.p2pPublish.topic, cmd.p2pPublish.data);
+        // }
+    }
+}
 
 // Helper function to update wallets after reorg
 async function updateWalletsAfterReorg() {

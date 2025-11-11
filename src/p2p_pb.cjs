@@ -11176,6 +11176,10731 @@ $root.p2p = (function() {
         return P2pMessage;
     })();
 
+    p2p.JSToRust_Command = (function() {
+
+        /**
+         * Properties of a JSToRust_Command.
+         * @memberof p2p
+         * @interface IJSToRust_Command
+         * @property {p2p.IInitializeRequest|null} [initialize] JSToRust_Command initialize
+         * @property {p2p.ICreateWalletRequest|null} [createWallet] JSToRust_Command createWallet
+         * @property {p2p.IRestoreWalletRequest|null} [restoreWallet] JSToRust_Command restoreWallet
+         * @property {p2p.ILoadWalletRequest|null} [loadWallet] JSToRust_Command loadWallet
+         * @property {p2p.IGetBalanceRequest|null} [getBalance] JSToRust_Command getBalance
+         * @property {p2p.ICreateTransactionRequest|null} [createTransaction] JSToRust_Command createTransaction
+         * @property {p2p.IToggleMinerRequest|null} [toggleMiner] JSToRust_Command toggleMiner
+         * @property {p2p.IGetStatusRequest|null} [getStatus] JSToRust_Command getStatus
+         * @property {p2p.IGetSupplyRequest|null} [getSupply] JSToRust_Command getSupply
+         * @property {p2p.IGetPeersRequest|null} [getPeers] JSToRust_Command getPeers
+         * @property {p2p.IConnectPeerRequest|null} [connectPeer] JSToRust_Command connectPeer
+         * @property {p2p.ISyncTickRequest|null} [syncTick] JSToRust_Command syncTick
+         * @property {p2p.ISwapInitiateRequest|null} [swapInitiate] JSToRust_Command swapInitiate
+         * @property {p2p.ISwapListRequest|null} [swapList] JSToRust_Command swapList
+         * @property {p2p.ISwapRespondRequest|null} [swapRespond] JSToRust_Command swapRespond
+         * @property {p2p.ISwapClaimRequest|null} [swapClaim] JSToRust_Command swapClaim
+         * @property {p2p.ISwapRefundRequest|null} [swapRefund] JSToRust_Command swapRefund
+         * @property {p2p.IChannelOpenRequest|null} [channelOpen] JSToRust_Command channelOpen
+         * @property {p2p.IChannelListRequest|null} [channelList] JSToRust_Command channelList
+         * @property {p2p.IChannelAcceptRequest|null} [channelAccept] JSToRust_Command channelAccept
+         * @property {p2p.IChannelFundRequest|null} [channelFund] JSToRust_Command channelFund
+         * @property {p2p.IChannelPayRequest|null} [channelPay] JSToRust_Command channelPay
+         * @property {p2p.IChannelCloseRequest|null} [channelClose] JSToRust_Command channelClose
+         */
+
+        /**
+         * Constructs a new JSToRust_Command.
+         * @memberof p2p
+         * @classdesc Represents a JSToRust_Command.
+         * @implements IJSToRust_Command
+         * @constructor
+         * @param {p2p.IJSToRust_Command=} [properties] Properties to set
+         */
+        function JSToRust_Command(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * JSToRust_Command initialize.
+         * @member {p2p.IInitializeRequest|null|undefined} initialize
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.initialize = null;
+
+        /**
+         * JSToRust_Command createWallet.
+         * @member {p2p.ICreateWalletRequest|null|undefined} createWallet
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.createWallet = null;
+
+        /**
+         * JSToRust_Command restoreWallet.
+         * @member {p2p.IRestoreWalletRequest|null|undefined} restoreWallet
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.restoreWallet = null;
+
+        /**
+         * JSToRust_Command loadWallet.
+         * @member {p2p.ILoadWalletRequest|null|undefined} loadWallet
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.loadWallet = null;
+
+        /**
+         * JSToRust_Command getBalance.
+         * @member {p2p.IGetBalanceRequest|null|undefined} getBalance
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.getBalance = null;
+
+        /**
+         * JSToRust_Command createTransaction.
+         * @member {p2p.ICreateTransactionRequest|null|undefined} createTransaction
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.createTransaction = null;
+
+        /**
+         * JSToRust_Command toggleMiner.
+         * @member {p2p.IToggleMinerRequest|null|undefined} toggleMiner
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.toggleMiner = null;
+
+        /**
+         * JSToRust_Command getStatus.
+         * @member {p2p.IGetStatusRequest|null|undefined} getStatus
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.getStatus = null;
+
+        /**
+         * JSToRust_Command getSupply.
+         * @member {p2p.IGetSupplyRequest|null|undefined} getSupply
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.getSupply = null;
+
+        /**
+         * JSToRust_Command getPeers.
+         * @member {p2p.IGetPeersRequest|null|undefined} getPeers
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.getPeers = null;
+
+        /**
+         * JSToRust_Command connectPeer.
+         * @member {p2p.IConnectPeerRequest|null|undefined} connectPeer
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.connectPeer = null;
+
+        /**
+         * JSToRust_Command syncTick.
+         * @member {p2p.ISyncTickRequest|null|undefined} syncTick
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.syncTick = null;
+
+        /**
+         * JSToRust_Command swapInitiate.
+         * @member {p2p.ISwapInitiateRequest|null|undefined} swapInitiate
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.swapInitiate = null;
+
+        /**
+         * JSToRust_Command swapList.
+         * @member {p2p.ISwapListRequest|null|undefined} swapList
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.swapList = null;
+
+        /**
+         * JSToRust_Command swapRespond.
+         * @member {p2p.ISwapRespondRequest|null|undefined} swapRespond
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.swapRespond = null;
+
+        /**
+         * JSToRust_Command swapClaim.
+         * @member {p2p.ISwapClaimRequest|null|undefined} swapClaim
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.swapClaim = null;
+
+        /**
+         * JSToRust_Command swapRefund.
+         * @member {p2p.ISwapRefundRequest|null|undefined} swapRefund
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.swapRefund = null;
+
+        /**
+         * JSToRust_Command channelOpen.
+         * @member {p2p.IChannelOpenRequest|null|undefined} channelOpen
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.channelOpen = null;
+
+        /**
+         * JSToRust_Command channelList.
+         * @member {p2p.IChannelListRequest|null|undefined} channelList
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.channelList = null;
+
+        /**
+         * JSToRust_Command channelAccept.
+         * @member {p2p.IChannelAcceptRequest|null|undefined} channelAccept
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.channelAccept = null;
+
+        /**
+         * JSToRust_Command channelFund.
+         * @member {p2p.IChannelFundRequest|null|undefined} channelFund
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.channelFund = null;
+
+        /**
+         * JSToRust_Command channelPay.
+         * @member {p2p.IChannelPayRequest|null|undefined} channelPay
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.channelPay = null;
+
+        /**
+         * JSToRust_Command channelClose.
+         * @member {p2p.IChannelCloseRequest|null|undefined} channelClose
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        JSToRust_Command.prototype.channelClose = null;
+
+        // OneOf field names bound to virtual getters and setters
+        var $oneOfFields;
+
+        /**
+         * JSToRust_Command command.
+         * @member {"initialize"|"createWallet"|"restoreWallet"|"loadWallet"|"getBalance"|"createTransaction"|"toggleMiner"|"getStatus"|"getSupply"|"getPeers"|"connectPeer"|"syncTick"|"swapInitiate"|"swapList"|"swapRespond"|"swapClaim"|"swapRefund"|"channelOpen"|"channelList"|"channelAccept"|"channelFund"|"channelPay"|"channelClose"|undefined} command
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         */
+        Object.defineProperty(JSToRust_Command.prototype, "command", {
+            get: $util.oneOfGetter($oneOfFields = ["initialize", "createWallet", "restoreWallet", "loadWallet", "getBalance", "createTransaction", "toggleMiner", "getStatus", "getSupply", "getPeers", "connectPeer", "syncTick", "swapInitiate", "swapList", "swapRespond", "swapClaim", "swapRefund", "channelOpen", "channelList", "channelAccept", "channelFund", "channelPay", "channelClose"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * Creates a new JSToRust_Command instance using the specified properties.
+         * @function create
+         * @memberof p2p.JSToRust_Command
+         * @static
+         * @param {p2p.IJSToRust_Command=} [properties] Properties to set
+         * @returns {p2p.JSToRust_Command} JSToRust_Command instance
+         */
+        JSToRust_Command.create = function create(properties) {
+            return new JSToRust_Command(properties);
+        };
+
+        /**
+         * Encodes the specified JSToRust_Command message. Does not implicitly {@link p2p.JSToRust_Command.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.JSToRust_Command
+         * @static
+         * @param {p2p.IJSToRust_Command} message JSToRust_Command message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        JSToRust_Command.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.initialize != null && Object.hasOwnProperty.call(message, "initialize"))
+                $root.p2p.InitializeRequest.encode(message.initialize, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+            if (message.createWallet != null && Object.hasOwnProperty.call(message, "createWallet"))
+                $root.p2p.CreateWalletRequest.encode(message.createWallet, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+            if (message.restoreWallet != null && Object.hasOwnProperty.call(message, "restoreWallet"))
+                $root.p2p.RestoreWalletRequest.encode(message.restoreWallet, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+            if (message.loadWallet != null && Object.hasOwnProperty.call(message, "loadWallet"))
+                $root.p2p.LoadWalletRequest.encode(message.loadWallet, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+            if (message.getBalance != null && Object.hasOwnProperty.call(message, "getBalance"))
+                $root.p2p.GetBalanceRequest.encode(message.getBalance, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+            if (message.createTransaction != null && Object.hasOwnProperty.call(message, "createTransaction"))
+                $root.p2p.CreateTransactionRequest.encode(message.createTransaction, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
+            if (message.toggleMiner != null && Object.hasOwnProperty.call(message, "toggleMiner"))
+                $root.p2p.ToggleMinerRequest.encode(message.toggleMiner, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
+            if (message.getStatus != null && Object.hasOwnProperty.call(message, "getStatus"))
+                $root.p2p.GetStatusRequest.encode(message.getStatus, writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
+            if (message.getSupply != null && Object.hasOwnProperty.call(message, "getSupply"))
+                $root.p2p.GetSupplyRequest.encode(message.getSupply, writer.uint32(/* id 9, wireType 2 =*/74).fork()).ldelim();
+            if (message.getPeers != null && Object.hasOwnProperty.call(message, "getPeers"))
+                $root.p2p.GetPeersRequest.encode(message.getPeers, writer.uint32(/* id 10, wireType 2 =*/82).fork()).ldelim();
+            if (message.connectPeer != null && Object.hasOwnProperty.call(message, "connectPeer"))
+                $root.p2p.ConnectPeerRequest.encode(message.connectPeer, writer.uint32(/* id 11, wireType 2 =*/90).fork()).ldelim();
+            if (message.syncTick != null && Object.hasOwnProperty.call(message, "syncTick"))
+                $root.p2p.SyncTickRequest.encode(message.syncTick, writer.uint32(/* id 12, wireType 2 =*/98).fork()).ldelim();
+            if (message.swapInitiate != null && Object.hasOwnProperty.call(message, "swapInitiate"))
+                $root.p2p.SwapInitiateRequest.encode(message.swapInitiate, writer.uint32(/* id 13, wireType 2 =*/106).fork()).ldelim();
+            if (message.swapList != null && Object.hasOwnProperty.call(message, "swapList"))
+                $root.p2p.SwapListRequest.encode(message.swapList, writer.uint32(/* id 14, wireType 2 =*/114).fork()).ldelim();
+            if (message.swapRespond != null && Object.hasOwnProperty.call(message, "swapRespond"))
+                $root.p2p.SwapRespondRequest.encode(message.swapRespond, writer.uint32(/* id 15, wireType 2 =*/122).fork()).ldelim();
+            if (message.swapClaim != null && Object.hasOwnProperty.call(message, "swapClaim"))
+                $root.p2p.SwapClaimRequest.encode(message.swapClaim, writer.uint32(/* id 16, wireType 2 =*/130).fork()).ldelim();
+            if (message.swapRefund != null && Object.hasOwnProperty.call(message, "swapRefund"))
+                $root.p2p.SwapRefundRequest.encode(message.swapRefund, writer.uint32(/* id 17, wireType 2 =*/138).fork()).ldelim();
+            if (message.channelOpen != null && Object.hasOwnProperty.call(message, "channelOpen"))
+                $root.p2p.ChannelOpenRequest.encode(message.channelOpen, writer.uint32(/* id 18, wireType 2 =*/146).fork()).ldelim();
+            if (message.channelList != null && Object.hasOwnProperty.call(message, "channelList"))
+                $root.p2p.ChannelListRequest.encode(message.channelList, writer.uint32(/* id 19, wireType 2 =*/154).fork()).ldelim();
+            if (message.channelAccept != null && Object.hasOwnProperty.call(message, "channelAccept"))
+                $root.p2p.ChannelAcceptRequest.encode(message.channelAccept, writer.uint32(/* id 20, wireType 2 =*/162).fork()).ldelim();
+            if (message.channelFund != null && Object.hasOwnProperty.call(message, "channelFund"))
+                $root.p2p.ChannelFundRequest.encode(message.channelFund, writer.uint32(/* id 21, wireType 2 =*/170).fork()).ldelim();
+            if (message.channelPay != null && Object.hasOwnProperty.call(message, "channelPay"))
+                $root.p2p.ChannelPayRequest.encode(message.channelPay, writer.uint32(/* id 22, wireType 2 =*/178).fork()).ldelim();
+            if (message.channelClose != null && Object.hasOwnProperty.call(message, "channelClose"))
+                $root.p2p.ChannelCloseRequest.encode(message.channelClose, writer.uint32(/* id 23, wireType 2 =*/186).fork()).ldelim();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified JSToRust_Command message, length delimited. Does not implicitly {@link p2p.JSToRust_Command.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.JSToRust_Command
+         * @static
+         * @param {p2p.IJSToRust_Command} message JSToRust_Command message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        JSToRust_Command.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a JSToRust_Command message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.JSToRust_Command
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.JSToRust_Command} JSToRust_Command
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        JSToRust_Command.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.JSToRust_Command();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.initialize = $root.p2p.InitializeRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 2: {
+                        message.createWallet = $root.p2p.CreateWalletRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 3: {
+                        message.restoreWallet = $root.p2p.RestoreWalletRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 4: {
+                        message.loadWallet = $root.p2p.LoadWalletRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 5: {
+                        message.getBalance = $root.p2p.GetBalanceRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 6: {
+                        message.createTransaction = $root.p2p.CreateTransactionRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 7: {
+                        message.toggleMiner = $root.p2p.ToggleMinerRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 8: {
+                        message.getStatus = $root.p2p.GetStatusRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 9: {
+                        message.getSupply = $root.p2p.GetSupplyRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 10: {
+                        message.getPeers = $root.p2p.GetPeersRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 11: {
+                        message.connectPeer = $root.p2p.ConnectPeerRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 12: {
+                        message.syncTick = $root.p2p.SyncTickRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 13: {
+                        message.swapInitiate = $root.p2p.SwapInitiateRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 14: {
+                        message.swapList = $root.p2p.SwapListRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 15: {
+                        message.swapRespond = $root.p2p.SwapRespondRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 16: {
+                        message.swapClaim = $root.p2p.SwapClaimRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 17: {
+                        message.swapRefund = $root.p2p.SwapRefundRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 18: {
+                        message.channelOpen = $root.p2p.ChannelOpenRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 19: {
+                        message.channelList = $root.p2p.ChannelListRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 20: {
+                        message.channelAccept = $root.p2p.ChannelAcceptRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 21: {
+                        message.channelFund = $root.p2p.ChannelFundRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 22: {
+                        message.channelPay = $root.p2p.ChannelPayRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 23: {
+                        message.channelClose = $root.p2p.ChannelCloseRequest.decode(reader, reader.uint32());
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a JSToRust_Command message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.JSToRust_Command
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.JSToRust_Command} JSToRust_Command
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        JSToRust_Command.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a JSToRust_Command message.
+         * @function verify
+         * @memberof p2p.JSToRust_Command
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        JSToRust_Command.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            var properties = {};
+            if (message.initialize != null && message.hasOwnProperty("initialize")) {
+                properties.command = 1;
+                {
+                    var error = $root.p2p.InitializeRequest.verify(message.initialize);
+                    if (error)
+                        return "initialize." + error;
+                }
+            }
+            if (message.createWallet != null && message.hasOwnProperty("createWallet")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.CreateWalletRequest.verify(message.createWallet);
+                    if (error)
+                        return "createWallet." + error;
+                }
+            }
+            if (message.restoreWallet != null && message.hasOwnProperty("restoreWallet")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.RestoreWalletRequest.verify(message.restoreWallet);
+                    if (error)
+                        return "restoreWallet." + error;
+                }
+            }
+            if (message.loadWallet != null && message.hasOwnProperty("loadWallet")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.LoadWalletRequest.verify(message.loadWallet);
+                    if (error)
+                        return "loadWallet." + error;
+                }
+            }
+            if (message.getBalance != null && message.hasOwnProperty("getBalance")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.GetBalanceRequest.verify(message.getBalance);
+                    if (error)
+                        return "getBalance." + error;
+                }
+            }
+            if (message.createTransaction != null && message.hasOwnProperty("createTransaction")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.CreateTransactionRequest.verify(message.createTransaction);
+                    if (error)
+                        return "createTransaction." + error;
+                }
+            }
+            if (message.toggleMiner != null && message.hasOwnProperty("toggleMiner")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.ToggleMinerRequest.verify(message.toggleMiner);
+                    if (error)
+                        return "toggleMiner." + error;
+                }
+            }
+            if (message.getStatus != null && message.hasOwnProperty("getStatus")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.GetStatusRequest.verify(message.getStatus);
+                    if (error)
+                        return "getStatus." + error;
+                }
+            }
+            if (message.getSupply != null && message.hasOwnProperty("getSupply")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.GetSupplyRequest.verify(message.getSupply);
+                    if (error)
+                        return "getSupply." + error;
+                }
+            }
+            if (message.getPeers != null && message.hasOwnProperty("getPeers")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.GetPeersRequest.verify(message.getPeers);
+                    if (error)
+                        return "getPeers." + error;
+                }
+            }
+            if (message.connectPeer != null && message.hasOwnProperty("connectPeer")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.ConnectPeerRequest.verify(message.connectPeer);
+                    if (error)
+                        return "connectPeer." + error;
+                }
+            }
+            if (message.syncTick != null && message.hasOwnProperty("syncTick")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.SyncTickRequest.verify(message.syncTick);
+                    if (error)
+                        return "syncTick." + error;
+                }
+            }
+            if (message.swapInitiate != null && message.hasOwnProperty("swapInitiate")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.SwapInitiateRequest.verify(message.swapInitiate);
+                    if (error)
+                        return "swapInitiate." + error;
+                }
+            }
+            if (message.swapList != null && message.hasOwnProperty("swapList")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.SwapListRequest.verify(message.swapList);
+                    if (error)
+                        return "swapList." + error;
+                }
+            }
+            if (message.swapRespond != null && message.hasOwnProperty("swapRespond")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.SwapRespondRequest.verify(message.swapRespond);
+                    if (error)
+                        return "swapRespond." + error;
+                }
+            }
+            if (message.swapClaim != null && message.hasOwnProperty("swapClaim")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.SwapClaimRequest.verify(message.swapClaim);
+                    if (error)
+                        return "swapClaim." + error;
+                }
+            }
+            if (message.swapRefund != null && message.hasOwnProperty("swapRefund")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.SwapRefundRequest.verify(message.swapRefund);
+                    if (error)
+                        return "swapRefund." + error;
+                }
+            }
+            if (message.channelOpen != null && message.hasOwnProperty("channelOpen")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.ChannelOpenRequest.verify(message.channelOpen);
+                    if (error)
+                        return "channelOpen." + error;
+                }
+            }
+            if (message.channelList != null && message.hasOwnProperty("channelList")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.ChannelListRequest.verify(message.channelList);
+                    if (error)
+                        return "channelList." + error;
+                }
+            }
+            if (message.channelAccept != null && message.hasOwnProperty("channelAccept")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.ChannelAcceptRequest.verify(message.channelAccept);
+                    if (error)
+                        return "channelAccept." + error;
+                }
+            }
+            if (message.channelFund != null && message.hasOwnProperty("channelFund")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.ChannelFundRequest.verify(message.channelFund);
+                    if (error)
+                        return "channelFund." + error;
+                }
+            }
+            if (message.channelPay != null && message.hasOwnProperty("channelPay")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.ChannelPayRequest.verify(message.channelPay);
+                    if (error)
+                        return "channelPay." + error;
+                }
+            }
+            if (message.channelClose != null && message.hasOwnProperty("channelClose")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.ChannelCloseRequest.verify(message.channelClose);
+                    if (error)
+                        return "channelClose." + error;
+                }
+            }
+            return null;
+        };
+
+        /**
+         * Creates a JSToRust_Command message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.JSToRust_Command
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.JSToRust_Command} JSToRust_Command
+         */
+        JSToRust_Command.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.JSToRust_Command)
+                return object;
+            var message = new $root.p2p.JSToRust_Command();
+            if (object.initialize != null) {
+                if (typeof object.initialize !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.initialize: object expected");
+                message.initialize = $root.p2p.InitializeRequest.fromObject(object.initialize);
+            }
+            if (object.createWallet != null) {
+                if (typeof object.createWallet !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.createWallet: object expected");
+                message.createWallet = $root.p2p.CreateWalletRequest.fromObject(object.createWallet);
+            }
+            if (object.restoreWallet != null) {
+                if (typeof object.restoreWallet !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.restoreWallet: object expected");
+                message.restoreWallet = $root.p2p.RestoreWalletRequest.fromObject(object.restoreWallet);
+            }
+            if (object.loadWallet != null) {
+                if (typeof object.loadWallet !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.loadWallet: object expected");
+                message.loadWallet = $root.p2p.LoadWalletRequest.fromObject(object.loadWallet);
+            }
+            if (object.getBalance != null) {
+                if (typeof object.getBalance !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.getBalance: object expected");
+                message.getBalance = $root.p2p.GetBalanceRequest.fromObject(object.getBalance);
+            }
+            if (object.createTransaction != null) {
+                if (typeof object.createTransaction !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.createTransaction: object expected");
+                message.createTransaction = $root.p2p.CreateTransactionRequest.fromObject(object.createTransaction);
+            }
+            if (object.toggleMiner != null) {
+                if (typeof object.toggleMiner !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.toggleMiner: object expected");
+                message.toggleMiner = $root.p2p.ToggleMinerRequest.fromObject(object.toggleMiner);
+            }
+            if (object.getStatus != null) {
+                if (typeof object.getStatus !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.getStatus: object expected");
+                message.getStatus = $root.p2p.GetStatusRequest.fromObject(object.getStatus);
+            }
+            if (object.getSupply != null) {
+                if (typeof object.getSupply !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.getSupply: object expected");
+                message.getSupply = $root.p2p.GetSupplyRequest.fromObject(object.getSupply);
+            }
+            if (object.getPeers != null) {
+                if (typeof object.getPeers !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.getPeers: object expected");
+                message.getPeers = $root.p2p.GetPeersRequest.fromObject(object.getPeers);
+            }
+            if (object.connectPeer != null) {
+                if (typeof object.connectPeer !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.connectPeer: object expected");
+                message.connectPeer = $root.p2p.ConnectPeerRequest.fromObject(object.connectPeer);
+            }
+            if (object.syncTick != null) {
+                if (typeof object.syncTick !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.syncTick: object expected");
+                message.syncTick = $root.p2p.SyncTickRequest.fromObject(object.syncTick);
+            }
+            if (object.swapInitiate != null) {
+                if (typeof object.swapInitiate !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.swapInitiate: object expected");
+                message.swapInitiate = $root.p2p.SwapInitiateRequest.fromObject(object.swapInitiate);
+            }
+            if (object.swapList != null) {
+                if (typeof object.swapList !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.swapList: object expected");
+                message.swapList = $root.p2p.SwapListRequest.fromObject(object.swapList);
+            }
+            if (object.swapRespond != null) {
+                if (typeof object.swapRespond !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.swapRespond: object expected");
+                message.swapRespond = $root.p2p.SwapRespondRequest.fromObject(object.swapRespond);
+            }
+            if (object.swapClaim != null) {
+                if (typeof object.swapClaim !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.swapClaim: object expected");
+                message.swapClaim = $root.p2p.SwapClaimRequest.fromObject(object.swapClaim);
+            }
+            if (object.swapRefund != null) {
+                if (typeof object.swapRefund !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.swapRefund: object expected");
+                message.swapRefund = $root.p2p.SwapRefundRequest.fromObject(object.swapRefund);
+            }
+            if (object.channelOpen != null) {
+                if (typeof object.channelOpen !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.channelOpen: object expected");
+                message.channelOpen = $root.p2p.ChannelOpenRequest.fromObject(object.channelOpen);
+            }
+            if (object.channelList != null) {
+                if (typeof object.channelList !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.channelList: object expected");
+                message.channelList = $root.p2p.ChannelListRequest.fromObject(object.channelList);
+            }
+            if (object.channelAccept != null) {
+                if (typeof object.channelAccept !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.channelAccept: object expected");
+                message.channelAccept = $root.p2p.ChannelAcceptRequest.fromObject(object.channelAccept);
+            }
+            if (object.channelFund != null) {
+                if (typeof object.channelFund !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.channelFund: object expected");
+                message.channelFund = $root.p2p.ChannelFundRequest.fromObject(object.channelFund);
+            }
+            if (object.channelPay != null) {
+                if (typeof object.channelPay !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.channelPay: object expected");
+                message.channelPay = $root.p2p.ChannelPayRequest.fromObject(object.channelPay);
+            }
+            if (object.channelClose != null) {
+                if (typeof object.channelClose !== "object")
+                    throw TypeError(".p2p.JSToRust_Command.channelClose: object expected");
+                message.channelClose = $root.p2p.ChannelCloseRequest.fromObject(object.channelClose);
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a JSToRust_Command message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.JSToRust_Command
+         * @static
+         * @param {p2p.JSToRust_Command} message JSToRust_Command
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        JSToRust_Command.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (message.initialize != null && message.hasOwnProperty("initialize")) {
+                object.initialize = $root.p2p.InitializeRequest.toObject(message.initialize, options);
+                if (options.oneofs)
+                    object.command = "initialize";
+            }
+            if (message.createWallet != null && message.hasOwnProperty("createWallet")) {
+                object.createWallet = $root.p2p.CreateWalletRequest.toObject(message.createWallet, options);
+                if (options.oneofs)
+                    object.command = "createWallet";
+            }
+            if (message.restoreWallet != null && message.hasOwnProperty("restoreWallet")) {
+                object.restoreWallet = $root.p2p.RestoreWalletRequest.toObject(message.restoreWallet, options);
+                if (options.oneofs)
+                    object.command = "restoreWallet";
+            }
+            if (message.loadWallet != null && message.hasOwnProperty("loadWallet")) {
+                object.loadWallet = $root.p2p.LoadWalletRequest.toObject(message.loadWallet, options);
+                if (options.oneofs)
+                    object.command = "loadWallet";
+            }
+            if (message.getBalance != null && message.hasOwnProperty("getBalance")) {
+                object.getBalance = $root.p2p.GetBalanceRequest.toObject(message.getBalance, options);
+                if (options.oneofs)
+                    object.command = "getBalance";
+            }
+            if (message.createTransaction != null && message.hasOwnProperty("createTransaction")) {
+                object.createTransaction = $root.p2p.CreateTransactionRequest.toObject(message.createTransaction, options);
+                if (options.oneofs)
+                    object.command = "createTransaction";
+            }
+            if (message.toggleMiner != null && message.hasOwnProperty("toggleMiner")) {
+                object.toggleMiner = $root.p2p.ToggleMinerRequest.toObject(message.toggleMiner, options);
+                if (options.oneofs)
+                    object.command = "toggleMiner";
+            }
+            if (message.getStatus != null && message.hasOwnProperty("getStatus")) {
+                object.getStatus = $root.p2p.GetStatusRequest.toObject(message.getStatus, options);
+                if (options.oneofs)
+                    object.command = "getStatus";
+            }
+            if (message.getSupply != null && message.hasOwnProperty("getSupply")) {
+                object.getSupply = $root.p2p.GetSupplyRequest.toObject(message.getSupply, options);
+                if (options.oneofs)
+                    object.command = "getSupply";
+            }
+            if (message.getPeers != null && message.hasOwnProperty("getPeers")) {
+                object.getPeers = $root.p2p.GetPeersRequest.toObject(message.getPeers, options);
+                if (options.oneofs)
+                    object.command = "getPeers";
+            }
+            if (message.connectPeer != null && message.hasOwnProperty("connectPeer")) {
+                object.connectPeer = $root.p2p.ConnectPeerRequest.toObject(message.connectPeer, options);
+                if (options.oneofs)
+                    object.command = "connectPeer";
+            }
+            if (message.syncTick != null && message.hasOwnProperty("syncTick")) {
+                object.syncTick = $root.p2p.SyncTickRequest.toObject(message.syncTick, options);
+                if (options.oneofs)
+                    object.command = "syncTick";
+            }
+            if (message.swapInitiate != null && message.hasOwnProperty("swapInitiate")) {
+                object.swapInitiate = $root.p2p.SwapInitiateRequest.toObject(message.swapInitiate, options);
+                if (options.oneofs)
+                    object.command = "swapInitiate";
+            }
+            if (message.swapList != null && message.hasOwnProperty("swapList")) {
+                object.swapList = $root.p2p.SwapListRequest.toObject(message.swapList, options);
+                if (options.oneofs)
+                    object.command = "swapList";
+            }
+            if (message.swapRespond != null && message.hasOwnProperty("swapRespond")) {
+                object.swapRespond = $root.p2p.SwapRespondRequest.toObject(message.swapRespond, options);
+                if (options.oneofs)
+                    object.command = "swapRespond";
+            }
+            if (message.swapClaim != null && message.hasOwnProperty("swapClaim")) {
+                object.swapClaim = $root.p2p.SwapClaimRequest.toObject(message.swapClaim, options);
+                if (options.oneofs)
+                    object.command = "swapClaim";
+            }
+            if (message.swapRefund != null && message.hasOwnProperty("swapRefund")) {
+                object.swapRefund = $root.p2p.SwapRefundRequest.toObject(message.swapRefund, options);
+                if (options.oneofs)
+                    object.command = "swapRefund";
+            }
+            if (message.channelOpen != null && message.hasOwnProperty("channelOpen")) {
+                object.channelOpen = $root.p2p.ChannelOpenRequest.toObject(message.channelOpen, options);
+                if (options.oneofs)
+                    object.command = "channelOpen";
+            }
+            if (message.channelList != null && message.hasOwnProperty("channelList")) {
+                object.channelList = $root.p2p.ChannelListRequest.toObject(message.channelList, options);
+                if (options.oneofs)
+                    object.command = "channelList";
+            }
+            if (message.channelAccept != null && message.hasOwnProperty("channelAccept")) {
+                object.channelAccept = $root.p2p.ChannelAcceptRequest.toObject(message.channelAccept, options);
+                if (options.oneofs)
+                    object.command = "channelAccept";
+            }
+            if (message.channelFund != null && message.hasOwnProperty("channelFund")) {
+                object.channelFund = $root.p2p.ChannelFundRequest.toObject(message.channelFund, options);
+                if (options.oneofs)
+                    object.command = "channelFund";
+            }
+            if (message.channelPay != null && message.hasOwnProperty("channelPay")) {
+                object.channelPay = $root.p2p.ChannelPayRequest.toObject(message.channelPay, options);
+                if (options.oneofs)
+                    object.command = "channelPay";
+            }
+            if (message.channelClose != null && message.hasOwnProperty("channelClose")) {
+                object.channelClose = $root.p2p.ChannelCloseRequest.toObject(message.channelClose, options);
+                if (options.oneofs)
+                    object.command = "channelClose";
+            }
+            return object;
+        };
+
+        /**
+         * Converts this JSToRust_Command to JSON.
+         * @function toJSON
+         * @memberof p2p.JSToRust_Command
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        JSToRust_Command.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for JSToRust_Command
+         * @function getTypeUrl
+         * @memberof p2p.JSToRust_Command
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        JSToRust_Command.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.JSToRust_Command";
+        };
+
+        return JSToRust_Command;
+    })();
+
+    p2p.JSToRust_NetworkEvent = (function() {
+
+        /**
+         * Properties of a JSToRust_NetworkEvent.
+         * @memberof p2p
+         * @interface IJSToRust_NetworkEvent
+         * @property {p2p.IP2pMessageReceived|null} [p2pMessage] JSToRust_NetworkEvent p2pMessage
+         * @property {p2p.IPeerConnected|null} [peerConnected] JSToRust_NetworkEvent peerConnected
+         * @property {p2p.IPeerDisconnected|null} [peerDisconnected] JSToRust_NetworkEvent peerDisconnected
+         * @property {p2p.IPeerVerified|null} [peerVerified] JSToRust_NetworkEvent peerVerified
+         */
+
+        /**
+         * Constructs a new JSToRust_NetworkEvent.
+         * @memberof p2p
+         * @classdesc Represents a JSToRust_NetworkEvent.
+         * @implements IJSToRust_NetworkEvent
+         * @constructor
+         * @param {p2p.IJSToRust_NetworkEvent=} [properties] Properties to set
+         */
+        function JSToRust_NetworkEvent(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * JSToRust_NetworkEvent p2pMessage.
+         * @member {p2p.IP2pMessageReceived|null|undefined} p2pMessage
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @instance
+         */
+        JSToRust_NetworkEvent.prototype.p2pMessage = null;
+
+        /**
+         * JSToRust_NetworkEvent peerConnected.
+         * @member {p2p.IPeerConnected|null|undefined} peerConnected
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @instance
+         */
+        JSToRust_NetworkEvent.prototype.peerConnected = null;
+
+        /**
+         * JSToRust_NetworkEvent peerDisconnected.
+         * @member {p2p.IPeerDisconnected|null|undefined} peerDisconnected
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @instance
+         */
+        JSToRust_NetworkEvent.prototype.peerDisconnected = null;
+
+        /**
+         * JSToRust_NetworkEvent peerVerified.
+         * @member {p2p.IPeerVerified|null|undefined} peerVerified
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @instance
+         */
+        JSToRust_NetworkEvent.prototype.peerVerified = null;
+
+        // OneOf field names bound to virtual getters and setters
+        var $oneOfFields;
+
+        /**
+         * JSToRust_NetworkEvent event.
+         * @member {"p2pMessage"|"peerConnected"|"peerDisconnected"|"peerVerified"|undefined} event
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @instance
+         */
+        Object.defineProperty(JSToRust_NetworkEvent.prototype, "event", {
+            get: $util.oneOfGetter($oneOfFields = ["p2pMessage", "peerConnected", "peerDisconnected", "peerVerified"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * Creates a new JSToRust_NetworkEvent instance using the specified properties.
+         * @function create
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @static
+         * @param {p2p.IJSToRust_NetworkEvent=} [properties] Properties to set
+         * @returns {p2p.JSToRust_NetworkEvent} JSToRust_NetworkEvent instance
+         */
+        JSToRust_NetworkEvent.create = function create(properties) {
+            return new JSToRust_NetworkEvent(properties);
+        };
+
+        /**
+         * Encodes the specified JSToRust_NetworkEvent message. Does not implicitly {@link p2p.JSToRust_NetworkEvent.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @static
+         * @param {p2p.IJSToRust_NetworkEvent} message JSToRust_NetworkEvent message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        JSToRust_NetworkEvent.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.p2pMessage != null && Object.hasOwnProperty.call(message, "p2pMessage"))
+                $root.p2p.P2pMessageReceived.encode(message.p2pMessage, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+            if (message.peerConnected != null && Object.hasOwnProperty.call(message, "peerConnected"))
+                $root.p2p.PeerConnected.encode(message.peerConnected, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+            if (message.peerDisconnected != null && Object.hasOwnProperty.call(message, "peerDisconnected"))
+                $root.p2p.PeerDisconnected.encode(message.peerDisconnected, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+            if (message.peerVerified != null && Object.hasOwnProperty.call(message, "peerVerified"))
+                $root.p2p.PeerVerified.encode(message.peerVerified, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified JSToRust_NetworkEvent message, length delimited. Does not implicitly {@link p2p.JSToRust_NetworkEvent.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @static
+         * @param {p2p.IJSToRust_NetworkEvent} message JSToRust_NetworkEvent message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        JSToRust_NetworkEvent.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a JSToRust_NetworkEvent message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.JSToRust_NetworkEvent} JSToRust_NetworkEvent
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        JSToRust_NetworkEvent.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.JSToRust_NetworkEvent();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.p2pMessage = $root.p2p.P2pMessageReceived.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 2: {
+                        message.peerConnected = $root.p2p.PeerConnected.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 3: {
+                        message.peerDisconnected = $root.p2p.PeerDisconnected.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 4: {
+                        message.peerVerified = $root.p2p.PeerVerified.decode(reader, reader.uint32());
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a JSToRust_NetworkEvent message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.JSToRust_NetworkEvent} JSToRust_NetworkEvent
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        JSToRust_NetworkEvent.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a JSToRust_NetworkEvent message.
+         * @function verify
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        JSToRust_NetworkEvent.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            var properties = {};
+            if (message.p2pMessage != null && message.hasOwnProperty("p2pMessage")) {
+                properties.event = 1;
+                {
+                    var error = $root.p2p.P2pMessageReceived.verify(message.p2pMessage);
+                    if (error)
+                        return "p2pMessage." + error;
+                }
+            }
+            if (message.peerConnected != null && message.hasOwnProperty("peerConnected")) {
+                if (properties.event === 1)
+                    return "event: multiple values";
+                properties.event = 1;
+                {
+                    var error = $root.p2p.PeerConnected.verify(message.peerConnected);
+                    if (error)
+                        return "peerConnected." + error;
+                }
+            }
+            if (message.peerDisconnected != null && message.hasOwnProperty("peerDisconnected")) {
+                if (properties.event === 1)
+                    return "event: multiple values";
+                properties.event = 1;
+                {
+                    var error = $root.p2p.PeerDisconnected.verify(message.peerDisconnected);
+                    if (error)
+                        return "peerDisconnected." + error;
+                }
+            }
+            if (message.peerVerified != null && message.hasOwnProperty("peerVerified")) {
+                if (properties.event === 1)
+                    return "event: multiple values";
+                properties.event = 1;
+                {
+                    var error = $root.p2p.PeerVerified.verify(message.peerVerified);
+                    if (error)
+                        return "peerVerified." + error;
+                }
+            }
+            return null;
+        };
+
+        /**
+         * Creates a JSToRust_NetworkEvent message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.JSToRust_NetworkEvent} JSToRust_NetworkEvent
+         */
+        JSToRust_NetworkEvent.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.JSToRust_NetworkEvent)
+                return object;
+            var message = new $root.p2p.JSToRust_NetworkEvent();
+            if (object.p2pMessage != null) {
+                if (typeof object.p2pMessage !== "object")
+                    throw TypeError(".p2p.JSToRust_NetworkEvent.p2pMessage: object expected");
+                message.p2pMessage = $root.p2p.P2pMessageReceived.fromObject(object.p2pMessage);
+            }
+            if (object.peerConnected != null) {
+                if (typeof object.peerConnected !== "object")
+                    throw TypeError(".p2p.JSToRust_NetworkEvent.peerConnected: object expected");
+                message.peerConnected = $root.p2p.PeerConnected.fromObject(object.peerConnected);
+            }
+            if (object.peerDisconnected != null) {
+                if (typeof object.peerDisconnected !== "object")
+                    throw TypeError(".p2p.JSToRust_NetworkEvent.peerDisconnected: object expected");
+                message.peerDisconnected = $root.p2p.PeerDisconnected.fromObject(object.peerDisconnected);
+            }
+            if (object.peerVerified != null) {
+                if (typeof object.peerVerified !== "object")
+                    throw TypeError(".p2p.JSToRust_NetworkEvent.peerVerified: object expected");
+                message.peerVerified = $root.p2p.PeerVerified.fromObject(object.peerVerified);
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a JSToRust_NetworkEvent message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @static
+         * @param {p2p.JSToRust_NetworkEvent} message JSToRust_NetworkEvent
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        JSToRust_NetworkEvent.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (message.p2pMessage != null && message.hasOwnProperty("p2pMessage")) {
+                object.p2pMessage = $root.p2p.P2pMessageReceived.toObject(message.p2pMessage, options);
+                if (options.oneofs)
+                    object.event = "p2pMessage";
+            }
+            if (message.peerConnected != null && message.hasOwnProperty("peerConnected")) {
+                object.peerConnected = $root.p2p.PeerConnected.toObject(message.peerConnected, options);
+                if (options.oneofs)
+                    object.event = "peerConnected";
+            }
+            if (message.peerDisconnected != null && message.hasOwnProperty("peerDisconnected")) {
+                object.peerDisconnected = $root.p2p.PeerDisconnected.toObject(message.peerDisconnected, options);
+                if (options.oneofs)
+                    object.event = "peerDisconnected";
+            }
+            if (message.peerVerified != null && message.hasOwnProperty("peerVerified")) {
+                object.peerVerified = $root.p2p.PeerVerified.toObject(message.peerVerified, options);
+                if (options.oneofs)
+                    object.event = "peerVerified";
+            }
+            return object;
+        };
+
+        /**
+         * Converts this JSToRust_NetworkEvent to JSON.
+         * @function toJSON
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        JSToRust_NetworkEvent.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for JSToRust_NetworkEvent
+         * @function getTypeUrl
+         * @memberof p2p.JSToRust_NetworkEvent
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        JSToRust_NetworkEvent.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.JSToRust_NetworkEvent";
+        };
+
+        return JSToRust_NetworkEvent;
+    })();
+
+    p2p.RustToJs_CommandBatch = (function() {
+
+        /**
+         * Properties of a RustToJs_CommandBatch.
+         * @memberof p2p
+         * @interface IRustToJs_CommandBatch
+         * @property {Array.<p2p.IRustCommand>|null} [commands] RustToJs_CommandBatch commands
+         */
+
+        /**
+         * Constructs a new RustToJs_CommandBatch.
+         * @memberof p2p
+         * @classdesc Represents a RustToJs_CommandBatch.
+         * @implements IRustToJs_CommandBatch
+         * @constructor
+         * @param {p2p.IRustToJs_CommandBatch=} [properties] Properties to set
+         */
+        function RustToJs_CommandBatch(properties) {
+            this.commands = [];
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * RustToJs_CommandBatch commands.
+         * @member {Array.<p2p.IRustCommand>} commands
+         * @memberof p2p.RustToJs_CommandBatch
+         * @instance
+         */
+        RustToJs_CommandBatch.prototype.commands = $util.emptyArray;
+
+        /**
+         * Creates a new RustToJs_CommandBatch instance using the specified properties.
+         * @function create
+         * @memberof p2p.RustToJs_CommandBatch
+         * @static
+         * @param {p2p.IRustToJs_CommandBatch=} [properties] Properties to set
+         * @returns {p2p.RustToJs_CommandBatch} RustToJs_CommandBatch instance
+         */
+        RustToJs_CommandBatch.create = function create(properties) {
+            return new RustToJs_CommandBatch(properties);
+        };
+
+        /**
+         * Encodes the specified RustToJs_CommandBatch message. Does not implicitly {@link p2p.RustToJs_CommandBatch.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.RustToJs_CommandBatch
+         * @static
+         * @param {p2p.IRustToJs_CommandBatch} message RustToJs_CommandBatch message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        RustToJs_CommandBatch.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.commands != null && message.commands.length)
+                for (var i = 0; i < message.commands.length; ++i)
+                    $root.p2p.RustCommand.encode(message.commands[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified RustToJs_CommandBatch message, length delimited. Does not implicitly {@link p2p.RustToJs_CommandBatch.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.RustToJs_CommandBatch
+         * @static
+         * @param {p2p.IRustToJs_CommandBatch} message RustToJs_CommandBatch message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        RustToJs_CommandBatch.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a RustToJs_CommandBatch message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.RustToJs_CommandBatch
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.RustToJs_CommandBatch} RustToJs_CommandBatch
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        RustToJs_CommandBatch.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.RustToJs_CommandBatch();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        if (!(message.commands && message.commands.length))
+                            message.commands = [];
+                        message.commands.push($root.p2p.RustCommand.decode(reader, reader.uint32()));
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a RustToJs_CommandBatch message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.RustToJs_CommandBatch
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.RustToJs_CommandBatch} RustToJs_CommandBatch
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        RustToJs_CommandBatch.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a RustToJs_CommandBatch message.
+         * @function verify
+         * @memberof p2p.RustToJs_CommandBatch
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        RustToJs_CommandBatch.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.commands != null && message.hasOwnProperty("commands")) {
+                if (!Array.isArray(message.commands))
+                    return "commands: array expected";
+                for (var i = 0; i < message.commands.length; ++i) {
+                    var error = $root.p2p.RustCommand.verify(message.commands[i]);
+                    if (error)
+                        return "commands." + error;
+                }
+            }
+            return null;
+        };
+
+        /**
+         * Creates a RustToJs_CommandBatch message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.RustToJs_CommandBatch
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.RustToJs_CommandBatch} RustToJs_CommandBatch
+         */
+        RustToJs_CommandBatch.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.RustToJs_CommandBatch)
+                return object;
+            var message = new $root.p2p.RustToJs_CommandBatch();
+            if (object.commands) {
+                if (!Array.isArray(object.commands))
+                    throw TypeError(".p2p.RustToJs_CommandBatch.commands: array expected");
+                message.commands = [];
+                for (var i = 0; i < object.commands.length; ++i) {
+                    if (typeof object.commands[i] !== "object")
+                        throw TypeError(".p2p.RustToJs_CommandBatch.commands: object expected");
+                    message.commands[i] = $root.p2p.RustCommand.fromObject(object.commands[i]);
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a RustToJs_CommandBatch message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.RustToJs_CommandBatch
+         * @static
+         * @param {p2p.RustToJs_CommandBatch} message RustToJs_CommandBatch
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        RustToJs_CommandBatch.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.arrays || options.defaults)
+                object.commands = [];
+            if (message.commands && message.commands.length) {
+                object.commands = [];
+                for (var j = 0; j < message.commands.length; ++j)
+                    object.commands[j] = $root.p2p.RustCommand.toObject(message.commands[j], options);
+            }
+            return object;
+        };
+
+        /**
+         * Converts this RustToJs_CommandBatch to JSON.
+         * @function toJSON
+         * @memberof p2p.RustToJs_CommandBatch
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        RustToJs_CommandBatch.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for RustToJs_CommandBatch
+         * @function getTypeUrl
+         * @memberof p2p.RustToJs_CommandBatch
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        RustToJs_CommandBatch.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.RustToJs_CommandBatch";
+        };
+
+        return RustToJs_CommandBatch;
+    })();
+
+    p2p.RustCommand = (function() {
+
+        /**
+         * Properties of a RustCommand.
+         * @memberof p2p
+         * @interface IRustCommand
+         * @property {p2p.ILogMessage|null} [logMessage] RustCommand logMessage
+         * @property {p2p.IPublishP2pMessage|null} [p2pPublish] RustCommand p2pPublish
+         * @property {p2p.ISendDirectP2pMessage|null} [p2pSendDirect] RustCommand p2pSendDirect
+         * @property {p2p.IHangUpPeer|null} [p2pHangUp] RustCommand p2pHangUp
+         * @property {p2p.IUpdateUiBalance|null} [updateUiBalance] RustCommand updateUiBalance
+         * @property {p2p.IUpdateUiMinerStatus|null} [updateUiMinerStatus] RustCommand updateUiMinerStatus
+         * @property {p2p.IUpdateUiSyncProgress|null} [updateUiSyncProgress] RustCommand updateUiSyncProgress
+         * @property {p2p.IUiNetworkInitialized|null} [uiNetworkInitialized] RustCommand uiNetworkInitialized
+         * @property {p2p.IUiWalletLoaded|null} [uiWalletLoaded] RustCommand uiWalletLoaded
+         * @property {p2p.IUiPeerList|null} [uiPeerList] RustCommand uiPeerList
+         * @property {p2p.IUiTotalSupply|null} [uiTotalSupply] RustCommand uiTotalSupply
+         */
+
+        /**
+         * Constructs a new RustCommand.
+         * @memberof p2p
+         * @classdesc Represents a RustCommand.
+         * @implements IRustCommand
+         * @constructor
+         * @param {p2p.IRustCommand=} [properties] Properties to set
+         */
+        function RustCommand(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * RustCommand logMessage.
+         * @member {p2p.ILogMessage|null|undefined} logMessage
+         * @memberof p2p.RustCommand
+         * @instance
+         */
+        RustCommand.prototype.logMessage = null;
+
+        /**
+         * RustCommand p2pPublish.
+         * @member {p2p.IPublishP2pMessage|null|undefined} p2pPublish
+         * @memberof p2p.RustCommand
+         * @instance
+         */
+        RustCommand.prototype.p2pPublish = null;
+
+        /**
+         * RustCommand p2pSendDirect.
+         * @member {p2p.ISendDirectP2pMessage|null|undefined} p2pSendDirect
+         * @memberof p2p.RustCommand
+         * @instance
+         */
+        RustCommand.prototype.p2pSendDirect = null;
+
+        /**
+         * RustCommand p2pHangUp.
+         * @member {p2p.IHangUpPeer|null|undefined} p2pHangUp
+         * @memberof p2p.RustCommand
+         * @instance
+         */
+        RustCommand.prototype.p2pHangUp = null;
+
+        /**
+         * RustCommand updateUiBalance.
+         * @member {p2p.IUpdateUiBalance|null|undefined} updateUiBalance
+         * @memberof p2p.RustCommand
+         * @instance
+         */
+        RustCommand.prototype.updateUiBalance = null;
+
+        /**
+         * RustCommand updateUiMinerStatus.
+         * @member {p2p.IUpdateUiMinerStatus|null|undefined} updateUiMinerStatus
+         * @memberof p2p.RustCommand
+         * @instance
+         */
+        RustCommand.prototype.updateUiMinerStatus = null;
+
+        /**
+         * RustCommand updateUiSyncProgress.
+         * @member {p2p.IUpdateUiSyncProgress|null|undefined} updateUiSyncProgress
+         * @memberof p2p.RustCommand
+         * @instance
+         */
+        RustCommand.prototype.updateUiSyncProgress = null;
+
+        /**
+         * RustCommand uiNetworkInitialized.
+         * @member {p2p.IUiNetworkInitialized|null|undefined} uiNetworkInitialized
+         * @memberof p2p.RustCommand
+         * @instance
+         */
+        RustCommand.prototype.uiNetworkInitialized = null;
+
+        /**
+         * RustCommand uiWalletLoaded.
+         * @member {p2p.IUiWalletLoaded|null|undefined} uiWalletLoaded
+         * @memberof p2p.RustCommand
+         * @instance
+         */
+        RustCommand.prototype.uiWalletLoaded = null;
+
+        /**
+         * RustCommand uiPeerList.
+         * @member {p2p.IUiPeerList|null|undefined} uiPeerList
+         * @memberof p2p.RustCommand
+         * @instance
+         */
+        RustCommand.prototype.uiPeerList = null;
+
+        /**
+         * RustCommand uiTotalSupply.
+         * @member {p2p.IUiTotalSupply|null|undefined} uiTotalSupply
+         * @memberof p2p.RustCommand
+         * @instance
+         */
+        RustCommand.prototype.uiTotalSupply = null;
+
+        // OneOf field names bound to virtual getters and setters
+        var $oneOfFields;
+
+        /**
+         * RustCommand command.
+         * @member {"logMessage"|"p2pPublish"|"p2pSendDirect"|"p2pHangUp"|"updateUiBalance"|"updateUiMinerStatus"|"updateUiSyncProgress"|"uiNetworkInitialized"|"uiWalletLoaded"|"uiPeerList"|"uiTotalSupply"|undefined} command
+         * @memberof p2p.RustCommand
+         * @instance
+         */
+        Object.defineProperty(RustCommand.prototype, "command", {
+            get: $util.oneOfGetter($oneOfFields = ["logMessage", "p2pPublish", "p2pSendDirect", "p2pHangUp", "updateUiBalance", "updateUiMinerStatus", "updateUiSyncProgress", "uiNetworkInitialized", "uiWalletLoaded", "uiPeerList", "uiTotalSupply"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * Creates a new RustCommand instance using the specified properties.
+         * @function create
+         * @memberof p2p.RustCommand
+         * @static
+         * @param {p2p.IRustCommand=} [properties] Properties to set
+         * @returns {p2p.RustCommand} RustCommand instance
+         */
+        RustCommand.create = function create(properties) {
+            return new RustCommand(properties);
+        };
+
+        /**
+         * Encodes the specified RustCommand message. Does not implicitly {@link p2p.RustCommand.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.RustCommand
+         * @static
+         * @param {p2p.IRustCommand} message RustCommand message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        RustCommand.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.logMessage != null && Object.hasOwnProperty.call(message, "logMessage"))
+                $root.p2p.LogMessage.encode(message.logMessage, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+            if (message.p2pPublish != null && Object.hasOwnProperty.call(message, "p2pPublish"))
+                $root.p2p.PublishP2pMessage.encode(message.p2pPublish, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+            if (message.p2pSendDirect != null && Object.hasOwnProperty.call(message, "p2pSendDirect"))
+                $root.p2p.SendDirectP2pMessage.encode(message.p2pSendDirect, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+            if (message.p2pHangUp != null && Object.hasOwnProperty.call(message, "p2pHangUp"))
+                $root.p2p.HangUpPeer.encode(message.p2pHangUp, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+            if (message.updateUiBalance != null && Object.hasOwnProperty.call(message, "updateUiBalance"))
+                $root.p2p.UpdateUiBalance.encode(message.updateUiBalance, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+            if (message.updateUiMinerStatus != null && Object.hasOwnProperty.call(message, "updateUiMinerStatus"))
+                $root.p2p.UpdateUiMinerStatus.encode(message.updateUiMinerStatus, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
+            if (message.updateUiSyncProgress != null && Object.hasOwnProperty.call(message, "updateUiSyncProgress"))
+                $root.p2p.UpdateUiSyncProgress.encode(message.updateUiSyncProgress, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
+            if (message.uiNetworkInitialized != null && Object.hasOwnProperty.call(message, "uiNetworkInitialized"))
+                $root.p2p.UiNetworkInitialized.encode(message.uiNetworkInitialized, writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
+            if (message.uiWalletLoaded != null && Object.hasOwnProperty.call(message, "uiWalletLoaded"))
+                $root.p2p.UiWalletLoaded.encode(message.uiWalletLoaded, writer.uint32(/* id 9, wireType 2 =*/74).fork()).ldelim();
+            if (message.uiPeerList != null && Object.hasOwnProperty.call(message, "uiPeerList"))
+                $root.p2p.UiPeerList.encode(message.uiPeerList, writer.uint32(/* id 10, wireType 2 =*/82).fork()).ldelim();
+            if (message.uiTotalSupply != null && Object.hasOwnProperty.call(message, "uiTotalSupply"))
+                $root.p2p.UiTotalSupply.encode(message.uiTotalSupply, writer.uint32(/* id 11, wireType 2 =*/90).fork()).ldelim();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified RustCommand message, length delimited. Does not implicitly {@link p2p.RustCommand.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.RustCommand
+         * @static
+         * @param {p2p.IRustCommand} message RustCommand message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        RustCommand.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a RustCommand message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.RustCommand
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.RustCommand} RustCommand
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        RustCommand.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.RustCommand();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.logMessage = $root.p2p.LogMessage.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 2: {
+                        message.p2pPublish = $root.p2p.PublishP2pMessage.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 3: {
+                        message.p2pSendDirect = $root.p2p.SendDirectP2pMessage.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 4: {
+                        message.p2pHangUp = $root.p2p.HangUpPeer.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 5: {
+                        message.updateUiBalance = $root.p2p.UpdateUiBalance.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 6: {
+                        message.updateUiMinerStatus = $root.p2p.UpdateUiMinerStatus.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 7: {
+                        message.updateUiSyncProgress = $root.p2p.UpdateUiSyncProgress.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 8: {
+                        message.uiNetworkInitialized = $root.p2p.UiNetworkInitialized.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 9: {
+                        message.uiWalletLoaded = $root.p2p.UiWalletLoaded.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 10: {
+                        message.uiPeerList = $root.p2p.UiPeerList.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 11: {
+                        message.uiTotalSupply = $root.p2p.UiTotalSupply.decode(reader, reader.uint32());
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a RustCommand message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.RustCommand
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.RustCommand} RustCommand
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        RustCommand.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a RustCommand message.
+         * @function verify
+         * @memberof p2p.RustCommand
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        RustCommand.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            var properties = {};
+            if (message.logMessage != null && message.hasOwnProperty("logMessage")) {
+                properties.command = 1;
+                {
+                    var error = $root.p2p.LogMessage.verify(message.logMessage);
+                    if (error)
+                        return "logMessage." + error;
+                }
+            }
+            if (message.p2pPublish != null && message.hasOwnProperty("p2pPublish")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.PublishP2pMessage.verify(message.p2pPublish);
+                    if (error)
+                        return "p2pPublish." + error;
+                }
+            }
+            if (message.p2pSendDirect != null && message.hasOwnProperty("p2pSendDirect")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.SendDirectP2pMessage.verify(message.p2pSendDirect);
+                    if (error)
+                        return "p2pSendDirect." + error;
+                }
+            }
+            if (message.p2pHangUp != null && message.hasOwnProperty("p2pHangUp")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.HangUpPeer.verify(message.p2pHangUp);
+                    if (error)
+                        return "p2pHangUp." + error;
+                }
+            }
+            if (message.updateUiBalance != null && message.hasOwnProperty("updateUiBalance")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.UpdateUiBalance.verify(message.updateUiBalance);
+                    if (error)
+                        return "updateUiBalance." + error;
+                }
+            }
+            if (message.updateUiMinerStatus != null && message.hasOwnProperty("updateUiMinerStatus")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.UpdateUiMinerStatus.verify(message.updateUiMinerStatus);
+                    if (error)
+                        return "updateUiMinerStatus." + error;
+                }
+            }
+            if (message.updateUiSyncProgress != null && message.hasOwnProperty("updateUiSyncProgress")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.UpdateUiSyncProgress.verify(message.updateUiSyncProgress);
+                    if (error)
+                        return "updateUiSyncProgress." + error;
+                }
+            }
+            if (message.uiNetworkInitialized != null && message.hasOwnProperty("uiNetworkInitialized")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.UiNetworkInitialized.verify(message.uiNetworkInitialized);
+                    if (error)
+                        return "uiNetworkInitialized." + error;
+                }
+            }
+            if (message.uiWalletLoaded != null && message.hasOwnProperty("uiWalletLoaded")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.UiWalletLoaded.verify(message.uiWalletLoaded);
+                    if (error)
+                        return "uiWalletLoaded." + error;
+                }
+            }
+            if (message.uiPeerList != null && message.hasOwnProperty("uiPeerList")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.UiPeerList.verify(message.uiPeerList);
+                    if (error)
+                        return "uiPeerList." + error;
+                }
+            }
+            if (message.uiTotalSupply != null && message.hasOwnProperty("uiTotalSupply")) {
+                if (properties.command === 1)
+                    return "command: multiple values";
+                properties.command = 1;
+                {
+                    var error = $root.p2p.UiTotalSupply.verify(message.uiTotalSupply);
+                    if (error)
+                        return "uiTotalSupply." + error;
+                }
+            }
+            return null;
+        };
+
+        /**
+         * Creates a RustCommand message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.RustCommand
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.RustCommand} RustCommand
+         */
+        RustCommand.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.RustCommand)
+                return object;
+            var message = new $root.p2p.RustCommand();
+            if (object.logMessage != null) {
+                if (typeof object.logMessage !== "object")
+                    throw TypeError(".p2p.RustCommand.logMessage: object expected");
+                message.logMessage = $root.p2p.LogMessage.fromObject(object.logMessage);
+            }
+            if (object.p2pPublish != null) {
+                if (typeof object.p2pPublish !== "object")
+                    throw TypeError(".p2p.RustCommand.p2pPublish: object expected");
+                message.p2pPublish = $root.p2p.PublishP2pMessage.fromObject(object.p2pPublish);
+            }
+            if (object.p2pSendDirect != null) {
+                if (typeof object.p2pSendDirect !== "object")
+                    throw TypeError(".p2p.RustCommand.p2pSendDirect: object expected");
+                message.p2pSendDirect = $root.p2p.SendDirectP2pMessage.fromObject(object.p2pSendDirect);
+            }
+            if (object.p2pHangUp != null) {
+                if (typeof object.p2pHangUp !== "object")
+                    throw TypeError(".p2p.RustCommand.p2pHangUp: object expected");
+                message.p2pHangUp = $root.p2p.HangUpPeer.fromObject(object.p2pHangUp);
+            }
+            if (object.updateUiBalance != null) {
+                if (typeof object.updateUiBalance !== "object")
+                    throw TypeError(".p2p.RustCommand.updateUiBalance: object expected");
+                message.updateUiBalance = $root.p2p.UpdateUiBalance.fromObject(object.updateUiBalance);
+            }
+            if (object.updateUiMinerStatus != null) {
+                if (typeof object.updateUiMinerStatus !== "object")
+                    throw TypeError(".p2p.RustCommand.updateUiMinerStatus: object expected");
+                message.updateUiMinerStatus = $root.p2p.UpdateUiMinerStatus.fromObject(object.updateUiMinerStatus);
+            }
+            if (object.updateUiSyncProgress != null) {
+                if (typeof object.updateUiSyncProgress !== "object")
+                    throw TypeError(".p2p.RustCommand.updateUiSyncProgress: object expected");
+                message.updateUiSyncProgress = $root.p2p.UpdateUiSyncProgress.fromObject(object.updateUiSyncProgress);
+            }
+            if (object.uiNetworkInitialized != null) {
+                if (typeof object.uiNetworkInitialized !== "object")
+                    throw TypeError(".p2p.RustCommand.uiNetworkInitialized: object expected");
+                message.uiNetworkInitialized = $root.p2p.UiNetworkInitialized.fromObject(object.uiNetworkInitialized);
+            }
+            if (object.uiWalletLoaded != null) {
+                if (typeof object.uiWalletLoaded !== "object")
+                    throw TypeError(".p2p.RustCommand.uiWalletLoaded: object expected");
+                message.uiWalletLoaded = $root.p2p.UiWalletLoaded.fromObject(object.uiWalletLoaded);
+            }
+            if (object.uiPeerList != null) {
+                if (typeof object.uiPeerList !== "object")
+                    throw TypeError(".p2p.RustCommand.uiPeerList: object expected");
+                message.uiPeerList = $root.p2p.UiPeerList.fromObject(object.uiPeerList);
+            }
+            if (object.uiTotalSupply != null) {
+                if (typeof object.uiTotalSupply !== "object")
+                    throw TypeError(".p2p.RustCommand.uiTotalSupply: object expected");
+                message.uiTotalSupply = $root.p2p.UiTotalSupply.fromObject(object.uiTotalSupply);
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a RustCommand message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.RustCommand
+         * @static
+         * @param {p2p.RustCommand} message RustCommand
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        RustCommand.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (message.logMessage != null && message.hasOwnProperty("logMessage")) {
+                object.logMessage = $root.p2p.LogMessage.toObject(message.logMessage, options);
+                if (options.oneofs)
+                    object.command = "logMessage";
+            }
+            if (message.p2pPublish != null && message.hasOwnProperty("p2pPublish")) {
+                object.p2pPublish = $root.p2p.PublishP2pMessage.toObject(message.p2pPublish, options);
+                if (options.oneofs)
+                    object.command = "p2pPublish";
+            }
+            if (message.p2pSendDirect != null && message.hasOwnProperty("p2pSendDirect")) {
+                object.p2pSendDirect = $root.p2p.SendDirectP2pMessage.toObject(message.p2pSendDirect, options);
+                if (options.oneofs)
+                    object.command = "p2pSendDirect";
+            }
+            if (message.p2pHangUp != null && message.hasOwnProperty("p2pHangUp")) {
+                object.p2pHangUp = $root.p2p.HangUpPeer.toObject(message.p2pHangUp, options);
+                if (options.oneofs)
+                    object.command = "p2pHangUp";
+            }
+            if (message.updateUiBalance != null && message.hasOwnProperty("updateUiBalance")) {
+                object.updateUiBalance = $root.p2p.UpdateUiBalance.toObject(message.updateUiBalance, options);
+                if (options.oneofs)
+                    object.command = "updateUiBalance";
+            }
+            if (message.updateUiMinerStatus != null && message.hasOwnProperty("updateUiMinerStatus")) {
+                object.updateUiMinerStatus = $root.p2p.UpdateUiMinerStatus.toObject(message.updateUiMinerStatus, options);
+                if (options.oneofs)
+                    object.command = "updateUiMinerStatus";
+            }
+            if (message.updateUiSyncProgress != null && message.hasOwnProperty("updateUiSyncProgress")) {
+                object.updateUiSyncProgress = $root.p2p.UpdateUiSyncProgress.toObject(message.updateUiSyncProgress, options);
+                if (options.oneofs)
+                    object.command = "updateUiSyncProgress";
+            }
+            if (message.uiNetworkInitialized != null && message.hasOwnProperty("uiNetworkInitialized")) {
+                object.uiNetworkInitialized = $root.p2p.UiNetworkInitialized.toObject(message.uiNetworkInitialized, options);
+                if (options.oneofs)
+                    object.command = "uiNetworkInitialized";
+            }
+            if (message.uiWalletLoaded != null && message.hasOwnProperty("uiWalletLoaded")) {
+                object.uiWalletLoaded = $root.p2p.UiWalletLoaded.toObject(message.uiWalletLoaded, options);
+                if (options.oneofs)
+                    object.command = "uiWalletLoaded";
+            }
+            if (message.uiPeerList != null && message.hasOwnProperty("uiPeerList")) {
+                object.uiPeerList = $root.p2p.UiPeerList.toObject(message.uiPeerList, options);
+                if (options.oneofs)
+                    object.command = "uiPeerList";
+            }
+            if (message.uiTotalSupply != null && message.hasOwnProperty("uiTotalSupply")) {
+                object.uiTotalSupply = $root.p2p.UiTotalSupply.toObject(message.uiTotalSupply, options);
+                if (options.oneofs)
+                    object.command = "uiTotalSupply";
+            }
+            return object;
+        };
+
+        /**
+         * Converts this RustCommand to JSON.
+         * @function toJSON
+         * @memberof p2p.RustCommand
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        RustCommand.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for RustCommand
+         * @function getTypeUrl
+         * @memberof p2p.RustCommand
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        RustCommand.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.RustCommand";
+        };
+
+        return RustCommand;
+    })();
+
+    p2p.InitializeRequest = (function() {
+
+        /**
+         * Properties of an InitializeRequest.
+         * @memberof p2p
+         * @interface IInitializeRequest
+         */
+
+        /**
+         * Constructs a new InitializeRequest.
+         * @memberof p2p
+         * @classdesc Represents an InitializeRequest.
+         * @implements IInitializeRequest
+         * @constructor
+         * @param {p2p.IInitializeRequest=} [properties] Properties to set
+         */
+        function InitializeRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Creates a new InitializeRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.InitializeRequest
+         * @static
+         * @param {p2p.IInitializeRequest=} [properties] Properties to set
+         * @returns {p2p.InitializeRequest} InitializeRequest instance
+         */
+        InitializeRequest.create = function create(properties) {
+            return new InitializeRequest(properties);
+        };
+
+        /**
+         * Encodes the specified InitializeRequest message. Does not implicitly {@link p2p.InitializeRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.InitializeRequest
+         * @static
+         * @param {p2p.IInitializeRequest} message InitializeRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        InitializeRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified InitializeRequest message, length delimited. Does not implicitly {@link p2p.InitializeRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.InitializeRequest
+         * @static
+         * @param {p2p.IInitializeRequest} message InitializeRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        InitializeRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes an InitializeRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.InitializeRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.InitializeRequest} InitializeRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        InitializeRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.InitializeRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes an InitializeRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.InitializeRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.InitializeRequest} InitializeRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        InitializeRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an InitializeRequest message.
+         * @function verify
+         * @memberof p2p.InitializeRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        InitializeRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            return null;
+        };
+
+        /**
+         * Creates an InitializeRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.InitializeRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.InitializeRequest} InitializeRequest
+         */
+        InitializeRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.InitializeRequest)
+                return object;
+            return new $root.p2p.InitializeRequest();
+        };
+
+        /**
+         * Creates a plain object from an InitializeRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.InitializeRequest
+         * @static
+         * @param {p2p.InitializeRequest} message InitializeRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        InitializeRequest.toObject = function toObject() {
+            return {};
+        };
+
+        /**
+         * Converts this InitializeRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.InitializeRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        InitializeRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for InitializeRequest
+         * @function getTypeUrl
+         * @memberof p2p.InitializeRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        InitializeRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.InitializeRequest";
+        };
+
+        return InitializeRequest;
+    })();
+
+    p2p.CreateWalletRequest = (function() {
+
+        /**
+         * Properties of a CreateWalletRequest.
+         * @memberof p2p
+         * @interface ICreateWalletRequest
+         * @property {string|null} [walletId] CreateWalletRequest walletId
+         */
+
+        /**
+         * Constructs a new CreateWalletRequest.
+         * @memberof p2p
+         * @classdesc Represents a CreateWalletRequest.
+         * @implements ICreateWalletRequest
+         * @constructor
+         * @param {p2p.ICreateWalletRequest=} [properties] Properties to set
+         */
+        function CreateWalletRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CreateWalletRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.CreateWalletRequest
+         * @instance
+         */
+        CreateWalletRequest.prototype.walletId = "";
+
+        /**
+         * Creates a new CreateWalletRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.CreateWalletRequest
+         * @static
+         * @param {p2p.ICreateWalletRequest=} [properties] Properties to set
+         * @returns {p2p.CreateWalletRequest} CreateWalletRequest instance
+         */
+        CreateWalletRequest.create = function create(properties) {
+            return new CreateWalletRequest(properties);
+        };
+
+        /**
+         * Encodes the specified CreateWalletRequest message. Does not implicitly {@link p2p.CreateWalletRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.CreateWalletRequest
+         * @static
+         * @param {p2p.ICreateWalletRequest} message CreateWalletRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CreateWalletRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CreateWalletRequest message, length delimited. Does not implicitly {@link p2p.CreateWalletRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.CreateWalletRequest
+         * @static
+         * @param {p2p.ICreateWalletRequest} message CreateWalletRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CreateWalletRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CreateWalletRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.CreateWalletRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.CreateWalletRequest} CreateWalletRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CreateWalletRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.CreateWalletRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CreateWalletRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.CreateWalletRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.CreateWalletRequest} CreateWalletRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CreateWalletRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CreateWalletRequest message.
+         * @function verify
+         * @memberof p2p.CreateWalletRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CreateWalletRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a CreateWalletRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.CreateWalletRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.CreateWalletRequest} CreateWalletRequest
+         */
+        CreateWalletRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.CreateWalletRequest)
+                return object;
+            var message = new $root.p2p.CreateWalletRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CreateWalletRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.CreateWalletRequest
+         * @static
+         * @param {p2p.CreateWalletRequest} message CreateWalletRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CreateWalletRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults)
+                object.walletId = "";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            return object;
+        };
+
+        /**
+         * Converts this CreateWalletRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.CreateWalletRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CreateWalletRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CreateWalletRequest
+         * @function getTypeUrl
+         * @memberof p2p.CreateWalletRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CreateWalletRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.CreateWalletRequest";
+        };
+
+        return CreateWalletRequest;
+    })();
+
+    p2p.RestoreWalletRequest = (function() {
+
+        /**
+         * Properties of a RestoreWalletRequest.
+         * @memberof p2p
+         * @interface IRestoreWalletRequest
+         * @property {string|null} [walletId] RestoreWalletRequest walletId
+         * @property {string|null} [phrase] RestoreWalletRequest phrase
+         */
+
+        /**
+         * Constructs a new RestoreWalletRequest.
+         * @memberof p2p
+         * @classdesc Represents a RestoreWalletRequest.
+         * @implements IRestoreWalletRequest
+         * @constructor
+         * @param {p2p.IRestoreWalletRequest=} [properties] Properties to set
+         */
+        function RestoreWalletRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * RestoreWalletRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.RestoreWalletRequest
+         * @instance
+         */
+        RestoreWalletRequest.prototype.walletId = "";
+
+        /**
+         * RestoreWalletRequest phrase.
+         * @member {string} phrase
+         * @memberof p2p.RestoreWalletRequest
+         * @instance
+         */
+        RestoreWalletRequest.prototype.phrase = "";
+
+        /**
+         * Creates a new RestoreWalletRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.RestoreWalletRequest
+         * @static
+         * @param {p2p.IRestoreWalletRequest=} [properties] Properties to set
+         * @returns {p2p.RestoreWalletRequest} RestoreWalletRequest instance
+         */
+        RestoreWalletRequest.create = function create(properties) {
+            return new RestoreWalletRequest(properties);
+        };
+
+        /**
+         * Encodes the specified RestoreWalletRequest message. Does not implicitly {@link p2p.RestoreWalletRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.RestoreWalletRequest
+         * @static
+         * @param {p2p.IRestoreWalletRequest} message RestoreWalletRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        RestoreWalletRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            if (message.phrase != null && Object.hasOwnProperty.call(message, "phrase"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.phrase);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified RestoreWalletRequest message, length delimited. Does not implicitly {@link p2p.RestoreWalletRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.RestoreWalletRequest
+         * @static
+         * @param {p2p.IRestoreWalletRequest} message RestoreWalletRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        RestoreWalletRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a RestoreWalletRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.RestoreWalletRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.RestoreWalletRequest} RestoreWalletRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        RestoreWalletRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.RestoreWalletRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.phrase = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a RestoreWalletRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.RestoreWalletRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.RestoreWalletRequest} RestoreWalletRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        RestoreWalletRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a RestoreWalletRequest message.
+         * @function verify
+         * @memberof p2p.RestoreWalletRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        RestoreWalletRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            if (message.phrase != null && message.hasOwnProperty("phrase"))
+                if (!$util.isString(message.phrase))
+                    return "phrase: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a RestoreWalletRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.RestoreWalletRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.RestoreWalletRequest} RestoreWalletRequest
+         */
+        RestoreWalletRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.RestoreWalletRequest)
+                return object;
+            var message = new $root.p2p.RestoreWalletRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            if (object.phrase != null)
+                message.phrase = String(object.phrase);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a RestoreWalletRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.RestoreWalletRequest
+         * @static
+         * @param {p2p.RestoreWalletRequest} message RestoreWalletRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        RestoreWalletRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.walletId = "";
+                object.phrase = "";
+            }
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            if (message.phrase != null && message.hasOwnProperty("phrase"))
+                object.phrase = message.phrase;
+            return object;
+        };
+
+        /**
+         * Converts this RestoreWalletRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.RestoreWalletRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        RestoreWalletRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for RestoreWalletRequest
+         * @function getTypeUrl
+         * @memberof p2p.RestoreWalletRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        RestoreWalletRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.RestoreWalletRequest";
+        };
+
+        return RestoreWalletRequest;
+    })();
+
+    p2p.LoadWalletRequest = (function() {
+
+        /**
+         * Properties of a LoadWalletRequest.
+         * @memberof p2p
+         * @interface ILoadWalletRequest
+         * @property {string|null} [walletId] LoadWalletRequest walletId
+         */
+
+        /**
+         * Constructs a new LoadWalletRequest.
+         * @memberof p2p
+         * @classdesc Represents a LoadWalletRequest.
+         * @implements ILoadWalletRequest
+         * @constructor
+         * @param {p2p.ILoadWalletRequest=} [properties] Properties to set
+         */
+        function LoadWalletRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * LoadWalletRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.LoadWalletRequest
+         * @instance
+         */
+        LoadWalletRequest.prototype.walletId = "";
+
+        /**
+         * Creates a new LoadWalletRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.LoadWalletRequest
+         * @static
+         * @param {p2p.ILoadWalletRequest=} [properties] Properties to set
+         * @returns {p2p.LoadWalletRequest} LoadWalletRequest instance
+         */
+        LoadWalletRequest.create = function create(properties) {
+            return new LoadWalletRequest(properties);
+        };
+
+        /**
+         * Encodes the specified LoadWalletRequest message. Does not implicitly {@link p2p.LoadWalletRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.LoadWalletRequest
+         * @static
+         * @param {p2p.ILoadWalletRequest} message LoadWalletRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        LoadWalletRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified LoadWalletRequest message, length delimited. Does not implicitly {@link p2p.LoadWalletRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.LoadWalletRequest
+         * @static
+         * @param {p2p.ILoadWalletRequest} message LoadWalletRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        LoadWalletRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a LoadWalletRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.LoadWalletRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.LoadWalletRequest} LoadWalletRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        LoadWalletRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.LoadWalletRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a LoadWalletRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.LoadWalletRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.LoadWalletRequest} LoadWalletRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        LoadWalletRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a LoadWalletRequest message.
+         * @function verify
+         * @memberof p2p.LoadWalletRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        LoadWalletRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a LoadWalletRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.LoadWalletRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.LoadWalletRequest} LoadWalletRequest
+         */
+        LoadWalletRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.LoadWalletRequest)
+                return object;
+            var message = new $root.p2p.LoadWalletRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a LoadWalletRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.LoadWalletRequest
+         * @static
+         * @param {p2p.LoadWalletRequest} message LoadWalletRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        LoadWalletRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults)
+                object.walletId = "";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            return object;
+        };
+
+        /**
+         * Converts this LoadWalletRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.LoadWalletRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        LoadWalletRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for LoadWalletRequest
+         * @function getTypeUrl
+         * @memberof p2p.LoadWalletRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        LoadWalletRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.LoadWalletRequest";
+        };
+
+        return LoadWalletRequest;
+    })();
+
+    p2p.GetBalanceRequest = (function() {
+
+        /**
+         * Properties of a GetBalanceRequest.
+         * @memberof p2p
+         * @interface IGetBalanceRequest
+         * @property {string|null} [walletId] GetBalanceRequest walletId
+         */
+
+        /**
+         * Constructs a new GetBalanceRequest.
+         * @memberof p2p
+         * @classdesc Represents a GetBalanceRequest.
+         * @implements IGetBalanceRequest
+         * @constructor
+         * @param {p2p.IGetBalanceRequest=} [properties] Properties to set
+         */
+        function GetBalanceRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * GetBalanceRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.GetBalanceRequest
+         * @instance
+         */
+        GetBalanceRequest.prototype.walletId = "";
+
+        /**
+         * Creates a new GetBalanceRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.GetBalanceRequest
+         * @static
+         * @param {p2p.IGetBalanceRequest=} [properties] Properties to set
+         * @returns {p2p.GetBalanceRequest} GetBalanceRequest instance
+         */
+        GetBalanceRequest.create = function create(properties) {
+            return new GetBalanceRequest(properties);
+        };
+
+        /**
+         * Encodes the specified GetBalanceRequest message. Does not implicitly {@link p2p.GetBalanceRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.GetBalanceRequest
+         * @static
+         * @param {p2p.IGetBalanceRequest} message GetBalanceRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetBalanceRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified GetBalanceRequest message, length delimited. Does not implicitly {@link p2p.GetBalanceRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.GetBalanceRequest
+         * @static
+         * @param {p2p.IGetBalanceRequest} message GetBalanceRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetBalanceRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a GetBalanceRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.GetBalanceRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.GetBalanceRequest} GetBalanceRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetBalanceRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.GetBalanceRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a GetBalanceRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.GetBalanceRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.GetBalanceRequest} GetBalanceRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetBalanceRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a GetBalanceRequest message.
+         * @function verify
+         * @memberof p2p.GetBalanceRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        GetBalanceRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a GetBalanceRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.GetBalanceRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.GetBalanceRequest} GetBalanceRequest
+         */
+        GetBalanceRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.GetBalanceRequest)
+                return object;
+            var message = new $root.p2p.GetBalanceRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a GetBalanceRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.GetBalanceRequest
+         * @static
+         * @param {p2p.GetBalanceRequest} message GetBalanceRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        GetBalanceRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults)
+                object.walletId = "";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            return object;
+        };
+
+        /**
+         * Converts this GetBalanceRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.GetBalanceRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        GetBalanceRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for GetBalanceRequest
+         * @function getTypeUrl
+         * @memberof p2p.GetBalanceRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        GetBalanceRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.GetBalanceRequest";
+        };
+
+        return GetBalanceRequest;
+    })();
+
+    p2p.CreateTransactionRequest = (function() {
+
+        /**
+         * Properties of a CreateTransactionRequest.
+         * @memberof p2p
+         * @interface ICreateTransactionRequest
+         * @property {string|null} [fromWalletId] CreateTransactionRequest fromWalletId
+         * @property {string|null} [toAddress] CreateTransactionRequest toAddress
+         * @property {number|Long|null} [amount] CreateTransactionRequest amount
+         * @property {number|Long|null} [fee] CreateTransactionRequest fee
+         */
+
+        /**
+         * Constructs a new CreateTransactionRequest.
+         * @memberof p2p
+         * @classdesc Represents a CreateTransactionRequest.
+         * @implements ICreateTransactionRequest
+         * @constructor
+         * @param {p2p.ICreateTransactionRequest=} [properties] Properties to set
+         */
+        function CreateTransactionRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CreateTransactionRequest fromWalletId.
+         * @member {string} fromWalletId
+         * @memberof p2p.CreateTransactionRequest
+         * @instance
+         */
+        CreateTransactionRequest.prototype.fromWalletId = "";
+
+        /**
+         * CreateTransactionRequest toAddress.
+         * @member {string} toAddress
+         * @memberof p2p.CreateTransactionRequest
+         * @instance
+         */
+        CreateTransactionRequest.prototype.toAddress = "";
+
+        /**
+         * CreateTransactionRequest amount.
+         * @member {number|Long} amount
+         * @memberof p2p.CreateTransactionRequest
+         * @instance
+         */
+        CreateTransactionRequest.prototype.amount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * CreateTransactionRequest fee.
+         * @member {number|Long} fee
+         * @memberof p2p.CreateTransactionRequest
+         * @instance
+         */
+        CreateTransactionRequest.prototype.fee = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * Creates a new CreateTransactionRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.CreateTransactionRequest
+         * @static
+         * @param {p2p.ICreateTransactionRequest=} [properties] Properties to set
+         * @returns {p2p.CreateTransactionRequest} CreateTransactionRequest instance
+         */
+        CreateTransactionRequest.create = function create(properties) {
+            return new CreateTransactionRequest(properties);
+        };
+
+        /**
+         * Encodes the specified CreateTransactionRequest message. Does not implicitly {@link p2p.CreateTransactionRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.CreateTransactionRequest
+         * @static
+         * @param {p2p.ICreateTransactionRequest} message CreateTransactionRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CreateTransactionRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.fromWalletId != null && Object.hasOwnProperty.call(message, "fromWalletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.fromWalletId);
+            if (message.toAddress != null && Object.hasOwnProperty.call(message, "toAddress"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.toAddress);
+            if (message.amount != null && Object.hasOwnProperty.call(message, "amount"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.amount);
+            if (message.fee != null && Object.hasOwnProperty.call(message, "fee"))
+                writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.fee);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CreateTransactionRequest message, length delimited. Does not implicitly {@link p2p.CreateTransactionRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.CreateTransactionRequest
+         * @static
+         * @param {p2p.ICreateTransactionRequest} message CreateTransactionRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CreateTransactionRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CreateTransactionRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.CreateTransactionRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.CreateTransactionRequest} CreateTransactionRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CreateTransactionRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.CreateTransactionRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.fromWalletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.toAddress = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.amount = reader.uint64();
+                        break;
+                    }
+                case 4: {
+                        message.fee = reader.uint64();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CreateTransactionRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.CreateTransactionRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.CreateTransactionRequest} CreateTransactionRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CreateTransactionRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CreateTransactionRequest message.
+         * @function verify
+         * @memberof p2p.CreateTransactionRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CreateTransactionRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.fromWalletId != null && message.hasOwnProperty("fromWalletId"))
+                if (!$util.isString(message.fromWalletId))
+                    return "fromWalletId: string expected";
+            if (message.toAddress != null && message.hasOwnProperty("toAddress"))
+                if (!$util.isString(message.toAddress))
+                    return "toAddress: string expected";
+            if (message.amount != null && message.hasOwnProperty("amount"))
+                if (!$util.isInteger(message.amount) && !(message.amount && $util.isInteger(message.amount.low) && $util.isInteger(message.amount.high)))
+                    return "amount: integer|Long expected";
+            if (message.fee != null && message.hasOwnProperty("fee"))
+                if (!$util.isInteger(message.fee) && !(message.fee && $util.isInteger(message.fee.low) && $util.isInteger(message.fee.high)))
+                    return "fee: integer|Long expected";
+            return null;
+        };
+
+        /**
+         * Creates a CreateTransactionRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.CreateTransactionRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.CreateTransactionRequest} CreateTransactionRequest
+         */
+        CreateTransactionRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.CreateTransactionRequest)
+                return object;
+            var message = new $root.p2p.CreateTransactionRequest();
+            if (object.fromWalletId != null)
+                message.fromWalletId = String(object.fromWalletId);
+            if (object.toAddress != null)
+                message.toAddress = String(object.toAddress);
+            if (object.amount != null)
+                if ($util.Long)
+                    (message.amount = $util.Long.fromValue(object.amount)).unsigned = true;
+                else if (typeof object.amount === "string")
+                    message.amount = parseInt(object.amount, 10);
+                else if (typeof object.amount === "number")
+                    message.amount = object.amount;
+                else if (typeof object.amount === "object")
+                    message.amount = new $util.LongBits(object.amount.low >>> 0, object.amount.high >>> 0).toNumber(true);
+            if (object.fee != null)
+                if ($util.Long)
+                    (message.fee = $util.Long.fromValue(object.fee)).unsigned = true;
+                else if (typeof object.fee === "string")
+                    message.fee = parseInt(object.fee, 10);
+                else if (typeof object.fee === "number")
+                    message.fee = object.fee;
+                else if (typeof object.fee === "object")
+                    message.fee = new $util.LongBits(object.fee.low >>> 0, object.fee.high >>> 0).toNumber(true);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CreateTransactionRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.CreateTransactionRequest
+         * @static
+         * @param {p2p.CreateTransactionRequest} message CreateTransactionRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CreateTransactionRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.fromWalletId = "";
+                object.toAddress = "";
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.amount = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.amount = options.longs === String ? "0" : 0;
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.fee = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.fee = options.longs === String ? "0" : 0;
+            }
+            if (message.fromWalletId != null && message.hasOwnProperty("fromWalletId"))
+                object.fromWalletId = message.fromWalletId;
+            if (message.toAddress != null && message.hasOwnProperty("toAddress"))
+                object.toAddress = message.toAddress;
+            if (message.amount != null && message.hasOwnProperty("amount"))
+                if (typeof message.amount === "number")
+                    object.amount = options.longs === String ? String(message.amount) : message.amount;
+                else
+                    object.amount = options.longs === String ? $util.Long.prototype.toString.call(message.amount) : options.longs === Number ? new $util.LongBits(message.amount.low >>> 0, message.amount.high >>> 0).toNumber(true) : message.amount;
+            if (message.fee != null && message.hasOwnProperty("fee"))
+                if (typeof message.fee === "number")
+                    object.fee = options.longs === String ? String(message.fee) : message.fee;
+                else
+                    object.fee = options.longs === String ? $util.Long.prototype.toString.call(message.fee) : options.longs === Number ? new $util.LongBits(message.fee.low >>> 0, message.fee.high >>> 0).toNumber(true) : message.fee;
+            return object;
+        };
+
+        /**
+         * Converts this CreateTransactionRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.CreateTransactionRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CreateTransactionRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CreateTransactionRequest
+         * @function getTypeUrl
+         * @memberof p2p.CreateTransactionRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CreateTransactionRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.CreateTransactionRequest";
+        };
+
+        return CreateTransactionRequest;
+    })();
+
+    p2p.ToggleMinerRequest = (function() {
+
+        /**
+         * Properties of a ToggleMinerRequest.
+         * @memberof p2p
+         * @interface IToggleMinerRequest
+         * @property {string|null} [minerId] ToggleMinerRequest minerId
+         */
+
+        /**
+         * Constructs a new ToggleMinerRequest.
+         * @memberof p2p
+         * @classdesc Represents a ToggleMinerRequest.
+         * @implements IToggleMinerRequest
+         * @constructor
+         * @param {p2p.IToggleMinerRequest=} [properties] Properties to set
+         */
+        function ToggleMinerRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * ToggleMinerRequest minerId.
+         * @member {string} minerId
+         * @memberof p2p.ToggleMinerRequest
+         * @instance
+         */
+        ToggleMinerRequest.prototype.minerId = "";
+
+        /**
+         * Creates a new ToggleMinerRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.ToggleMinerRequest
+         * @static
+         * @param {p2p.IToggleMinerRequest=} [properties] Properties to set
+         * @returns {p2p.ToggleMinerRequest} ToggleMinerRequest instance
+         */
+        ToggleMinerRequest.create = function create(properties) {
+            return new ToggleMinerRequest(properties);
+        };
+
+        /**
+         * Encodes the specified ToggleMinerRequest message. Does not implicitly {@link p2p.ToggleMinerRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.ToggleMinerRequest
+         * @static
+         * @param {p2p.IToggleMinerRequest} message ToggleMinerRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ToggleMinerRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.minerId != null && Object.hasOwnProperty.call(message, "minerId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.minerId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified ToggleMinerRequest message, length delimited. Does not implicitly {@link p2p.ToggleMinerRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.ToggleMinerRequest
+         * @static
+         * @param {p2p.IToggleMinerRequest} message ToggleMinerRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ToggleMinerRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a ToggleMinerRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.ToggleMinerRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.ToggleMinerRequest} ToggleMinerRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ToggleMinerRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.ToggleMinerRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.minerId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a ToggleMinerRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.ToggleMinerRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.ToggleMinerRequest} ToggleMinerRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ToggleMinerRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a ToggleMinerRequest message.
+         * @function verify
+         * @memberof p2p.ToggleMinerRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        ToggleMinerRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.minerId != null && message.hasOwnProperty("minerId"))
+                if (!$util.isString(message.minerId))
+                    return "minerId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a ToggleMinerRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.ToggleMinerRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.ToggleMinerRequest} ToggleMinerRequest
+         */
+        ToggleMinerRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.ToggleMinerRequest)
+                return object;
+            var message = new $root.p2p.ToggleMinerRequest();
+            if (object.minerId != null)
+                message.minerId = String(object.minerId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a ToggleMinerRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.ToggleMinerRequest
+         * @static
+         * @param {p2p.ToggleMinerRequest} message ToggleMinerRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        ToggleMinerRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults)
+                object.minerId = "";
+            if (message.minerId != null && message.hasOwnProperty("minerId"))
+                object.minerId = message.minerId;
+            return object;
+        };
+
+        /**
+         * Converts this ToggleMinerRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.ToggleMinerRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        ToggleMinerRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for ToggleMinerRequest
+         * @function getTypeUrl
+         * @memberof p2p.ToggleMinerRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        ToggleMinerRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.ToggleMinerRequest";
+        };
+
+        return ToggleMinerRequest;
+    })();
+
+    p2p.GetStatusRequest = (function() {
+
+        /**
+         * Properties of a GetStatusRequest.
+         * @memberof p2p
+         * @interface IGetStatusRequest
+         */
+
+        /**
+         * Constructs a new GetStatusRequest.
+         * @memberof p2p
+         * @classdesc Represents a GetStatusRequest.
+         * @implements IGetStatusRequest
+         * @constructor
+         * @param {p2p.IGetStatusRequest=} [properties] Properties to set
+         */
+        function GetStatusRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Creates a new GetStatusRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.GetStatusRequest
+         * @static
+         * @param {p2p.IGetStatusRequest=} [properties] Properties to set
+         * @returns {p2p.GetStatusRequest} GetStatusRequest instance
+         */
+        GetStatusRequest.create = function create(properties) {
+            return new GetStatusRequest(properties);
+        };
+
+        /**
+         * Encodes the specified GetStatusRequest message. Does not implicitly {@link p2p.GetStatusRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.GetStatusRequest
+         * @static
+         * @param {p2p.IGetStatusRequest} message GetStatusRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetStatusRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified GetStatusRequest message, length delimited. Does not implicitly {@link p2p.GetStatusRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.GetStatusRequest
+         * @static
+         * @param {p2p.IGetStatusRequest} message GetStatusRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetStatusRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a GetStatusRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.GetStatusRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.GetStatusRequest} GetStatusRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetStatusRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.GetStatusRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a GetStatusRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.GetStatusRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.GetStatusRequest} GetStatusRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetStatusRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a GetStatusRequest message.
+         * @function verify
+         * @memberof p2p.GetStatusRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        GetStatusRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            return null;
+        };
+
+        /**
+         * Creates a GetStatusRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.GetStatusRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.GetStatusRequest} GetStatusRequest
+         */
+        GetStatusRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.GetStatusRequest)
+                return object;
+            return new $root.p2p.GetStatusRequest();
+        };
+
+        /**
+         * Creates a plain object from a GetStatusRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.GetStatusRequest
+         * @static
+         * @param {p2p.GetStatusRequest} message GetStatusRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        GetStatusRequest.toObject = function toObject() {
+            return {};
+        };
+
+        /**
+         * Converts this GetStatusRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.GetStatusRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        GetStatusRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for GetStatusRequest
+         * @function getTypeUrl
+         * @memberof p2p.GetStatusRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        GetStatusRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.GetStatusRequest";
+        };
+
+        return GetStatusRequest;
+    })();
+
+    p2p.GetSupplyRequest = (function() {
+
+        /**
+         * Properties of a GetSupplyRequest.
+         * @memberof p2p
+         * @interface IGetSupplyRequest
+         */
+
+        /**
+         * Constructs a new GetSupplyRequest.
+         * @memberof p2p
+         * @classdesc Represents a GetSupplyRequest.
+         * @implements IGetSupplyRequest
+         * @constructor
+         * @param {p2p.IGetSupplyRequest=} [properties] Properties to set
+         */
+        function GetSupplyRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Creates a new GetSupplyRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.GetSupplyRequest
+         * @static
+         * @param {p2p.IGetSupplyRequest=} [properties] Properties to set
+         * @returns {p2p.GetSupplyRequest} GetSupplyRequest instance
+         */
+        GetSupplyRequest.create = function create(properties) {
+            return new GetSupplyRequest(properties);
+        };
+
+        /**
+         * Encodes the specified GetSupplyRequest message. Does not implicitly {@link p2p.GetSupplyRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.GetSupplyRequest
+         * @static
+         * @param {p2p.IGetSupplyRequest} message GetSupplyRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetSupplyRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified GetSupplyRequest message, length delimited. Does not implicitly {@link p2p.GetSupplyRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.GetSupplyRequest
+         * @static
+         * @param {p2p.IGetSupplyRequest} message GetSupplyRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetSupplyRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a GetSupplyRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.GetSupplyRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.GetSupplyRequest} GetSupplyRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetSupplyRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.GetSupplyRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a GetSupplyRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.GetSupplyRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.GetSupplyRequest} GetSupplyRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetSupplyRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a GetSupplyRequest message.
+         * @function verify
+         * @memberof p2p.GetSupplyRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        GetSupplyRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            return null;
+        };
+
+        /**
+         * Creates a GetSupplyRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.GetSupplyRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.GetSupplyRequest} GetSupplyRequest
+         */
+        GetSupplyRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.GetSupplyRequest)
+                return object;
+            return new $root.p2p.GetSupplyRequest();
+        };
+
+        /**
+         * Creates a plain object from a GetSupplyRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.GetSupplyRequest
+         * @static
+         * @param {p2p.GetSupplyRequest} message GetSupplyRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        GetSupplyRequest.toObject = function toObject() {
+            return {};
+        };
+
+        /**
+         * Converts this GetSupplyRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.GetSupplyRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        GetSupplyRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for GetSupplyRequest
+         * @function getTypeUrl
+         * @memberof p2p.GetSupplyRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        GetSupplyRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.GetSupplyRequest";
+        };
+
+        return GetSupplyRequest;
+    })();
+
+    p2p.GetPeersRequest = (function() {
+
+        /**
+         * Properties of a GetPeersRequest.
+         * @memberof p2p
+         * @interface IGetPeersRequest
+         */
+
+        /**
+         * Constructs a new GetPeersRequest.
+         * @memberof p2p
+         * @classdesc Represents a GetPeersRequest.
+         * @implements IGetPeersRequest
+         * @constructor
+         * @param {p2p.IGetPeersRequest=} [properties] Properties to set
+         */
+        function GetPeersRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Creates a new GetPeersRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.GetPeersRequest
+         * @static
+         * @param {p2p.IGetPeersRequest=} [properties] Properties to set
+         * @returns {p2p.GetPeersRequest} GetPeersRequest instance
+         */
+        GetPeersRequest.create = function create(properties) {
+            return new GetPeersRequest(properties);
+        };
+
+        /**
+         * Encodes the specified GetPeersRequest message. Does not implicitly {@link p2p.GetPeersRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.GetPeersRequest
+         * @static
+         * @param {p2p.IGetPeersRequest} message GetPeersRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetPeersRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified GetPeersRequest message, length delimited. Does not implicitly {@link p2p.GetPeersRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.GetPeersRequest
+         * @static
+         * @param {p2p.IGetPeersRequest} message GetPeersRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetPeersRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a GetPeersRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.GetPeersRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.GetPeersRequest} GetPeersRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetPeersRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.GetPeersRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a GetPeersRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.GetPeersRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.GetPeersRequest} GetPeersRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetPeersRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a GetPeersRequest message.
+         * @function verify
+         * @memberof p2p.GetPeersRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        GetPeersRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            return null;
+        };
+
+        /**
+         * Creates a GetPeersRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.GetPeersRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.GetPeersRequest} GetPeersRequest
+         */
+        GetPeersRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.GetPeersRequest)
+                return object;
+            return new $root.p2p.GetPeersRequest();
+        };
+
+        /**
+         * Creates a plain object from a GetPeersRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.GetPeersRequest
+         * @static
+         * @param {p2p.GetPeersRequest} message GetPeersRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        GetPeersRequest.toObject = function toObject() {
+            return {};
+        };
+
+        /**
+         * Converts this GetPeersRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.GetPeersRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        GetPeersRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for GetPeersRequest
+         * @function getTypeUrl
+         * @memberof p2p.GetPeersRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        GetPeersRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.GetPeersRequest";
+        };
+
+        return GetPeersRequest;
+    })();
+
+    p2p.ConnectPeerRequest = (function() {
+
+        /**
+         * Properties of a ConnectPeerRequest.
+         * @memberof p2p
+         * @interface IConnectPeerRequest
+         * @property {string|null} [multiaddr] ConnectPeerRequest multiaddr
+         */
+
+        /**
+         * Constructs a new ConnectPeerRequest.
+         * @memberof p2p
+         * @classdesc Represents a ConnectPeerRequest.
+         * @implements IConnectPeerRequest
+         * @constructor
+         * @param {p2p.IConnectPeerRequest=} [properties] Properties to set
+         */
+        function ConnectPeerRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * ConnectPeerRequest multiaddr.
+         * @member {string} multiaddr
+         * @memberof p2p.ConnectPeerRequest
+         * @instance
+         */
+        ConnectPeerRequest.prototype.multiaddr = "";
+
+        /**
+         * Creates a new ConnectPeerRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.ConnectPeerRequest
+         * @static
+         * @param {p2p.IConnectPeerRequest=} [properties] Properties to set
+         * @returns {p2p.ConnectPeerRequest} ConnectPeerRequest instance
+         */
+        ConnectPeerRequest.create = function create(properties) {
+            return new ConnectPeerRequest(properties);
+        };
+
+        /**
+         * Encodes the specified ConnectPeerRequest message. Does not implicitly {@link p2p.ConnectPeerRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.ConnectPeerRequest
+         * @static
+         * @param {p2p.IConnectPeerRequest} message ConnectPeerRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ConnectPeerRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.multiaddr != null && Object.hasOwnProperty.call(message, "multiaddr"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.multiaddr);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified ConnectPeerRequest message, length delimited. Does not implicitly {@link p2p.ConnectPeerRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.ConnectPeerRequest
+         * @static
+         * @param {p2p.IConnectPeerRequest} message ConnectPeerRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ConnectPeerRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a ConnectPeerRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.ConnectPeerRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.ConnectPeerRequest} ConnectPeerRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ConnectPeerRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.ConnectPeerRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.multiaddr = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a ConnectPeerRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.ConnectPeerRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.ConnectPeerRequest} ConnectPeerRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ConnectPeerRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a ConnectPeerRequest message.
+         * @function verify
+         * @memberof p2p.ConnectPeerRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        ConnectPeerRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.multiaddr != null && message.hasOwnProperty("multiaddr"))
+                if (!$util.isString(message.multiaddr))
+                    return "multiaddr: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a ConnectPeerRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.ConnectPeerRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.ConnectPeerRequest} ConnectPeerRequest
+         */
+        ConnectPeerRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.ConnectPeerRequest)
+                return object;
+            var message = new $root.p2p.ConnectPeerRequest();
+            if (object.multiaddr != null)
+                message.multiaddr = String(object.multiaddr);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a ConnectPeerRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.ConnectPeerRequest
+         * @static
+         * @param {p2p.ConnectPeerRequest} message ConnectPeerRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        ConnectPeerRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults)
+                object.multiaddr = "";
+            if (message.multiaddr != null && message.hasOwnProperty("multiaddr"))
+                object.multiaddr = message.multiaddr;
+            return object;
+        };
+
+        /**
+         * Converts this ConnectPeerRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.ConnectPeerRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        ConnectPeerRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for ConnectPeerRequest
+         * @function getTypeUrl
+         * @memberof p2p.ConnectPeerRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        ConnectPeerRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.ConnectPeerRequest";
+        };
+
+        return ConnectPeerRequest;
+    })();
+
+    p2p.SyncTickRequest = (function() {
+
+        /**
+         * Properties of a SyncTickRequest.
+         * @memberof p2p
+         * @interface ISyncTickRequest
+         */
+
+        /**
+         * Constructs a new SyncTickRequest.
+         * @memberof p2p
+         * @classdesc Represents a SyncTickRequest.
+         * @implements ISyncTickRequest
+         * @constructor
+         * @param {p2p.ISyncTickRequest=} [properties] Properties to set
+         */
+        function SyncTickRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Creates a new SyncTickRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.SyncTickRequest
+         * @static
+         * @param {p2p.ISyncTickRequest=} [properties] Properties to set
+         * @returns {p2p.SyncTickRequest} SyncTickRequest instance
+         */
+        SyncTickRequest.create = function create(properties) {
+            return new SyncTickRequest(properties);
+        };
+
+        /**
+         * Encodes the specified SyncTickRequest message. Does not implicitly {@link p2p.SyncTickRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.SyncTickRequest
+         * @static
+         * @param {p2p.ISyncTickRequest} message SyncTickRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SyncTickRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified SyncTickRequest message, length delimited. Does not implicitly {@link p2p.SyncTickRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.SyncTickRequest
+         * @static
+         * @param {p2p.ISyncTickRequest} message SyncTickRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SyncTickRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a SyncTickRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.SyncTickRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.SyncTickRequest} SyncTickRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SyncTickRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.SyncTickRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a SyncTickRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.SyncTickRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.SyncTickRequest} SyncTickRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SyncTickRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a SyncTickRequest message.
+         * @function verify
+         * @memberof p2p.SyncTickRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        SyncTickRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            return null;
+        };
+
+        /**
+         * Creates a SyncTickRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.SyncTickRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.SyncTickRequest} SyncTickRequest
+         */
+        SyncTickRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.SyncTickRequest)
+                return object;
+            return new $root.p2p.SyncTickRequest();
+        };
+
+        /**
+         * Creates a plain object from a SyncTickRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.SyncTickRequest
+         * @static
+         * @param {p2p.SyncTickRequest} message SyncTickRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        SyncTickRequest.toObject = function toObject() {
+            return {};
+        };
+
+        /**
+         * Converts this SyncTickRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.SyncTickRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        SyncTickRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for SyncTickRequest
+         * @function getTypeUrl
+         * @memberof p2p.SyncTickRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        SyncTickRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.SyncTickRequest";
+        };
+
+        return SyncTickRequest;
+    })();
+
+    p2p.SwapInitiateRequest = (function() {
+
+        /**
+         * Properties of a SwapInitiateRequest.
+         * @memberof p2p
+         * @interface ISwapInitiateRequest
+         * @property {string|null} [walletId] SwapInitiateRequest walletId
+         * @property {string|null} [counterpartyPubkey] SwapInitiateRequest counterpartyPubkey
+         * @property {number|Long|null} [plbAmount] SwapInitiateRequest plbAmount
+         * @property {number|Long|null} [btcAmount] SwapInitiateRequest btcAmount
+         * @property {number|Long|null} [timeoutBlocks] SwapInitiateRequest timeoutBlocks
+         */
+
+        /**
+         * Constructs a new SwapInitiateRequest.
+         * @memberof p2p
+         * @classdesc Represents a SwapInitiateRequest.
+         * @implements ISwapInitiateRequest
+         * @constructor
+         * @param {p2p.ISwapInitiateRequest=} [properties] Properties to set
+         */
+        function SwapInitiateRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * SwapInitiateRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.SwapInitiateRequest
+         * @instance
+         */
+        SwapInitiateRequest.prototype.walletId = "";
+
+        /**
+         * SwapInitiateRequest counterpartyPubkey.
+         * @member {string} counterpartyPubkey
+         * @memberof p2p.SwapInitiateRequest
+         * @instance
+         */
+        SwapInitiateRequest.prototype.counterpartyPubkey = "";
+
+        /**
+         * SwapInitiateRequest plbAmount.
+         * @member {number|Long} plbAmount
+         * @memberof p2p.SwapInitiateRequest
+         * @instance
+         */
+        SwapInitiateRequest.prototype.plbAmount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * SwapInitiateRequest btcAmount.
+         * @member {number|Long} btcAmount
+         * @memberof p2p.SwapInitiateRequest
+         * @instance
+         */
+        SwapInitiateRequest.prototype.btcAmount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * SwapInitiateRequest timeoutBlocks.
+         * @member {number|Long} timeoutBlocks
+         * @memberof p2p.SwapInitiateRequest
+         * @instance
+         */
+        SwapInitiateRequest.prototype.timeoutBlocks = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * Creates a new SwapInitiateRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.SwapInitiateRequest
+         * @static
+         * @param {p2p.ISwapInitiateRequest=} [properties] Properties to set
+         * @returns {p2p.SwapInitiateRequest} SwapInitiateRequest instance
+         */
+        SwapInitiateRequest.create = function create(properties) {
+            return new SwapInitiateRequest(properties);
+        };
+
+        /**
+         * Encodes the specified SwapInitiateRequest message. Does not implicitly {@link p2p.SwapInitiateRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.SwapInitiateRequest
+         * @static
+         * @param {p2p.ISwapInitiateRequest} message SwapInitiateRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SwapInitiateRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            if (message.counterpartyPubkey != null && Object.hasOwnProperty.call(message, "counterpartyPubkey"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.counterpartyPubkey);
+            if (message.plbAmount != null && Object.hasOwnProperty.call(message, "plbAmount"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.plbAmount);
+            if (message.btcAmount != null && Object.hasOwnProperty.call(message, "btcAmount"))
+                writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.btcAmount);
+            if (message.timeoutBlocks != null && Object.hasOwnProperty.call(message, "timeoutBlocks"))
+                writer.uint32(/* id 5, wireType 0 =*/40).uint64(message.timeoutBlocks);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified SwapInitiateRequest message, length delimited. Does not implicitly {@link p2p.SwapInitiateRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.SwapInitiateRequest
+         * @static
+         * @param {p2p.ISwapInitiateRequest} message SwapInitiateRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SwapInitiateRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a SwapInitiateRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.SwapInitiateRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.SwapInitiateRequest} SwapInitiateRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SwapInitiateRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.SwapInitiateRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.counterpartyPubkey = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.plbAmount = reader.uint64();
+                        break;
+                    }
+                case 4: {
+                        message.btcAmount = reader.uint64();
+                        break;
+                    }
+                case 5: {
+                        message.timeoutBlocks = reader.uint64();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a SwapInitiateRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.SwapInitiateRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.SwapInitiateRequest} SwapInitiateRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SwapInitiateRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a SwapInitiateRequest message.
+         * @function verify
+         * @memberof p2p.SwapInitiateRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        SwapInitiateRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            if (message.counterpartyPubkey != null && message.hasOwnProperty("counterpartyPubkey"))
+                if (!$util.isString(message.counterpartyPubkey))
+                    return "counterpartyPubkey: string expected";
+            if (message.plbAmount != null && message.hasOwnProperty("plbAmount"))
+                if (!$util.isInteger(message.plbAmount) && !(message.plbAmount && $util.isInteger(message.plbAmount.low) && $util.isInteger(message.plbAmount.high)))
+                    return "plbAmount: integer|Long expected";
+            if (message.btcAmount != null && message.hasOwnProperty("btcAmount"))
+                if (!$util.isInteger(message.btcAmount) && !(message.btcAmount && $util.isInteger(message.btcAmount.low) && $util.isInteger(message.btcAmount.high)))
+                    return "btcAmount: integer|Long expected";
+            if (message.timeoutBlocks != null && message.hasOwnProperty("timeoutBlocks"))
+                if (!$util.isInteger(message.timeoutBlocks) && !(message.timeoutBlocks && $util.isInteger(message.timeoutBlocks.low) && $util.isInteger(message.timeoutBlocks.high)))
+                    return "timeoutBlocks: integer|Long expected";
+            return null;
+        };
+
+        /**
+         * Creates a SwapInitiateRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.SwapInitiateRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.SwapInitiateRequest} SwapInitiateRequest
+         */
+        SwapInitiateRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.SwapInitiateRequest)
+                return object;
+            var message = new $root.p2p.SwapInitiateRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            if (object.counterpartyPubkey != null)
+                message.counterpartyPubkey = String(object.counterpartyPubkey);
+            if (object.plbAmount != null)
+                if ($util.Long)
+                    (message.plbAmount = $util.Long.fromValue(object.plbAmount)).unsigned = true;
+                else if (typeof object.plbAmount === "string")
+                    message.plbAmount = parseInt(object.plbAmount, 10);
+                else if (typeof object.plbAmount === "number")
+                    message.plbAmount = object.plbAmount;
+                else if (typeof object.plbAmount === "object")
+                    message.plbAmount = new $util.LongBits(object.plbAmount.low >>> 0, object.plbAmount.high >>> 0).toNumber(true);
+            if (object.btcAmount != null)
+                if ($util.Long)
+                    (message.btcAmount = $util.Long.fromValue(object.btcAmount)).unsigned = true;
+                else if (typeof object.btcAmount === "string")
+                    message.btcAmount = parseInt(object.btcAmount, 10);
+                else if (typeof object.btcAmount === "number")
+                    message.btcAmount = object.btcAmount;
+                else if (typeof object.btcAmount === "object")
+                    message.btcAmount = new $util.LongBits(object.btcAmount.low >>> 0, object.btcAmount.high >>> 0).toNumber(true);
+            if (object.timeoutBlocks != null)
+                if ($util.Long)
+                    (message.timeoutBlocks = $util.Long.fromValue(object.timeoutBlocks)).unsigned = true;
+                else if (typeof object.timeoutBlocks === "string")
+                    message.timeoutBlocks = parseInt(object.timeoutBlocks, 10);
+                else if (typeof object.timeoutBlocks === "number")
+                    message.timeoutBlocks = object.timeoutBlocks;
+                else if (typeof object.timeoutBlocks === "object")
+                    message.timeoutBlocks = new $util.LongBits(object.timeoutBlocks.low >>> 0, object.timeoutBlocks.high >>> 0).toNumber(true);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a SwapInitiateRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.SwapInitiateRequest
+         * @static
+         * @param {p2p.SwapInitiateRequest} message SwapInitiateRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        SwapInitiateRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.walletId = "";
+                object.counterpartyPubkey = "";
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.plbAmount = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.plbAmount = options.longs === String ? "0" : 0;
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.btcAmount = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.btcAmount = options.longs === String ? "0" : 0;
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.timeoutBlocks = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.timeoutBlocks = options.longs === String ? "0" : 0;
+            }
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            if (message.counterpartyPubkey != null && message.hasOwnProperty("counterpartyPubkey"))
+                object.counterpartyPubkey = message.counterpartyPubkey;
+            if (message.plbAmount != null && message.hasOwnProperty("plbAmount"))
+                if (typeof message.plbAmount === "number")
+                    object.plbAmount = options.longs === String ? String(message.plbAmount) : message.plbAmount;
+                else
+                    object.plbAmount = options.longs === String ? $util.Long.prototype.toString.call(message.plbAmount) : options.longs === Number ? new $util.LongBits(message.plbAmount.low >>> 0, message.plbAmount.high >>> 0).toNumber(true) : message.plbAmount;
+            if (message.btcAmount != null && message.hasOwnProperty("btcAmount"))
+                if (typeof message.btcAmount === "number")
+                    object.btcAmount = options.longs === String ? String(message.btcAmount) : message.btcAmount;
+                else
+                    object.btcAmount = options.longs === String ? $util.Long.prototype.toString.call(message.btcAmount) : options.longs === Number ? new $util.LongBits(message.btcAmount.low >>> 0, message.btcAmount.high >>> 0).toNumber(true) : message.btcAmount;
+            if (message.timeoutBlocks != null && message.hasOwnProperty("timeoutBlocks"))
+                if (typeof message.timeoutBlocks === "number")
+                    object.timeoutBlocks = options.longs === String ? String(message.timeoutBlocks) : message.timeoutBlocks;
+                else
+                    object.timeoutBlocks = options.longs === String ? $util.Long.prototype.toString.call(message.timeoutBlocks) : options.longs === Number ? new $util.LongBits(message.timeoutBlocks.low >>> 0, message.timeoutBlocks.high >>> 0).toNumber(true) : message.timeoutBlocks;
+            return object;
+        };
+
+        /**
+         * Converts this SwapInitiateRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.SwapInitiateRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        SwapInitiateRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for SwapInitiateRequest
+         * @function getTypeUrl
+         * @memberof p2p.SwapInitiateRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        SwapInitiateRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.SwapInitiateRequest";
+        };
+
+        return SwapInitiateRequest;
+    })();
+
+    p2p.SwapListRequest = (function() {
+
+        /**
+         * Properties of a SwapListRequest.
+         * @memberof p2p
+         * @interface ISwapListRequest
+         */
+
+        /**
+         * Constructs a new SwapListRequest.
+         * @memberof p2p
+         * @classdesc Represents a SwapListRequest.
+         * @implements ISwapListRequest
+         * @constructor
+         * @param {p2p.ISwapListRequest=} [properties] Properties to set
+         */
+        function SwapListRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Creates a new SwapListRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.SwapListRequest
+         * @static
+         * @param {p2p.ISwapListRequest=} [properties] Properties to set
+         * @returns {p2p.SwapListRequest} SwapListRequest instance
+         */
+        SwapListRequest.create = function create(properties) {
+            return new SwapListRequest(properties);
+        };
+
+        /**
+         * Encodes the specified SwapListRequest message. Does not implicitly {@link p2p.SwapListRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.SwapListRequest
+         * @static
+         * @param {p2p.ISwapListRequest} message SwapListRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SwapListRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified SwapListRequest message, length delimited. Does not implicitly {@link p2p.SwapListRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.SwapListRequest
+         * @static
+         * @param {p2p.ISwapListRequest} message SwapListRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SwapListRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a SwapListRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.SwapListRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.SwapListRequest} SwapListRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SwapListRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.SwapListRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a SwapListRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.SwapListRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.SwapListRequest} SwapListRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SwapListRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a SwapListRequest message.
+         * @function verify
+         * @memberof p2p.SwapListRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        SwapListRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            return null;
+        };
+
+        /**
+         * Creates a SwapListRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.SwapListRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.SwapListRequest} SwapListRequest
+         */
+        SwapListRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.SwapListRequest)
+                return object;
+            return new $root.p2p.SwapListRequest();
+        };
+
+        /**
+         * Creates a plain object from a SwapListRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.SwapListRequest
+         * @static
+         * @param {p2p.SwapListRequest} message SwapListRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        SwapListRequest.toObject = function toObject() {
+            return {};
+        };
+
+        /**
+         * Converts this SwapListRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.SwapListRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        SwapListRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for SwapListRequest
+         * @function getTypeUrl
+         * @memberof p2p.SwapListRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        SwapListRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.SwapListRequest";
+        };
+
+        return SwapListRequest;
+    })();
+
+    p2p.SwapRespondRequest = (function() {
+
+        /**
+         * Properties of a SwapRespondRequest.
+         * @memberof p2p
+         * @interface ISwapRespondRequest
+         * @property {string|null} [walletId] SwapRespondRequest walletId
+         * @property {string|null} [swapId] SwapRespondRequest swapId
+         * @property {string|null} [btcAddress] SwapRespondRequest btcAddress
+         * @property {string|null} [btcTxid] SwapRespondRequest btcTxid
+         * @property {number|null} [btcVout] SwapRespondRequest btcVout
+         */
+
+        /**
+         * Constructs a new SwapRespondRequest.
+         * @memberof p2p
+         * @classdesc Represents a SwapRespondRequest.
+         * @implements ISwapRespondRequest
+         * @constructor
+         * @param {p2p.ISwapRespondRequest=} [properties] Properties to set
+         */
+        function SwapRespondRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * SwapRespondRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.SwapRespondRequest
+         * @instance
+         */
+        SwapRespondRequest.prototype.walletId = "";
+
+        /**
+         * SwapRespondRequest swapId.
+         * @member {string} swapId
+         * @memberof p2p.SwapRespondRequest
+         * @instance
+         */
+        SwapRespondRequest.prototype.swapId = "";
+
+        /**
+         * SwapRespondRequest btcAddress.
+         * @member {string} btcAddress
+         * @memberof p2p.SwapRespondRequest
+         * @instance
+         */
+        SwapRespondRequest.prototype.btcAddress = "";
+
+        /**
+         * SwapRespondRequest btcTxid.
+         * @member {string} btcTxid
+         * @memberof p2p.SwapRespondRequest
+         * @instance
+         */
+        SwapRespondRequest.prototype.btcTxid = "";
+
+        /**
+         * SwapRespondRequest btcVout.
+         * @member {number} btcVout
+         * @memberof p2p.SwapRespondRequest
+         * @instance
+         */
+        SwapRespondRequest.prototype.btcVout = 0;
+
+        /**
+         * Creates a new SwapRespondRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.SwapRespondRequest
+         * @static
+         * @param {p2p.ISwapRespondRequest=} [properties] Properties to set
+         * @returns {p2p.SwapRespondRequest} SwapRespondRequest instance
+         */
+        SwapRespondRequest.create = function create(properties) {
+            return new SwapRespondRequest(properties);
+        };
+
+        /**
+         * Encodes the specified SwapRespondRequest message. Does not implicitly {@link p2p.SwapRespondRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.SwapRespondRequest
+         * @static
+         * @param {p2p.ISwapRespondRequest} message SwapRespondRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SwapRespondRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            if (message.swapId != null && Object.hasOwnProperty.call(message, "swapId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.swapId);
+            if (message.btcAddress != null && Object.hasOwnProperty.call(message, "btcAddress"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.btcAddress);
+            if (message.btcTxid != null && Object.hasOwnProperty.call(message, "btcTxid"))
+                writer.uint32(/* id 4, wireType 2 =*/34).string(message.btcTxid);
+            if (message.btcVout != null && Object.hasOwnProperty.call(message, "btcVout"))
+                writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.btcVout);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified SwapRespondRequest message, length delimited. Does not implicitly {@link p2p.SwapRespondRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.SwapRespondRequest
+         * @static
+         * @param {p2p.ISwapRespondRequest} message SwapRespondRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SwapRespondRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a SwapRespondRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.SwapRespondRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.SwapRespondRequest} SwapRespondRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SwapRespondRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.SwapRespondRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.swapId = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.btcAddress = reader.string();
+                        break;
+                    }
+                case 4: {
+                        message.btcTxid = reader.string();
+                        break;
+                    }
+                case 5: {
+                        message.btcVout = reader.uint32();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a SwapRespondRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.SwapRespondRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.SwapRespondRequest} SwapRespondRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SwapRespondRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a SwapRespondRequest message.
+         * @function verify
+         * @memberof p2p.SwapRespondRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        SwapRespondRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            if (message.swapId != null && message.hasOwnProperty("swapId"))
+                if (!$util.isString(message.swapId))
+                    return "swapId: string expected";
+            if (message.btcAddress != null && message.hasOwnProperty("btcAddress"))
+                if (!$util.isString(message.btcAddress))
+                    return "btcAddress: string expected";
+            if (message.btcTxid != null && message.hasOwnProperty("btcTxid"))
+                if (!$util.isString(message.btcTxid))
+                    return "btcTxid: string expected";
+            if (message.btcVout != null && message.hasOwnProperty("btcVout"))
+                if (!$util.isInteger(message.btcVout))
+                    return "btcVout: integer expected";
+            return null;
+        };
+
+        /**
+         * Creates a SwapRespondRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.SwapRespondRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.SwapRespondRequest} SwapRespondRequest
+         */
+        SwapRespondRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.SwapRespondRequest)
+                return object;
+            var message = new $root.p2p.SwapRespondRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            if (object.swapId != null)
+                message.swapId = String(object.swapId);
+            if (object.btcAddress != null)
+                message.btcAddress = String(object.btcAddress);
+            if (object.btcTxid != null)
+                message.btcTxid = String(object.btcTxid);
+            if (object.btcVout != null)
+                message.btcVout = object.btcVout >>> 0;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a SwapRespondRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.SwapRespondRequest
+         * @static
+         * @param {p2p.SwapRespondRequest} message SwapRespondRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        SwapRespondRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.walletId = "";
+                object.swapId = "";
+                object.btcAddress = "";
+                object.btcTxid = "";
+                object.btcVout = 0;
+            }
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            if (message.swapId != null && message.hasOwnProperty("swapId"))
+                object.swapId = message.swapId;
+            if (message.btcAddress != null && message.hasOwnProperty("btcAddress"))
+                object.btcAddress = message.btcAddress;
+            if (message.btcTxid != null && message.hasOwnProperty("btcTxid"))
+                object.btcTxid = message.btcTxid;
+            if (message.btcVout != null && message.hasOwnProperty("btcVout"))
+                object.btcVout = message.btcVout;
+            return object;
+        };
+
+        /**
+         * Converts this SwapRespondRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.SwapRespondRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        SwapRespondRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for SwapRespondRequest
+         * @function getTypeUrl
+         * @memberof p2p.SwapRespondRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        SwapRespondRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.SwapRespondRequest";
+        };
+
+        return SwapRespondRequest;
+    })();
+
+    p2p.SwapClaimRequest = (function() {
+
+        /**
+         * Properties of a SwapClaimRequest.
+         * @memberof p2p
+         * @interface ISwapClaimRequest
+         * @property {string|null} [walletId] SwapClaimRequest walletId
+         * @property {string|null} [swapId] SwapClaimRequest swapId
+         * @property {string|null} [adaptorSecretHex] SwapClaimRequest adaptorSecretHex
+         */
+
+        /**
+         * Constructs a new SwapClaimRequest.
+         * @memberof p2p
+         * @classdesc Represents a SwapClaimRequest.
+         * @implements ISwapClaimRequest
+         * @constructor
+         * @param {p2p.ISwapClaimRequest=} [properties] Properties to set
+         */
+        function SwapClaimRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * SwapClaimRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.SwapClaimRequest
+         * @instance
+         */
+        SwapClaimRequest.prototype.walletId = "";
+
+        /**
+         * SwapClaimRequest swapId.
+         * @member {string} swapId
+         * @memberof p2p.SwapClaimRequest
+         * @instance
+         */
+        SwapClaimRequest.prototype.swapId = "";
+
+        /**
+         * SwapClaimRequest adaptorSecretHex.
+         * @member {string} adaptorSecretHex
+         * @memberof p2p.SwapClaimRequest
+         * @instance
+         */
+        SwapClaimRequest.prototype.adaptorSecretHex = "";
+
+        /**
+         * Creates a new SwapClaimRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.SwapClaimRequest
+         * @static
+         * @param {p2p.ISwapClaimRequest=} [properties] Properties to set
+         * @returns {p2p.SwapClaimRequest} SwapClaimRequest instance
+         */
+        SwapClaimRequest.create = function create(properties) {
+            return new SwapClaimRequest(properties);
+        };
+
+        /**
+         * Encodes the specified SwapClaimRequest message. Does not implicitly {@link p2p.SwapClaimRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.SwapClaimRequest
+         * @static
+         * @param {p2p.ISwapClaimRequest} message SwapClaimRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SwapClaimRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            if (message.swapId != null && Object.hasOwnProperty.call(message, "swapId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.swapId);
+            if (message.adaptorSecretHex != null && Object.hasOwnProperty.call(message, "adaptorSecretHex"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.adaptorSecretHex);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified SwapClaimRequest message, length delimited. Does not implicitly {@link p2p.SwapClaimRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.SwapClaimRequest
+         * @static
+         * @param {p2p.ISwapClaimRequest} message SwapClaimRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SwapClaimRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a SwapClaimRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.SwapClaimRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.SwapClaimRequest} SwapClaimRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SwapClaimRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.SwapClaimRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.swapId = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.adaptorSecretHex = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a SwapClaimRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.SwapClaimRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.SwapClaimRequest} SwapClaimRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SwapClaimRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a SwapClaimRequest message.
+         * @function verify
+         * @memberof p2p.SwapClaimRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        SwapClaimRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            if (message.swapId != null && message.hasOwnProperty("swapId"))
+                if (!$util.isString(message.swapId))
+                    return "swapId: string expected";
+            if (message.adaptorSecretHex != null && message.hasOwnProperty("adaptorSecretHex"))
+                if (!$util.isString(message.adaptorSecretHex))
+                    return "adaptorSecretHex: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a SwapClaimRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.SwapClaimRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.SwapClaimRequest} SwapClaimRequest
+         */
+        SwapClaimRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.SwapClaimRequest)
+                return object;
+            var message = new $root.p2p.SwapClaimRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            if (object.swapId != null)
+                message.swapId = String(object.swapId);
+            if (object.adaptorSecretHex != null)
+                message.adaptorSecretHex = String(object.adaptorSecretHex);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a SwapClaimRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.SwapClaimRequest
+         * @static
+         * @param {p2p.SwapClaimRequest} message SwapClaimRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        SwapClaimRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.walletId = "";
+                object.swapId = "";
+                object.adaptorSecretHex = "";
+            }
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            if (message.swapId != null && message.hasOwnProperty("swapId"))
+                object.swapId = message.swapId;
+            if (message.adaptorSecretHex != null && message.hasOwnProperty("adaptorSecretHex"))
+                object.adaptorSecretHex = message.adaptorSecretHex;
+            return object;
+        };
+
+        /**
+         * Converts this SwapClaimRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.SwapClaimRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        SwapClaimRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for SwapClaimRequest
+         * @function getTypeUrl
+         * @memberof p2p.SwapClaimRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        SwapClaimRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.SwapClaimRequest";
+        };
+
+        return SwapClaimRequest;
+    })();
+
+    p2p.SwapRefundRequest = (function() {
+
+        /**
+         * Properties of a SwapRefundRequest.
+         * @memberof p2p
+         * @interface ISwapRefundRequest
+         * @property {string|null} [walletId] SwapRefundRequest walletId
+         * @property {string|null} [swapId] SwapRefundRequest swapId
+         */
+
+        /**
+         * Constructs a new SwapRefundRequest.
+         * @memberof p2p
+         * @classdesc Represents a SwapRefundRequest.
+         * @implements ISwapRefundRequest
+         * @constructor
+         * @param {p2p.ISwapRefundRequest=} [properties] Properties to set
+         */
+        function SwapRefundRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * SwapRefundRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.SwapRefundRequest
+         * @instance
+         */
+        SwapRefundRequest.prototype.walletId = "";
+
+        /**
+         * SwapRefundRequest swapId.
+         * @member {string} swapId
+         * @memberof p2p.SwapRefundRequest
+         * @instance
+         */
+        SwapRefundRequest.prototype.swapId = "";
+
+        /**
+         * Creates a new SwapRefundRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.SwapRefundRequest
+         * @static
+         * @param {p2p.ISwapRefundRequest=} [properties] Properties to set
+         * @returns {p2p.SwapRefundRequest} SwapRefundRequest instance
+         */
+        SwapRefundRequest.create = function create(properties) {
+            return new SwapRefundRequest(properties);
+        };
+
+        /**
+         * Encodes the specified SwapRefundRequest message. Does not implicitly {@link p2p.SwapRefundRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.SwapRefundRequest
+         * @static
+         * @param {p2p.ISwapRefundRequest} message SwapRefundRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SwapRefundRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            if (message.swapId != null && Object.hasOwnProperty.call(message, "swapId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.swapId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified SwapRefundRequest message, length delimited. Does not implicitly {@link p2p.SwapRefundRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.SwapRefundRequest
+         * @static
+         * @param {p2p.ISwapRefundRequest} message SwapRefundRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SwapRefundRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a SwapRefundRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.SwapRefundRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.SwapRefundRequest} SwapRefundRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SwapRefundRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.SwapRefundRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.swapId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a SwapRefundRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.SwapRefundRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.SwapRefundRequest} SwapRefundRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SwapRefundRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a SwapRefundRequest message.
+         * @function verify
+         * @memberof p2p.SwapRefundRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        SwapRefundRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            if (message.swapId != null && message.hasOwnProperty("swapId"))
+                if (!$util.isString(message.swapId))
+                    return "swapId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a SwapRefundRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.SwapRefundRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.SwapRefundRequest} SwapRefundRequest
+         */
+        SwapRefundRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.SwapRefundRequest)
+                return object;
+            var message = new $root.p2p.SwapRefundRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            if (object.swapId != null)
+                message.swapId = String(object.swapId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a SwapRefundRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.SwapRefundRequest
+         * @static
+         * @param {p2p.SwapRefundRequest} message SwapRefundRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        SwapRefundRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.walletId = "";
+                object.swapId = "";
+            }
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            if (message.swapId != null && message.hasOwnProperty("swapId"))
+                object.swapId = message.swapId;
+            return object;
+        };
+
+        /**
+         * Converts this SwapRefundRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.SwapRefundRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        SwapRefundRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for SwapRefundRequest
+         * @function getTypeUrl
+         * @memberof p2p.SwapRefundRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        SwapRefundRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.SwapRefundRequest";
+        };
+
+        return SwapRefundRequest;
+    })();
+
+    p2p.ChannelOpenRequest = (function() {
+
+        /**
+         * Properties of a ChannelOpenRequest.
+         * @memberof p2p
+         * @interface IChannelOpenRequest
+         * @property {string|null} [walletId] ChannelOpenRequest walletId
+         * @property {string|null} [counterpartyPubkey] ChannelOpenRequest counterpartyPubkey
+         * @property {number|Long|null} [myAmount] ChannelOpenRequest myAmount
+         * @property {number|Long|null} [theirAmount] ChannelOpenRequest theirAmount
+         */
+
+        /**
+         * Constructs a new ChannelOpenRequest.
+         * @memberof p2p
+         * @classdesc Represents a ChannelOpenRequest.
+         * @implements IChannelOpenRequest
+         * @constructor
+         * @param {p2p.IChannelOpenRequest=} [properties] Properties to set
+         */
+        function ChannelOpenRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * ChannelOpenRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.ChannelOpenRequest
+         * @instance
+         */
+        ChannelOpenRequest.prototype.walletId = "";
+
+        /**
+         * ChannelOpenRequest counterpartyPubkey.
+         * @member {string} counterpartyPubkey
+         * @memberof p2p.ChannelOpenRequest
+         * @instance
+         */
+        ChannelOpenRequest.prototype.counterpartyPubkey = "";
+
+        /**
+         * ChannelOpenRequest myAmount.
+         * @member {number|Long} myAmount
+         * @memberof p2p.ChannelOpenRequest
+         * @instance
+         */
+        ChannelOpenRequest.prototype.myAmount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * ChannelOpenRequest theirAmount.
+         * @member {number|Long} theirAmount
+         * @memberof p2p.ChannelOpenRequest
+         * @instance
+         */
+        ChannelOpenRequest.prototype.theirAmount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * Creates a new ChannelOpenRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.ChannelOpenRequest
+         * @static
+         * @param {p2p.IChannelOpenRequest=} [properties] Properties to set
+         * @returns {p2p.ChannelOpenRequest} ChannelOpenRequest instance
+         */
+        ChannelOpenRequest.create = function create(properties) {
+            return new ChannelOpenRequest(properties);
+        };
+
+        /**
+         * Encodes the specified ChannelOpenRequest message. Does not implicitly {@link p2p.ChannelOpenRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.ChannelOpenRequest
+         * @static
+         * @param {p2p.IChannelOpenRequest} message ChannelOpenRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChannelOpenRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            if (message.counterpartyPubkey != null && Object.hasOwnProperty.call(message, "counterpartyPubkey"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.counterpartyPubkey);
+            if (message.myAmount != null && Object.hasOwnProperty.call(message, "myAmount"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.myAmount);
+            if (message.theirAmount != null && Object.hasOwnProperty.call(message, "theirAmount"))
+                writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.theirAmount);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified ChannelOpenRequest message, length delimited. Does not implicitly {@link p2p.ChannelOpenRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.ChannelOpenRequest
+         * @static
+         * @param {p2p.IChannelOpenRequest} message ChannelOpenRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChannelOpenRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a ChannelOpenRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.ChannelOpenRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.ChannelOpenRequest} ChannelOpenRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChannelOpenRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.ChannelOpenRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.counterpartyPubkey = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.myAmount = reader.uint64();
+                        break;
+                    }
+                case 4: {
+                        message.theirAmount = reader.uint64();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a ChannelOpenRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.ChannelOpenRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.ChannelOpenRequest} ChannelOpenRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChannelOpenRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a ChannelOpenRequest message.
+         * @function verify
+         * @memberof p2p.ChannelOpenRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        ChannelOpenRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            if (message.counterpartyPubkey != null && message.hasOwnProperty("counterpartyPubkey"))
+                if (!$util.isString(message.counterpartyPubkey))
+                    return "counterpartyPubkey: string expected";
+            if (message.myAmount != null && message.hasOwnProperty("myAmount"))
+                if (!$util.isInteger(message.myAmount) && !(message.myAmount && $util.isInteger(message.myAmount.low) && $util.isInteger(message.myAmount.high)))
+                    return "myAmount: integer|Long expected";
+            if (message.theirAmount != null && message.hasOwnProperty("theirAmount"))
+                if (!$util.isInteger(message.theirAmount) && !(message.theirAmount && $util.isInteger(message.theirAmount.low) && $util.isInteger(message.theirAmount.high)))
+                    return "theirAmount: integer|Long expected";
+            return null;
+        };
+
+        /**
+         * Creates a ChannelOpenRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.ChannelOpenRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.ChannelOpenRequest} ChannelOpenRequest
+         */
+        ChannelOpenRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.ChannelOpenRequest)
+                return object;
+            var message = new $root.p2p.ChannelOpenRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            if (object.counterpartyPubkey != null)
+                message.counterpartyPubkey = String(object.counterpartyPubkey);
+            if (object.myAmount != null)
+                if ($util.Long)
+                    (message.myAmount = $util.Long.fromValue(object.myAmount)).unsigned = true;
+                else if (typeof object.myAmount === "string")
+                    message.myAmount = parseInt(object.myAmount, 10);
+                else if (typeof object.myAmount === "number")
+                    message.myAmount = object.myAmount;
+                else if (typeof object.myAmount === "object")
+                    message.myAmount = new $util.LongBits(object.myAmount.low >>> 0, object.myAmount.high >>> 0).toNumber(true);
+            if (object.theirAmount != null)
+                if ($util.Long)
+                    (message.theirAmount = $util.Long.fromValue(object.theirAmount)).unsigned = true;
+                else if (typeof object.theirAmount === "string")
+                    message.theirAmount = parseInt(object.theirAmount, 10);
+                else if (typeof object.theirAmount === "number")
+                    message.theirAmount = object.theirAmount;
+                else if (typeof object.theirAmount === "object")
+                    message.theirAmount = new $util.LongBits(object.theirAmount.low >>> 0, object.theirAmount.high >>> 0).toNumber(true);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a ChannelOpenRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.ChannelOpenRequest
+         * @static
+         * @param {p2p.ChannelOpenRequest} message ChannelOpenRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        ChannelOpenRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.walletId = "";
+                object.counterpartyPubkey = "";
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.myAmount = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.myAmount = options.longs === String ? "0" : 0;
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.theirAmount = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.theirAmount = options.longs === String ? "0" : 0;
+            }
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            if (message.counterpartyPubkey != null && message.hasOwnProperty("counterpartyPubkey"))
+                object.counterpartyPubkey = message.counterpartyPubkey;
+            if (message.myAmount != null && message.hasOwnProperty("myAmount"))
+                if (typeof message.myAmount === "number")
+                    object.myAmount = options.longs === String ? String(message.myAmount) : message.myAmount;
+                else
+                    object.myAmount = options.longs === String ? $util.Long.prototype.toString.call(message.myAmount) : options.longs === Number ? new $util.LongBits(message.myAmount.low >>> 0, message.myAmount.high >>> 0).toNumber(true) : message.myAmount;
+            if (message.theirAmount != null && message.hasOwnProperty("theirAmount"))
+                if (typeof message.theirAmount === "number")
+                    object.theirAmount = options.longs === String ? String(message.theirAmount) : message.theirAmount;
+                else
+                    object.theirAmount = options.longs === String ? $util.Long.prototype.toString.call(message.theirAmount) : options.longs === Number ? new $util.LongBits(message.theirAmount.low >>> 0, message.theirAmount.high >>> 0).toNumber(true) : message.theirAmount;
+            return object;
+        };
+
+        /**
+         * Converts this ChannelOpenRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.ChannelOpenRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        ChannelOpenRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for ChannelOpenRequest
+         * @function getTypeUrl
+         * @memberof p2p.ChannelOpenRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        ChannelOpenRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.ChannelOpenRequest";
+        };
+
+        return ChannelOpenRequest;
+    })();
+
+    p2p.ChannelListRequest = (function() {
+
+        /**
+         * Properties of a ChannelListRequest.
+         * @memberof p2p
+         * @interface IChannelListRequest
+         */
+
+        /**
+         * Constructs a new ChannelListRequest.
+         * @memberof p2p
+         * @classdesc Represents a ChannelListRequest.
+         * @implements IChannelListRequest
+         * @constructor
+         * @param {p2p.IChannelListRequest=} [properties] Properties to set
+         */
+        function ChannelListRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Creates a new ChannelListRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.ChannelListRequest
+         * @static
+         * @param {p2p.IChannelListRequest=} [properties] Properties to set
+         * @returns {p2p.ChannelListRequest} ChannelListRequest instance
+         */
+        ChannelListRequest.create = function create(properties) {
+            return new ChannelListRequest(properties);
+        };
+
+        /**
+         * Encodes the specified ChannelListRequest message. Does not implicitly {@link p2p.ChannelListRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.ChannelListRequest
+         * @static
+         * @param {p2p.IChannelListRequest} message ChannelListRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChannelListRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified ChannelListRequest message, length delimited. Does not implicitly {@link p2p.ChannelListRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.ChannelListRequest
+         * @static
+         * @param {p2p.IChannelListRequest} message ChannelListRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChannelListRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a ChannelListRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.ChannelListRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.ChannelListRequest} ChannelListRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChannelListRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.ChannelListRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a ChannelListRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.ChannelListRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.ChannelListRequest} ChannelListRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChannelListRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a ChannelListRequest message.
+         * @function verify
+         * @memberof p2p.ChannelListRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        ChannelListRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            return null;
+        };
+
+        /**
+         * Creates a ChannelListRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.ChannelListRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.ChannelListRequest} ChannelListRequest
+         */
+        ChannelListRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.ChannelListRequest)
+                return object;
+            return new $root.p2p.ChannelListRequest();
+        };
+
+        /**
+         * Creates a plain object from a ChannelListRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.ChannelListRequest
+         * @static
+         * @param {p2p.ChannelListRequest} message ChannelListRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        ChannelListRequest.toObject = function toObject() {
+            return {};
+        };
+
+        /**
+         * Converts this ChannelListRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.ChannelListRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        ChannelListRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for ChannelListRequest
+         * @function getTypeUrl
+         * @memberof p2p.ChannelListRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        ChannelListRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.ChannelListRequest";
+        };
+
+        return ChannelListRequest;
+    })();
+
+    p2p.ChannelAcceptRequest = (function() {
+
+        /**
+         * Properties of a ChannelAcceptRequest.
+         * @memberof p2p
+         * @interface IChannelAcceptRequest
+         * @property {string|null} [walletId] ChannelAcceptRequest walletId
+         * @property {string|null} [proposalId] ChannelAcceptRequest proposalId
+         */
+
+        /**
+         * Constructs a new ChannelAcceptRequest.
+         * @memberof p2p
+         * @classdesc Represents a ChannelAcceptRequest.
+         * @implements IChannelAcceptRequest
+         * @constructor
+         * @param {p2p.IChannelAcceptRequest=} [properties] Properties to set
+         */
+        function ChannelAcceptRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * ChannelAcceptRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.ChannelAcceptRequest
+         * @instance
+         */
+        ChannelAcceptRequest.prototype.walletId = "";
+
+        /**
+         * ChannelAcceptRequest proposalId.
+         * @member {string} proposalId
+         * @memberof p2p.ChannelAcceptRequest
+         * @instance
+         */
+        ChannelAcceptRequest.prototype.proposalId = "";
+
+        /**
+         * Creates a new ChannelAcceptRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.ChannelAcceptRequest
+         * @static
+         * @param {p2p.IChannelAcceptRequest=} [properties] Properties to set
+         * @returns {p2p.ChannelAcceptRequest} ChannelAcceptRequest instance
+         */
+        ChannelAcceptRequest.create = function create(properties) {
+            return new ChannelAcceptRequest(properties);
+        };
+
+        /**
+         * Encodes the specified ChannelAcceptRequest message. Does not implicitly {@link p2p.ChannelAcceptRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.ChannelAcceptRequest
+         * @static
+         * @param {p2p.IChannelAcceptRequest} message ChannelAcceptRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChannelAcceptRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            if (message.proposalId != null && Object.hasOwnProperty.call(message, "proposalId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.proposalId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified ChannelAcceptRequest message, length delimited. Does not implicitly {@link p2p.ChannelAcceptRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.ChannelAcceptRequest
+         * @static
+         * @param {p2p.IChannelAcceptRequest} message ChannelAcceptRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChannelAcceptRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a ChannelAcceptRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.ChannelAcceptRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.ChannelAcceptRequest} ChannelAcceptRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChannelAcceptRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.ChannelAcceptRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.proposalId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a ChannelAcceptRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.ChannelAcceptRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.ChannelAcceptRequest} ChannelAcceptRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChannelAcceptRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a ChannelAcceptRequest message.
+         * @function verify
+         * @memberof p2p.ChannelAcceptRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        ChannelAcceptRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            if (message.proposalId != null && message.hasOwnProperty("proposalId"))
+                if (!$util.isString(message.proposalId))
+                    return "proposalId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a ChannelAcceptRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.ChannelAcceptRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.ChannelAcceptRequest} ChannelAcceptRequest
+         */
+        ChannelAcceptRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.ChannelAcceptRequest)
+                return object;
+            var message = new $root.p2p.ChannelAcceptRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            if (object.proposalId != null)
+                message.proposalId = String(object.proposalId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a ChannelAcceptRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.ChannelAcceptRequest
+         * @static
+         * @param {p2p.ChannelAcceptRequest} message ChannelAcceptRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        ChannelAcceptRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.walletId = "";
+                object.proposalId = "";
+            }
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            if (message.proposalId != null && message.hasOwnProperty("proposalId"))
+                object.proposalId = message.proposalId;
+            return object;
+        };
+
+        /**
+         * Converts this ChannelAcceptRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.ChannelAcceptRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        ChannelAcceptRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for ChannelAcceptRequest
+         * @function getTypeUrl
+         * @memberof p2p.ChannelAcceptRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        ChannelAcceptRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.ChannelAcceptRequest";
+        };
+
+        return ChannelAcceptRequest;
+    })();
+
+    p2p.ChannelFundRequest = (function() {
+
+        /**
+         * Properties of a ChannelFundRequest.
+         * @memberof p2p
+         * @interface IChannelFundRequest
+         * @property {string|null} [walletId] ChannelFundRequest walletId
+         * @property {string|null} [channelId] ChannelFundRequest channelId
+         */
+
+        /**
+         * Constructs a new ChannelFundRequest.
+         * @memberof p2p
+         * @classdesc Represents a ChannelFundRequest.
+         * @implements IChannelFundRequest
+         * @constructor
+         * @param {p2p.IChannelFundRequest=} [properties] Properties to set
+         */
+        function ChannelFundRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * ChannelFundRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.ChannelFundRequest
+         * @instance
+         */
+        ChannelFundRequest.prototype.walletId = "";
+
+        /**
+         * ChannelFundRequest channelId.
+         * @member {string} channelId
+         * @memberof p2p.ChannelFundRequest
+         * @instance
+         */
+        ChannelFundRequest.prototype.channelId = "";
+
+        /**
+         * Creates a new ChannelFundRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.ChannelFundRequest
+         * @static
+         * @param {p2p.IChannelFundRequest=} [properties] Properties to set
+         * @returns {p2p.ChannelFundRequest} ChannelFundRequest instance
+         */
+        ChannelFundRequest.create = function create(properties) {
+            return new ChannelFundRequest(properties);
+        };
+
+        /**
+         * Encodes the specified ChannelFundRequest message. Does not implicitly {@link p2p.ChannelFundRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.ChannelFundRequest
+         * @static
+         * @param {p2p.IChannelFundRequest} message ChannelFundRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChannelFundRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            if (message.channelId != null && Object.hasOwnProperty.call(message, "channelId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.channelId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified ChannelFundRequest message, length delimited. Does not implicitly {@link p2p.ChannelFundRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.ChannelFundRequest
+         * @static
+         * @param {p2p.IChannelFundRequest} message ChannelFundRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChannelFundRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a ChannelFundRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.ChannelFundRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.ChannelFundRequest} ChannelFundRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChannelFundRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.ChannelFundRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.channelId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a ChannelFundRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.ChannelFundRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.ChannelFundRequest} ChannelFundRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChannelFundRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a ChannelFundRequest message.
+         * @function verify
+         * @memberof p2p.ChannelFundRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        ChannelFundRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            if (message.channelId != null && message.hasOwnProperty("channelId"))
+                if (!$util.isString(message.channelId))
+                    return "channelId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a ChannelFundRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.ChannelFundRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.ChannelFundRequest} ChannelFundRequest
+         */
+        ChannelFundRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.ChannelFundRequest)
+                return object;
+            var message = new $root.p2p.ChannelFundRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            if (object.channelId != null)
+                message.channelId = String(object.channelId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a ChannelFundRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.ChannelFundRequest
+         * @static
+         * @param {p2p.ChannelFundRequest} message ChannelFundRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        ChannelFundRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.walletId = "";
+                object.channelId = "";
+            }
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            if (message.channelId != null && message.hasOwnProperty("channelId"))
+                object.channelId = message.channelId;
+            return object;
+        };
+
+        /**
+         * Converts this ChannelFundRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.ChannelFundRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        ChannelFundRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for ChannelFundRequest
+         * @function getTypeUrl
+         * @memberof p2p.ChannelFundRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        ChannelFundRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.ChannelFundRequest";
+        };
+
+        return ChannelFundRequest;
+    })();
+
+    p2p.ChannelPayRequest = (function() {
+
+        /**
+         * Properties of a ChannelPayRequest.
+         * @memberof p2p
+         * @interface IChannelPayRequest
+         * @property {string|null} [walletId] ChannelPayRequest walletId
+         * @property {string|null} [channelId] ChannelPayRequest channelId
+         * @property {number|Long|null} [amount] ChannelPayRequest amount
+         */
+
+        /**
+         * Constructs a new ChannelPayRequest.
+         * @memberof p2p
+         * @classdesc Represents a ChannelPayRequest.
+         * @implements IChannelPayRequest
+         * @constructor
+         * @param {p2p.IChannelPayRequest=} [properties] Properties to set
+         */
+        function ChannelPayRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * ChannelPayRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.ChannelPayRequest
+         * @instance
+         */
+        ChannelPayRequest.prototype.walletId = "";
+
+        /**
+         * ChannelPayRequest channelId.
+         * @member {string} channelId
+         * @memberof p2p.ChannelPayRequest
+         * @instance
+         */
+        ChannelPayRequest.prototype.channelId = "";
+
+        /**
+         * ChannelPayRequest amount.
+         * @member {number|Long} amount
+         * @memberof p2p.ChannelPayRequest
+         * @instance
+         */
+        ChannelPayRequest.prototype.amount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * Creates a new ChannelPayRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.ChannelPayRequest
+         * @static
+         * @param {p2p.IChannelPayRequest=} [properties] Properties to set
+         * @returns {p2p.ChannelPayRequest} ChannelPayRequest instance
+         */
+        ChannelPayRequest.create = function create(properties) {
+            return new ChannelPayRequest(properties);
+        };
+
+        /**
+         * Encodes the specified ChannelPayRequest message. Does not implicitly {@link p2p.ChannelPayRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.ChannelPayRequest
+         * @static
+         * @param {p2p.IChannelPayRequest} message ChannelPayRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChannelPayRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            if (message.channelId != null && Object.hasOwnProperty.call(message, "channelId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.channelId);
+            if (message.amount != null && Object.hasOwnProperty.call(message, "amount"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.amount);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified ChannelPayRequest message, length delimited. Does not implicitly {@link p2p.ChannelPayRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.ChannelPayRequest
+         * @static
+         * @param {p2p.IChannelPayRequest} message ChannelPayRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChannelPayRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a ChannelPayRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.ChannelPayRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.ChannelPayRequest} ChannelPayRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChannelPayRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.ChannelPayRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.channelId = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.amount = reader.uint64();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a ChannelPayRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.ChannelPayRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.ChannelPayRequest} ChannelPayRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChannelPayRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a ChannelPayRequest message.
+         * @function verify
+         * @memberof p2p.ChannelPayRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        ChannelPayRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            if (message.channelId != null && message.hasOwnProperty("channelId"))
+                if (!$util.isString(message.channelId))
+                    return "channelId: string expected";
+            if (message.amount != null && message.hasOwnProperty("amount"))
+                if (!$util.isInteger(message.amount) && !(message.amount && $util.isInteger(message.amount.low) && $util.isInteger(message.amount.high)))
+                    return "amount: integer|Long expected";
+            return null;
+        };
+
+        /**
+         * Creates a ChannelPayRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.ChannelPayRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.ChannelPayRequest} ChannelPayRequest
+         */
+        ChannelPayRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.ChannelPayRequest)
+                return object;
+            var message = new $root.p2p.ChannelPayRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            if (object.channelId != null)
+                message.channelId = String(object.channelId);
+            if (object.amount != null)
+                if ($util.Long)
+                    (message.amount = $util.Long.fromValue(object.amount)).unsigned = true;
+                else if (typeof object.amount === "string")
+                    message.amount = parseInt(object.amount, 10);
+                else if (typeof object.amount === "number")
+                    message.amount = object.amount;
+                else if (typeof object.amount === "object")
+                    message.amount = new $util.LongBits(object.amount.low >>> 0, object.amount.high >>> 0).toNumber(true);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a ChannelPayRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.ChannelPayRequest
+         * @static
+         * @param {p2p.ChannelPayRequest} message ChannelPayRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        ChannelPayRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.walletId = "";
+                object.channelId = "";
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.amount = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.amount = options.longs === String ? "0" : 0;
+            }
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            if (message.channelId != null && message.hasOwnProperty("channelId"))
+                object.channelId = message.channelId;
+            if (message.amount != null && message.hasOwnProperty("amount"))
+                if (typeof message.amount === "number")
+                    object.amount = options.longs === String ? String(message.amount) : message.amount;
+                else
+                    object.amount = options.longs === String ? $util.Long.prototype.toString.call(message.amount) : options.longs === Number ? new $util.LongBits(message.amount.low >>> 0, message.amount.high >>> 0).toNumber(true) : message.amount;
+            return object;
+        };
+
+        /**
+         * Converts this ChannelPayRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.ChannelPayRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        ChannelPayRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for ChannelPayRequest
+         * @function getTypeUrl
+         * @memberof p2p.ChannelPayRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        ChannelPayRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.ChannelPayRequest";
+        };
+
+        return ChannelPayRequest;
+    })();
+
+    p2p.ChannelCloseRequest = (function() {
+
+        /**
+         * Properties of a ChannelCloseRequest.
+         * @memberof p2p
+         * @interface IChannelCloseRequest
+         * @property {string|null} [walletId] ChannelCloseRequest walletId
+         * @property {string|null} [channelId] ChannelCloseRequest channelId
+         */
+
+        /**
+         * Constructs a new ChannelCloseRequest.
+         * @memberof p2p
+         * @classdesc Represents a ChannelCloseRequest.
+         * @implements IChannelCloseRequest
+         * @constructor
+         * @param {p2p.IChannelCloseRequest=} [properties] Properties to set
+         */
+        function ChannelCloseRequest(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * ChannelCloseRequest walletId.
+         * @member {string} walletId
+         * @memberof p2p.ChannelCloseRequest
+         * @instance
+         */
+        ChannelCloseRequest.prototype.walletId = "";
+
+        /**
+         * ChannelCloseRequest channelId.
+         * @member {string} channelId
+         * @memberof p2p.ChannelCloseRequest
+         * @instance
+         */
+        ChannelCloseRequest.prototype.channelId = "";
+
+        /**
+         * Creates a new ChannelCloseRequest instance using the specified properties.
+         * @function create
+         * @memberof p2p.ChannelCloseRequest
+         * @static
+         * @param {p2p.IChannelCloseRequest=} [properties] Properties to set
+         * @returns {p2p.ChannelCloseRequest} ChannelCloseRequest instance
+         */
+        ChannelCloseRequest.create = function create(properties) {
+            return new ChannelCloseRequest(properties);
+        };
+
+        /**
+         * Encodes the specified ChannelCloseRequest message. Does not implicitly {@link p2p.ChannelCloseRequest.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.ChannelCloseRequest
+         * @static
+         * @param {p2p.IChannelCloseRequest} message ChannelCloseRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChannelCloseRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            if (message.channelId != null && Object.hasOwnProperty.call(message, "channelId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.channelId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified ChannelCloseRequest message, length delimited. Does not implicitly {@link p2p.ChannelCloseRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.ChannelCloseRequest
+         * @static
+         * @param {p2p.IChannelCloseRequest} message ChannelCloseRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChannelCloseRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a ChannelCloseRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.ChannelCloseRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.ChannelCloseRequest} ChannelCloseRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChannelCloseRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.ChannelCloseRequest();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.channelId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a ChannelCloseRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.ChannelCloseRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.ChannelCloseRequest} ChannelCloseRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChannelCloseRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a ChannelCloseRequest message.
+         * @function verify
+         * @memberof p2p.ChannelCloseRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        ChannelCloseRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            if (message.channelId != null && message.hasOwnProperty("channelId"))
+                if (!$util.isString(message.channelId))
+                    return "channelId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a ChannelCloseRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.ChannelCloseRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.ChannelCloseRequest} ChannelCloseRequest
+         */
+        ChannelCloseRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.ChannelCloseRequest)
+                return object;
+            var message = new $root.p2p.ChannelCloseRequest();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            if (object.channelId != null)
+                message.channelId = String(object.channelId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a ChannelCloseRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.ChannelCloseRequest
+         * @static
+         * @param {p2p.ChannelCloseRequest} message ChannelCloseRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        ChannelCloseRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.walletId = "";
+                object.channelId = "";
+            }
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            if (message.channelId != null && message.hasOwnProperty("channelId"))
+                object.channelId = message.channelId;
+            return object;
+        };
+
+        /**
+         * Converts this ChannelCloseRequest to JSON.
+         * @function toJSON
+         * @memberof p2p.ChannelCloseRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        ChannelCloseRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for ChannelCloseRequest
+         * @function getTypeUrl
+         * @memberof p2p.ChannelCloseRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        ChannelCloseRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.ChannelCloseRequest";
+        };
+
+        return ChannelCloseRequest;
+    })();
+
+    p2p.P2pMessageReceived = (function() {
+
+        /**
+         * Properties of a P2pMessageReceived.
+         * @memberof p2p
+         * @interface IP2pMessageReceived
+         * @property {string|null} [topic] P2pMessageReceived topic
+         * @property {Uint8Array|null} [data] P2pMessageReceived data
+         * @property {string|null} [fromPeerId] P2pMessageReceived fromPeerId
+         */
+
+        /**
+         * Constructs a new P2pMessageReceived.
+         * @memberof p2p
+         * @classdesc Represents a P2pMessageReceived.
+         * @implements IP2pMessageReceived
+         * @constructor
+         * @param {p2p.IP2pMessageReceived=} [properties] Properties to set
+         */
+        function P2pMessageReceived(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * P2pMessageReceived topic.
+         * @member {string} topic
+         * @memberof p2p.P2pMessageReceived
+         * @instance
+         */
+        P2pMessageReceived.prototype.topic = "";
+
+        /**
+         * P2pMessageReceived data.
+         * @member {Uint8Array} data
+         * @memberof p2p.P2pMessageReceived
+         * @instance
+         */
+        P2pMessageReceived.prototype.data = $util.newBuffer([]);
+
+        /**
+         * P2pMessageReceived fromPeerId.
+         * @member {string} fromPeerId
+         * @memberof p2p.P2pMessageReceived
+         * @instance
+         */
+        P2pMessageReceived.prototype.fromPeerId = "";
+
+        /**
+         * Creates a new P2pMessageReceived instance using the specified properties.
+         * @function create
+         * @memberof p2p.P2pMessageReceived
+         * @static
+         * @param {p2p.IP2pMessageReceived=} [properties] Properties to set
+         * @returns {p2p.P2pMessageReceived} P2pMessageReceived instance
+         */
+        P2pMessageReceived.create = function create(properties) {
+            return new P2pMessageReceived(properties);
+        };
+
+        /**
+         * Encodes the specified P2pMessageReceived message. Does not implicitly {@link p2p.P2pMessageReceived.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.P2pMessageReceived
+         * @static
+         * @param {p2p.IP2pMessageReceived} message P2pMessageReceived message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        P2pMessageReceived.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.topic != null && Object.hasOwnProperty.call(message, "topic"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.topic);
+            if (message.data != null && Object.hasOwnProperty.call(message, "data"))
+                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.data);
+            if (message.fromPeerId != null && Object.hasOwnProperty.call(message, "fromPeerId"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.fromPeerId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified P2pMessageReceived message, length delimited. Does not implicitly {@link p2p.P2pMessageReceived.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.P2pMessageReceived
+         * @static
+         * @param {p2p.IP2pMessageReceived} message P2pMessageReceived message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        P2pMessageReceived.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a P2pMessageReceived message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.P2pMessageReceived
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.P2pMessageReceived} P2pMessageReceived
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        P2pMessageReceived.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.P2pMessageReceived();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.topic = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.data = reader.bytes();
+                        break;
+                    }
+                case 3: {
+                        message.fromPeerId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a P2pMessageReceived message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.P2pMessageReceived
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.P2pMessageReceived} P2pMessageReceived
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        P2pMessageReceived.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a P2pMessageReceived message.
+         * @function verify
+         * @memberof p2p.P2pMessageReceived
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        P2pMessageReceived.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.topic != null && message.hasOwnProperty("topic"))
+                if (!$util.isString(message.topic))
+                    return "topic: string expected";
+            if (message.data != null && message.hasOwnProperty("data"))
+                if (!(message.data && typeof message.data.length === "number" || $util.isString(message.data)))
+                    return "data: buffer expected";
+            if (message.fromPeerId != null && message.hasOwnProperty("fromPeerId"))
+                if (!$util.isString(message.fromPeerId))
+                    return "fromPeerId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a P2pMessageReceived message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.P2pMessageReceived
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.P2pMessageReceived} P2pMessageReceived
+         */
+        P2pMessageReceived.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.P2pMessageReceived)
+                return object;
+            var message = new $root.p2p.P2pMessageReceived();
+            if (object.topic != null)
+                message.topic = String(object.topic);
+            if (object.data != null)
+                if (typeof object.data === "string")
+                    $util.base64.decode(object.data, message.data = $util.newBuffer($util.base64.length(object.data)), 0);
+                else if (object.data.length >= 0)
+                    message.data = object.data;
+            if (object.fromPeerId != null)
+                message.fromPeerId = String(object.fromPeerId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a P2pMessageReceived message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.P2pMessageReceived
+         * @static
+         * @param {p2p.P2pMessageReceived} message P2pMessageReceived
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        P2pMessageReceived.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.topic = "";
+                if (options.bytes === String)
+                    object.data = "";
+                else {
+                    object.data = [];
+                    if (options.bytes !== Array)
+                        object.data = $util.newBuffer(object.data);
+                }
+                object.fromPeerId = "";
+            }
+            if (message.topic != null && message.hasOwnProperty("topic"))
+                object.topic = message.topic;
+            if (message.data != null && message.hasOwnProperty("data"))
+                object.data = options.bytes === String ? $util.base64.encode(message.data, 0, message.data.length) : options.bytes === Array ? Array.prototype.slice.call(message.data) : message.data;
+            if (message.fromPeerId != null && message.hasOwnProperty("fromPeerId"))
+                object.fromPeerId = message.fromPeerId;
+            return object;
+        };
+
+        /**
+         * Converts this P2pMessageReceived to JSON.
+         * @function toJSON
+         * @memberof p2p.P2pMessageReceived
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        P2pMessageReceived.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for P2pMessageReceived
+         * @function getTypeUrl
+         * @memberof p2p.P2pMessageReceived
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        P2pMessageReceived.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.P2pMessageReceived";
+        };
+
+        return P2pMessageReceived;
+    })();
+
+    p2p.PeerConnected = (function() {
+
+        /**
+         * Properties of a PeerConnected.
+         * @memberof p2p
+         * @interface IPeerConnected
+         * @property {string|null} [peerId] PeerConnected peerId
+         */
+
+        /**
+         * Constructs a new PeerConnected.
+         * @memberof p2p
+         * @classdesc Represents a PeerConnected.
+         * @implements IPeerConnected
+         * @constructor
+         * @param {p2p.IPeerConnected=} [properties] Properties to set
+         */
+        function PeerConnected(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * PeerConnected peerId.
+         * @member {string} peerId
+         * @memberof p2p.PeerConnected
+         * @instance
+         */
+        PeerConnected.prototype.peerId = "";
+
+        /**
+         * Creates a new PeerConnected instance using the specified properties.
+         * @function create
+         * @memberof p2p.PeerConnected
+         * @static
+         * @param {p2p.IPeerConnected=} [properties] Properties to set
+         * @returns {p2p.PeerConnected} PeerConnected instance
+         */
+        PeerConnected.create = function create(properties) {
+            return new PeerConnected(properties);
+        };
+
+        /**
+         * Encodes the specified PeerConnected message. Does not implicitly {@link p2p.PeerConnected.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.PeerConnected
+         * @static
+         * @param {p2p.IPeerConnected} message PeerConnected message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PeerConnected.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.peerId != null && Object.hasOwnProperty.call(message, "peerId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.peerId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified PeerConnected message, length delimited. Does not implicitly {@link p2p.PeerConnected.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.PeerConnected
+         * @static
+         * @param {p2p.IPeerConnected} message PeerConnected message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PeerConnected.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a PeerConnected message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.PeerConnected
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.PeerConnected} PeerConnected
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PeerConnected.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.PeerConnected();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.peerId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a PeerConnected message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.PeerConnected
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.PeerConnected} PeerConnected
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PeerConnected.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a PeerConnected message.
+         * @function verify
+         * @memberof p2p.PeerConnected
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        PeerConnected.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.peerId != null && message.hasOwnProperty("peerId"))
+                if (!$util.isString(message.peerId))
+                    return "peerId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a PeerConnected message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.PeerConnected
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.PeerConnected} PeerConnected
+         */
+        PeerConnected.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.PeerConnected)
+                return object;
+            var message = new $root.p2p.PeerConnected();
+            if (object.peerId != null)
+                message.peerId = String(object.peerId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a PeerConnected message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.PeerConnected
+         * @static
+         * @param {p2p.PeerConnected} message PeerConnected
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        PeerConnected.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults)
+                object.peerId = "";
+            if (message.peerId != null && message.hasOwnProperty("peerId"))
+                object.peerId = message.peerId;
+            return object;
+        };
+
+        /**
+         * Converts this PeerConnected to JSON.
+         * @function toJSON
+         * @memberof p2p.PeerConnected
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        PeerConnected.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for PeerConnected
+         * @function getTypeUrl
+         * @memberof p2p.PeerConnected
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        PeerConnected.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.PeerConnected";
+        };
+
+        return PeerConnected;
+    })();
+
+    p2p.PeerDisconnected = (function() {
+
+        /**
+         * Properties of a PeerDisconnected.
+         * @memberof p2p
+         * @interface IPeerDisconnected
+         * @property {string|null} [peerId] PeerDisconnected peerId
+         */
+
+        /**
+         * Constructs a new PeerDisconnected.
+         * @memberof p2p
+         * @classdesc Represents a PeerDisconnected.
+         * @implements IPeerDisconnected
+         * @constructor
+         * @param {p2p.IPeerDisconnected=} [properties] Properties to set
+         */
+        function PeerDisconnected(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * PeerDisconnected peerId.
+         * @member {string} peerId
+         * @memberof p2p.PeerDisconnected
+         * @instance
+         */
+        PeerDisconnected.prototype.peerId = "";
+
+        /**
+         * Creates a new PeerDisconnected instance using the specified properties.
+         * @function create
+         * @memberof p2p.PeerDisconnected
+         * @static
+         * @param {p2p.IPeerDisconnected=} [properties] Properties to set
+         * @returns {p2p.PeerDisconnected} PeerDisconnected instance
+         */
+        PeerDisconnected.create = function create(properties) {
+            return new PeerDisconnected(properties);
+        };
+
+        /**
+         * Encodes the specified PeerDisconnected message. Does not implicitly {@link p2p.PeerDisconnected.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.PeerDisconnected
+         * @static
+         * @param {p2p.IPeerDisconnected} message PeerDisconnected message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PeerDisconnected.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.peerId != null && Object.hasOwnProperty.call(message, "peerId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.peerId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified PeerDisconnected message, length delimited. Does not implicitly {@link p2p.PeerDisconnected.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.PeerDisconnected
+         * @static
+         * @param {p2p.IPeerDisconnected} message PeerDisconnected message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PeerDisconnected.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a PeerDisconnected message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.PeerDisconnected
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.PeerDisconnected} PeerDisconnected
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PeerDisconnected.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.PeerDisconnected();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.peerId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a PeerDisconnected message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.PeerDisconnected
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.PeerDisconnected} PeerDisconnected
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PeerDisconnected.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a PeerDisconnected message.
+         * @function verify
+         * @memberof p2p.PeerDisconnected
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        PeerDisconnected.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.peerId != null && message.hasOwnProperty("peerId"))
+                if (!$util.isString(message.peerId))
+                    return "peerId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a PeerDisconnected message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.PeerDisconnected
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.PeerDisconnected} PeerDisconnected
+         */
+        PeerDisconnected.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.PeerDisconnected)
+                return object;
+            var message = new $root.p2p.PeerDisconnected();
+            if (object.peerId != null)
+                message.peerId = String(object.peerId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a PeerDisconnected message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.PeerDisconnected
+         * @static
+         * @param {p2p.PeerDisconnected} message PeerDisconnected
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        PeerDisconnected.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults)
+                object.peerId = "";
+            if (message.peerId != null && message.hasOwnProperty("peerId"))
+                object.peerId = message.peerId;
+            return object;
+        };
+
+        /**
+         * Converts this PeerDisconnected to JSON.
+         * @function toJSON
+         * @memberof p2p.PeerDisconnected
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        PeerDisconnected.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for PeerDisconnected
+         * @function getTypeUrl
+         * @memberof p2p.PeerDisconnected
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        PeerDisconnected.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.PeerDisconnected";
+        };
+
+        return PeerDisconnected;
+    })();
+
+    p2p.PeerVerified = (function() {
+
+        /**
+         * Properties of a PeerVerified.
+         * @memberof p2p
+         * @interface IPeerVerified
+         * @property {string|null} [peerId] PeerVerified peerId
+         */
+
+        /**
+         * Constructs a new PeerVerified.
+         * @memberof p2p
+         * @classdesc Represents a PeerVerified.
+         * @implements IPeerVerified
+         * @constructor
+         * @param {p2p.IPeerVerified=} [properties] Properties to set
+         */
+        function PeerVerified(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * PeerVerified peerId.
+         * @member {string} peerId
+         * @memberof p2p.PeerVerified
+         * @instance
+         */
+        PeerVerified.prototype.peerId = "";
+
+        /**
+         * Creates a new PeerVerified instance using the specified properties.
+         * @function create
+         * @memberof p2p.PeerVerified
+         * @static
+         * @param {p2p.IPeerVerified=} [properties] Properties to set
+         * @returns {p2p.PeerVerified} PeerVerified instance
+         */
+        PeerVerified.create = function create(properties) {
+            return new PeerVerified(properties);
+        };
+
+        /**
+         * Encodes the specified PeerVerified message. Does not implicitly {@link p2p.PeerVerified.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.PeerVerified
+         * @static
+         * @param {p2p.IPeerVerified} message PeerVerified message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PeerVerified.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.peerId != null && Object.hasOwnProperty.call(message, "peerId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.peerId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified PeerVerified message, length delimited. Does not implicitly {@link p2p.PeerVerified.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.PeerVerified
+         * @static
+         * @param {p2p.IPeerVerified} message PeerVerified message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PeerVerified.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a PeerVerified message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.PeerVerified
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.PeerVerified} PeerVerified
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PeerVerified.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.PeerVerified();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.peerId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a PeerVerified message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.PeerVerified
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.PeerVerified} PeerVerified
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PeerVerified.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a PeerVerified message.
+         * @function verify
+         * @memberof p2p.PeerVerified
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        PeerVerified.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.peerId != null && message.hasOwnProperty("peerId"))
+                if (!$util.isString(message.peerId))
+                    return "peerId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a PeerVerified message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.PeerVerified
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.PeerVerified} PeerVerified
+         */
+        PeerVerified.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.PeerVerified)
+                return object;
+            var message = new $root.p2p.PeerVerified();
+            if (object.peerId != null)
+                message.peerId = String(object.peerId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a PeerVerified message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.PeerVerified
+         * @static
+         * @param {p2p.PeerVerified} message PeerVerified
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        PeerVerified.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults)
+                object.peerId = "";
+            if (message.peerId != null && message.hasOwnProperty("peerId"))
+                object.peerId = message.peerId;
+            return object;
+        };
+
+        /**
+         * Converts this PeerVerified to JSON.
+         * @function toJSON
+         * @memberof p2p.PeerVerified
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        PeerVerified.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for PeerVerified
+         * @function getTypeUrl
+         * @memberof p2p.PeerVerified
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        PeerVerified.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.PeerVerified";
+        };
+
+        return PeerVerified;
+    })();
+
+    p2p.LogMessage = (function() {
+
+        /**
+         * Properties of a LogMessage.
+         * @memberof p2p
+         * @interface ILogMessage
+         * @property {string|null} [level] LogMessage level
+         * @property {string|null} [message] LogMessage message
+         */
+
+        /**
+         * Constructs a new LogMessage.
+         * @memberof p2p
+         * @classdesc Represents a LogMessage.
+         * @implements ILogMessage
+         * @constructor
+         * @param {p2p.ILogMessage=} [properties] Properties to set
+         */
+        function LogMessage(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * LogMessage level.
+         * @member {string} level
+         * @memberof p2p.LogMessage
+         * @instance
+         */
+        LogMessage.prototype.level = "";
+
+        /**
+         * LogMessage message.
+         * @member {string} message
+         * @memberof p2p.LogMessage
+         * @instance
+         */
+        LogMessage.prototype.message = "";
+
+        /**
+         * Creates a new LogMessage instance using the specified properties.
+         * @function create
+         * @memberof p2p.LogMessage
+         * @static
+         * @param {p2p.ILogMessage=} [properties] Properties to set
+         * @returns {p2p.LogMessage} LogMessage instance
+         */
+        LogMessage.create = function create(properties) {
+            return new LogMessage(properties);
+        };
+
+        /**
+         * Encodes the specified LogMessage message. Does not implicitly {@link p2p.LogMessage.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.LogMessage
+         * @static
+         * @param {p2p.ILogMessage} message LogMessage message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        LogMessage.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.level != null && Object.hasOwnProperty.call(message, "level"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.level);
+            if (message.message != null && Object.hasOwnProperty.call(message, "message"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.message);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified LogMessage message, length delimited. Does not implicitly {@link p2p.LogMessage.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.LogMessage
+         * @static
+         * @param {p2p.ILogMessage} message LogMessage message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        LogMessage.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a LogMessage message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.LogMessage
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.LogMessage} LogMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        LogMessage.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.LogMessage();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.level = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.message = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a LogMessage message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.LogMessage
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.LogMessage} LogMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        LogMessage.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a LogMessage message.
+         * @function verify
+         * @memberof p2p.LogMessage
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        LogMessage.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.level != null && message.hasOwnProperty("level"))
+                if (!$util.isString(message.level))
+                    return "level: string expected";
+            if (message.message != null && message.hasOwnProperty("message"))
+                if (!$util.isString(message.message))
+                    return "message: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a LogMessage message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.LogMessage
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.LogMessage} LogMessage
+         */
+        LogMessage.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.LogMessage)
+                return object;
+            var message = new $root.p2p.LogMessage();
+            if (object.level != null)
+                message.level = String(object.level);
+            if (object.message != null)
+                message.message = String(object.message);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a LogMessage message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.LogMessage
+         * @static
+         * @param {p2p.LogMessage} message LogMessage
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        LogMessage.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.level = "";
+                object.message = "";
+            }
+            if (message.level != null && message.hasOwnProperty("level"))
+                object.level = message.level;
+            if (message.message != null && message.hasOwnProperty("message"))
+                object.message = message.message;
+            return object;
+        };
+
+        /**
+         * Converts this LogMessage to JSON.
+         * @function toJSON
+         * @memberof p2p.LogMessage
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        LogMessage.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for LogMessage
+         * @function getTypeUrl
+         * @memberof p2p.LogMessage
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        LogMessage.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.LogMessage";
+        };
+
+        return LogMessage;
+    })();
+
+    p2p.PublishP2pMessage = (function() {
+
+        /**
+         * Properties of a PublishP2pMessage.
+         * @memberof p2p
+         * @interface IPublishP2pMessage
+         * @property {string|null} [topic] PublishP2pMessage topic
+         * @property {Uint8Array|null} [data] PublishP2pMessage data
+         */
+
+        /**
+         * Constructs a new PublishP2pMessage.
+         * @memberof p2p
+         * @classdesc Represents a PublishP2pMessage.
+         * @implements IPublishP2pMessage
+         * @constructor
+         * @param {p2p.IPublishP2pMessage=} [properties] Properties to set
+         */
+        function PublishP2pMessage(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * PublishP2pMessage topic.
+         * @member {string} topic
+         * @memberof p2p.PublishP2pMessage
+         * @instance
+         */
+        PublishP2pMessage.prototype.topic = "";
+
+        /**
+         * PublishP2pMessage data.
+         * @member {Uint8Array} data
+         * @memberof p2p.PublishP2pMessage
+         * @instance
+         */
+        PublishP2pMessage.prototype.data = $util.newBuffer([]);
+
+        /**
+         * Creates a new PublishP2pMessage instance using the specified properties.
+         * @function create
+         * @memberof p2p.PublishP2pMessage
+         * @static
+         * @param {p2p.IPublishP2pMessage=} [properties] Properties to set
+         * @returns {p2p.PublishP2pMessage} PublishP2pMessage instance
+         */
+        PublishP2pMessage.create = function create(properties) {
+            return new PublishP2pMessage(properties);
+        };
+
+        /**
+         * Encodes the specified PublishP2pMessage message. Does not implicitly {@link p2p.PublishP2pMessage.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.PublishP2pMessage
+         * @static
+         * @param {p2p.IPublishP2pMessage} message PublishP2pMessage message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PublishP2pMessage.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.topic != null && Object.hasOwnProperty.call(message, "topic"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.topic);
+            if (message.data != null && Object.hasOwnProperty.call(message, "data"))
+                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.data);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified PublishP2pMessage message, length delimited. Does not implicitly {@link p2p.PublishP2pMessage.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.PublishP2pMessage
+         * @static
+         * @param {p2p.IPublishP2pMessage} message PublishP2pMessage message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PublishP2pMessage.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a PublishP2pMessage message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.PublishP2pMessage
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.PublishP2pMessage} PublishP2pMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PublishP2pMessage.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.PublishP2pMessage();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.topic = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.data = reader.bytes();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a PublishP2pMessage message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.PublishP2pMessage
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.PublishP2pMessage} PublishP2pMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PublishP2pMessage.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a PublishP2pMessage message.
+         * @function verify
+         * @memberof p2p.PublishP2pMessage
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        PublishP2pMessage.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.topic != null && message.hasOwnProperty("topic"))
+                if (!$util.isString(message.topic))
+                    return "topic: string expected";
+            if (message.data != null && message.hasOwnProperty("data"))
+                if (!(message.data && typeof message.data.length === "number" || $util.isString(message.data)))
+                    return "data: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a PublishP2pMessage message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.PublishP2pMessage
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.PublishP2pMessage} PublishP2pMessage
+         */
+        PublishP2pMessage.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.PublishP2pMessage)
+                return object;
+            var message = new $root.p2p.PublishP2pMessage();
+            if (object.topic != null)
+                message.topic = String(object.topic);
+            if (object.data != null)
+                if (typeof object.data === "string")
+                    $util.base64.decode(object.data, message.data = $util.newBuffer($util.base64.length(object.data)), 0);
+                else if (object.data.length >= 0)
+                    message.data = object.data;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a PublishP2pMessage message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.PublishP2pMessage
+         * @static
+         * @param {p2p.PublishP2pMessage} message PublishP2pMessage
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        PublishP2pMessage.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.topic = "";
+                if (options.bytes === String)
+                    object.data = "";
+                else {
+                    object.data = [];
+                    if (options.bytes !== Array)
+                        object.data = $util.newBuffer(object.data);
+                }
+            }
+            if (message.topic != null && message.hasOwnProperty("topic"))
+                object.topic = message.topic;
+            if (message.data != null && message.hasOwnProperty("data"))
+                object.data = options.bytes === String ? $util.base64.encode(message.data, 0, message.data.length) : options.bytes === Array ? Array.prototype.slice.call(message.data) : message.data;
+            return object;
+        };
+
+        /**
+         * Converts this PublishP2pMessage to JSON.
+         * @function toJSON
+         * @memberof p2p.PublishP2pMessage
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        PublishP2pMessage.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for PublishP2pMessage
+         * @function getTypeUrl
+         * @memberof p2p.PublishP2pMessage
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        PublishP2pMessage.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.PublishP2pMessage";
+        };
+
+        return PublishP2pMessage;
+    })();
+
+    p2p.SendDirectP2pMessage = (function() {
+
+        /**
+         * Properties of a SendDirectP2pMessage.
+         * @memberof p2p
+         * @interface ISendDirectP2pMessage
+         * @property {string|null} [peerId] SendDirectP2pMessage peerId
+         * @property {string|null} [protocol] SendDirectP2pMessage protocol
+         * @property {Uint8Array|null} [data] SendDirectP2pMessage data
+         */
+
+        /**
+         * Constructs a new SendDirectP2pMessage.
+         * @memberof p2p
+         * @classdesc Represents a SendDirectP2pMessage.
+         * @implements ISendDirectP2pMessage
+         * @constructor
+         * @param {p2p.ISendDirectP2pMessage=} [properties] Properties to set
+         */
+        function SendDirectP2pMessage(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * SendDirectP2pMessage peerId.
+         * @member {string} peerId
+         * @memberof p2p.SendDirectP2pMessage
+         * @instance
+         */
+        SendDirectP2pMessage.prototype.peerId = "";
+
+        /**
+         * SendDirectP2pMessage protocol.
+         * @member {string} protocol
+         * @memberof p2p.SendDirectP2pMessage
+         * @instance
+         */
+        SendDirectP2pMessage.prototype.protocol = "";
+
+        /**
+         * SendDirectP2pMessage data.
+         * @member {Uint8Array} data
+         * @memberof p2p.SendDirectP2pMessage
+         * @instance
+         */
+        SendDirectP2pMessage.prototype.data = $util.newBuffer([]);
+
+        /**
+         * Creates a new SendDirectP2pMessage instance using the specified properties.
+         * @function create
+         * @memberof p2p.SendDirectP2pMessage
+         * @static
+         * @param {p2p.ISendDirectP2pMessage=} [properties] Properties to set
+         * @returns {p2p.SendDirectP2pMessage} SendDirectP2pMessage instance
+         */
+        SendDirectP2pMessage.create = function create(properties) {
+            return new SendDirectP2pMessage(properties);
+        };
+
+        /**
+         * Encodes the specified SendDirectP2pMessage message. Does not implicitly {@link p2p.SendDirectP2pMessage.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.SendDirectP2pMessage
+         * @static
+         * @param {p2p.ISendDirectP2pMessage} message SendDirectP2pMessage message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SendDirectP2pMessage.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.peerId != null && Object.hasOwnProperty.call(message, "peerId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.peerId);
+            if (message.protocol != null && Object.hasOwnProperty.call(message, "protocol"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.protocol);
+            if (message.data != null && Object.hasOwnProperty.call(message, "data"))
+                writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.data);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified SendDirectP2pMessage message, length delimited. Does not implicitly {@link p2p.SendDirectP2pMessage.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.SendDirectP2pMessage
+         * @static
+         * @param {p2p.ISendDirectP2pMessage} message SendDirectP2pMessage message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        SendDirectP2pMessage.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a SendDirectP2pMessage message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.SendDirectP2pMessage
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.SendDirectP2pMessage} SendDirectP2pMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SendDirectP2pMessage.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.SendDirectP2pMessage();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.peerId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.protocol = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.data = reader.bytes();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a SendDirectP2pMessage message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.SendDirectP2pMessage
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.SendDirectP2pMessage} SendDirectP2pMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        SendDirectP2pMessage.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a SendDirectP2pMessage message.
+         * @function verify
+         * @memberof p2p.SendDirectP2pMessage
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        SendDirectP2pMessage.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.peerId != null && message.hasOwnProperty("peerId"))
+                if (!$util.isString(message.peerId))
+                    return "peerId: string expected";
+            if (message.protocol != null && message.hasOwnProperty("protocol"))
+                if (!$util.isString(message.protocol))
+                    return "protocol: string expected";
+            if (message.data != null && message.hasOwnProperty("data"))
+                if (!(message.data && typeof message.data.length === "number" || $util.isString(message.data)))
+                    return "data: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a SendDirectP2pMessage message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.SendDirectP2pMessage
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.SendDirectP2pMessage} SendDirectP2pMessage
+         */
+        SendDirectP2pMessage.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.SendDirectP2pMessage)
+                return object;
+            var message = new $root.p2p.SendDirectP2pMessage();
+            if (object.peerId != null)
+                message.peerId = String(object.peerId);
+            if (object.protocol != null)
+                message.protocol = String(object.protocol);
+            if (object.data != null)
+                if (typeof object.data === "string")
+                    $util.base64.decode(object.data, message.data = $util.newBuffer($util.base64.length(object.data)), 0);
+                else if (object.data.length >= 0)
+                    message.data = object.data;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a SendDirectP2pMessage message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.SendDirectP2pMessage
+         * @static
+         * @param {p2p.SendDirectP2pMessage} message SendDirectP2pMessage
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        SendDirectP2pMessage.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.peerId = "";
+                object.protocol = "";
+                if (options.bytes === String)
+                    object.data = "";
+                else {
+                    object.data = [];
+                    if (options.bytes !== Array)
+                        object.data = $util.newBuffer(object.data);
+                }
+            }
+            if (message.peerId != null && message.hasOwnProperty("peerId"))
+                object.peerId = message.peerId;
+            if (message.protocol != null && message.hasOwnProperty("protocol"))
+                object.protocol = message.protocol;
+            if (message.data != null && message.hasOwnProperty("data"))
+                object.data = options.bytes === String ? $util.base64.encode(message.data, 0, message.data.length) : options.bytes === Array ? Array.prototype.slice.call(message.data) : message.data;
+            return object;
+        };
+
+        /**
+         * Converts this SendDirectP2pMessage to JSON.
+         * @function toJSON
+         * @memberof p2p.SendDirectP2pMessage
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        SendDirectP2pMessage.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for SendDirectP2pMessage
+         * @function getTypeUrl
+         * @memberof p2p.SendDirectP2pMessage
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        SendDirectP2pMessage.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.SendDirectP2pMessage";
+        };
+
+        return SendDirectP2pMessage;
+    })();
+
+    p2p.HangUpPeer = (function() {
+
+        /**
+         * Properties of a HangUpPeer.
+         * @memberof p2p
+         * @interface IHangUpPeer
+         * @property {string|null} [peerId] HangUpPeer peerId
+         * @property {string|null} [reason] HangUpPeer reason
+         */
+
+        /**
+         * Constructs a new HangUpPeer.
+         * @memberof p2p
+         * @classdesc Represents a HangUpPeer.
+         * @implements IHangUpPeer
+         * @constructor
+         * @param {p2p.IHangUpPeer=} [properties] Properties to set
+         */
+        function HangUpPeer(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * HangUpPeer peerId.
+         * @member {string} peerId
+         * @memberof p2p.HangUpPeer
+         * @instance
+         */
+        HangUpPeer.prototype.peerId = "";
+
+        /**
+         * HangUpPeer reason.
+         * @member {string} reason
+         * @memberof p2p.HangUpPeer
+         * @instance
+         */
+        HangUpPeer.prototype.reason = "";
+
+        /**
+         * Creates a new HangUpPeer instance using the specified properties.
+         * @function create
+         * @memberof p2p.HangUpPeer
+         * @static
+         * @param {p2p.IHangUpPeer=} [properties] Properties to set
+         * @returns {p2p.HangUpPeer} HangUpPeer instance
+         */
+        HangUpPeer.create = function create(properties) {
+            return new HangUpPeer(properties);
+        };
+
+        /**
+         * Encodes the specified HangUpPeer message. Does not implicitly {@link p2p.HangUpPeer.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.HangUpPeer
+         * @static
+         * @param {p2p.IHangUpPeer} message HangUpPeer message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        HangUpPeer.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.peerId != null && Object.hasOwnProperty.call(message, "peerId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.peerId);
+            if (message.reason != null && Object.hasOwnProperty.call(message, "reason"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.reason);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified HangUpPeer message, length delimited. Does not implicitly {@link p2p.HangUpPeer.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.HangUpPeer
+         * @static
+         * @param {p2p.IHangUpPeer} message HangUpPeer message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        HangUpPeer.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a HangUpPeer message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.HangUpPeer
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.HangUpPeer} HangUpPeer
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        HangUpPeer.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.HangUpPeer();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.peerId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.reason = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a HangUpPeer message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.HangUpPeer
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.HangUpPeer} HangUpPeer
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        HangUpPeer.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a HangUpPeer message.
+         * @function verify
+         * @memberof p2p.HangUpPeer
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        HangUpPeer.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.peerId != null && message.hasOwnProperty("peerId"))
+                if (!$util.isString(message.peerId))
+                    return "peerId: string expected";
+            if (message.reason != null && message.hasOwnProperty("reason"))
+                if (!$util.isString(message.reason))
+                    return "reason: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a HangUpPeer message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.HangUpPeer
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.HangUpPeer} HangUpPeer
+         */
+        HangUpPeer.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.HangUpPeer)
+                return object;
+            var message = new $root.p2p.HangUpPeer();
+            if (object.peerId != null)
+                message.peerId = String(object.peerId);
+            if (object.reason != null)
+                message.reason = String(object.reason);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a HangUpPeer message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.HangUpPeer
+         * @static
+         * @param {p2p.HangUpPeer} message HangUpPeer
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        HangUpPeer.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.peerId = "";
+                object.reason = "";
+            }
+            if (message.peerId != null && message.hasOwnProperty("peerId"))
+                object.peerId = message.peerId;
+            if (message.reason != null && message.hasOwnProperty("reason"))
+                object.reason = message.reason;
+            return object;
+        };
+
+        /**
+         * Converts this HangUpPeer to JSON.
+         * @function toJSON
+         * @memberof p2p.HangUpPeer
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        HangUpPeer.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for HangUpPeer
+         * @function getTypeUrl
+         * @memberof p2p.HangUpPeer
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        HangUpPeer.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.HangUpPeer";
+        };
+
+        return HangUpPeer;
+    })();
+
+    p2p.UpdateUiBalance = (function() {
+
+        /**
+         * Properties of an UpdateUiBalance.
+         * @memberof p2p
+         * @interface IUpdateUiBalance
+         * @property {string|null} [walletId] UpdateUiBalance walletId
+         * @property {string|null} [balanceString] UpdateUiBalance balanceString
+         */
+
+        /**
+         * Constructs a new UpdateUiBalance.
+         * @memberof p2p
+         * @classdesc Represents an UpdateUiBalance.
+         * @implements IUpdateUiBalance
+         * @constructor
+         * @param {p2p.IUpdateUiBalance=} [properties] Properties to set
+         */
+        function UpdateUiBalance(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * UpdateUiBalance walletId.
+         * @member {string} walletId
+         * @memberof p2p.UpdateUiBalance
+         * @instance
+         */
+        UpdateUiBalance.prototype.walletId = "";
+
+        /**
+         * UpdateUiBalance balanceString.
+         * @member {string} balanceString
+         * @memberof p2p.UpdateUiBalance
+         * @instance
+         */
+        UpdateUiBalance.prototype.balanceString = "";
+
+        /**
+         * Creates a new UpdateUiBalance instance using the specified properties.
+         * @function create
+         * @memberof p2p.UpdateUiBalance
+         * @static
+         * @param {p2p.IUpdateUiBalance=} [properties] Properties to set
+         * @returns {p2p.UpdateUiBalance} UpdateUiBalance instance
+         */
+        UpdateUiBalance.create = function create(properties) {
+            return new UpdateUiBalance(properties);
+        };
+
+        /**
+         * Encodes the specified UpdateUiBalance message. Does not implicitly {@link p2p.UpdateUiBalance.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.UpdateUiBalance
+         * @static
+         * @param {p2p.IUpdateUiBalance} message UpdateUiBalance message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UpdateUiBalance.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            if (message.balanceString != null && Object.hasOwnProperty.call(message, "balanceString"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.balanceString);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified UpdateUiBalance message, length delimited. Does not implicitly {@link p2p.UpdateUiBalance.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.UpdateUiBalance
+         * @static
+         * @param {p2p.IUpdateUiBalance} message UpdateUiBalance message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UpdateUiBalance.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes an UpdateUiBalance message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.UpdateUiBalance
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.UpdateUiBalance} UpdateUiBalance
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UpdateUiBalance.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.UpdateUiBalance();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.balanceString = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes an UpdateUiBalance message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.UpdateUiBalance
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.UpdateUiBalance} UpdateUiBalance
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UpdateUiBalance.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an UpdateUiBalance message.
+         * @function verify
+         * @memberof p2p.UpdateUiBalance
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        UpdateUiBalance.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            if (message.balanceString != null && message.hasOwnProperty("balanceString"))
+                if (!$util.isString(message.balanceString))
+                    return "balanceString: string expected";
+            return null;
+        };
+
+        /**
+         * Creates an UpdateUiBalance message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.UpdateUiBalance
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.UpdateUiBalance} UpdateUiBalance
+         */
+        UpdateUiBalance.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.UpdateUiBalance)
+                return object;
+            var message = new $root.p2p.UpdateUiBalance();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            if (object.balanceString != null)
+                message.balanceString = String(object.balanceString);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from an UpdateUiBalance message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.UpdateUiBalance
+         * @static
+         * @param {p2p.UpdateUiBalance} message UpdateUiBalance
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        UpdateUiBalance.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.walletId = "";
+                object.balanceString = "";
+            }
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            if (message.balanceString != null && message.hasOwnProperty("balanceString"))
+                object.balanceString = message.balanceString;
+            return object;
+        };
+
+        /**
+         * Converts this UpdateUiBalance to JSON.
+         * @function toJSON
+         * @memberof p2p.UpdateUiBalance
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        UpdateUiBalance.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for UpdateUiBalance
+         * @function getTypeUrl
+         * @memberof p2p.UpdateUiBalance
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        UpdateUiBalance.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.UpdateUiBalance";
+        };
+
+        return UpdateUiBalance;
+    })();
+
+    p2p.UpdateUiMinerStatus = (function() {
+
+        /**
+         * Properties of an UpdateUiMinerStatus.
+         * @memberof p2p
+         * @interface IUpdateUiMinerStatus
+         * @property {boolean|null} [isMining] UpdateUiMinerStatus isMining
+         */
+
+        /**
+         * Constructs a new UpdateUiMinerStatus.
+         * @memberof p2p
+         * @classdesc Represents an UpdateUiMinerStatus.
+         * @implements IUpdateUiMinerStatus
+         * @constructor
+         * @param {p2p.IUpdateUiMinerStatus=} [properties] Properties to set
+         */
+        function UpdateUiMinerStatus(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * UpdateUiMinerStatus isMining.
+         * @member {boolean} isMining
+         * @memberof p2p.UpdateUiMinerStatus
+         * @instance
+         */
+        UpdateUiMinerStatus.prototype.isMining = false;
+
+        /**
+         * Creates a new UpdateUiMinerStatus instance using the specified properties.
+         * @function create
+         * @memberof p2p.UpdateUiMinerStatus
+         * @static
+         * @param {p2p.IUpdateUiMinerStatus=} [properties] Properties to set
+         * @returns {p2p.UpdateUiMinerStatus} UpdateUiMinerStatus instance
+         */
+        UpdateUiMinerStatus.create = function create(properties) {
+            return new UpdateUiMinerStatus(properties);
+        };
+
+        /**
+         * Encodes the specified UpdateUiMinerStatus message. Does not implicitly {@link p2p.UpdateUiMinerStatus.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.UpdateUiMinerStatus
+         * @static
+         * @param {p2p.IUpdateUiMinerStatus} message UpdateUiMinerStatus message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UpdateUiMinerStatus.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.isMining != null && Object.hasOwnProperty.call(message, "isMining"))
+                writer.uint32(/* id 1, wireType 0 =*/8).bool(message.isMining);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified UpdateUiMinerStatus message, length delimited. Does not implicitly {@link p2p.UpdateUiMinerStatus.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.UpdateUiMinerStatus
+         * @static
+         * @param {p2p.IUpdateUiMinerStatus} message UpdateUiMinerStatus message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UpdateUiMinerStatus.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes an UpdateUiMinerStatus message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.UpdateUiMinerStatus
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.UpdateUiMinerStatus} UpdateUiMinerStatus
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UpdateUiMinerStatus.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.UpdateUiMinerStatus();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.isMining = reader.bool();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes an UpdateUiMinerStatus message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.UpdateUiMinerStatus
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.UpdateUiMinerStatus} UpdateUiMinerStatus
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UpdateUiMinerStatus.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an UpdateUiMinerStatus message.
+         * @function verify
+         * @memberof p2p.UpdateUiMinerStatus
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        UpdateUiMinerStatus.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.isMining != null && message.hasOwnProperty("isMining"))
+                if (typeof message.isMining !== "boolean")
+                    return "isMining: boolean expected";
+            return null;
+        };
+
+        /**
+         * Creates an UpdateUiMinerStatus message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.UpdateUiMinerStatus
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.UpdateUiMinerStatus} UpdateUiMinerStatus
+         */
+        UpdateUiMinerStatus.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.UpdateUiMinerStatus)
+                return object;
+            var message = new $root.p2p.UpdateUiMinerStatus();
+            if (object.isMining != null)
+                message.isMining = Boolean(object.isMining);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from an UpdateUiMinerStatus message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.UpdateUiMinerStatus
+         * @static
+         * @param {p2p.UpdateUiMinerStatus} message UpdateUiMinerStatus
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        UpdateUiMinerStatus.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults)
+                object.isMining = false;
+            if (message.isMining != null && message.hasOwnProperty("isMining"))
+                object.isMining = message.isMining;
+            return object;
+        };
+
+        /**
+         * Converts this UpdateUiMinerStatus to JSON.
+         * @function toJSON
+         * @memberof p2p.UpdateUiMinerStatus
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        UpdateUiMinerStatus.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for UpdateUiMinerStatus
+         * @function getTypeUrl
+         * @memberof p2p.UpdateUiMinerStatus
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        UpdateUiMinerStatus.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.UpdateUiMinerStatus";
+        };
+
+        return UpdateUiMinerStatus;
+    })();
+
+    p2p.UpdateUiSyncProgress = (function() {
+
+        /**
+         * Properties of an UpdateUiSyncProgress.
+         * @memberof p2p
+         * @interface IUpdateUiSyncProgress
+         * @property {number|Long|null} [current] UpdateUiSyncProgress current
+         * @property {number|Long|null} [target] UpdateUiSyncProgress target
+         * @property {number|Long|null} [startTime] UpdateUiSyncProgress startTime
+         */
+
+        /**
+         * Constructs a new UpdateUiSyncProgress.
+         * @memberof p2p
+         * @classdesc Represents an UpdateUiSyncProgress.
+         * @implements IUpdateUiSyncProgress
+         * @constructor
+         * @param {p2p.IUpdateUiSyncProgress=} [properties] Properties to set
+         */
+        function UpdateUiSyncProgress(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * UpdateUiSyncProgress current.
+         * @member {number|Long} current
+         * @memberof p2p.UpdateUiSyncProgress
+         * @instance
+         */
+        UpdateUiSyncProgress.prototype.current = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * UpdateUiSyncProgress target.
+         * @member {number|Long} target
+         * @memberof p2p.UpdateUiSyncProgress
+         * @instance
+         */
+        UpdateUiSyncProgress.prototype.target = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * UpdateUiSyncProgress startTime.
+         * @member {number|Long} startTime
+         * @memberof p2p.UpdateUiSyncProgress
+         * @instance
+         */
+        UpdateUiSyncProgress.prototype.startTime = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * Creates a new UpdateUiSyncProgress instance using the specified properties.
+         * @function create
+         * @memberof p2p.UpdateUiSyncProgress
+         * @static
+         * @param {p2p.IUpdateUiSyncProgress=} [properties] Properties to set
+         * @returns {p2p.UpdateUiSyncProgress} UpdateUiSyncProgress instance
+         */
+        UpdateUiSyncProgress.create = function create(properties) {
+            return new UpdateUiSyncProgress(properties);
+        };
+
+        /**
+         * Encodes the specified UpdateUiSyncProgress message. Does not implicitly {@link p2p.UpdateUiSyncProgress.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.UpdateUiSyncProgress
+         * @static
+         * @param {p2p.IUpdateUiSyncProgress} message UpdateUiSyncProgress message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UpdateUiSyncProgress.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.current != null && Object.hasOwnProperty.call(message, "current"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.current);
+            if (message.target != null && Object.hasOwnProperty.call(message, "target"))
+                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.target);
+            if (message.startTime != null && Object.hasOwnProperty.call(message, "startTime"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.startTime);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified UpdateUiSyncProgress message, length delimited. Does not implicitly {@link p2p.UpdateUiSyncProgress.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.UpdateUiSyncProgress
+         * @static
+         * @param {p2p.IUpdateUiSyncProgress} message UpdateUiSyncProgress message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UpdateUiSyncProgress.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes an UpdateUiSyncProgress message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.UpdateUiSyncProgress
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.UpdateUiSyncProgress} UpdateUiSyncProgress
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UpdateUiSyncProgress.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.UpdateUiSyncProgress();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.current = reader.uint64();
+                        break;
+                    }
+                case 2: {
+                        message.target = reader.uint64();
+                        break;
+                    }
+                case 3: {
+                        message.startTime = reader.uint64();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes an UpdateUiSyncProgress message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.UpdateUiSyncProgress
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.UpdateUiSyncProgress} UpdateUiSyncProgress
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UpdateUiSyncProgress.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an UpdateUiSyncProgress message.
+         * @function verify
+         * @memberof p2p.UpdateUiSyncProgress
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        UpdateUiSyncProgress.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.current != null && message.hasOwnProperty("current"))
+                if (!$util.isInteger(message.current) && !(message.current && $util.isInteger(message.current.low) && $util.isInteger(message.current.high)))
+                    return "current: integer|Long expected";
+            if (message.target != null && message.hasOwnProperty("target"))
+                if (!$util.isInteger(message.target) && !(message.target && $util.isInteger(message.target.low) && $util.isInteger(message.target.high)))
+                    return "target: integer|Long expected";
+            if (message.startTime != null && message.hasOwnProperty("startTime"))
+                if (!$util.isInteger(message.startTime) && !(message.startTime && $util.isInteger(message.startTime.low) && $util.isInteger(message.startTime.high)))
+                    return "startTime: integer|Long expected";
+            return null;
+        };
+
+        /**
+         * Creates an UpdateUiSyncProgress message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.UpdateUiSyncProgress
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.UpdateUiSyncProgress} UpdateUiSyncProgress
+         */
+        UpdateUiSyncProgress.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.UpdateUiSyncProgress)
+                return object;
+            var message = new $root.p2p.UpdateUiSyncProgress();
+            if (object.current != null)
+                if ($util.Long)
+                    (message.current = $util.Long.fromValue(object.current)).unsigned = true;
+                else if (typeof object.current === "string")
+                    message.current = parseInt(object.current, 10);
+                else if (typeof object.current === "number")
+                    message.current = object.current;
+                else if (typeof object.current === "object")
+                    message.current = new $util.LongBits(object.current.low >>> 0, object.current.high >>> 0).toNumber(true);
+            if (object.target != null)
+                if ($util.Long)
+                    (message.target = $util.Long.fromValue(object.target)).unsigned = true;
+                else if (typeof object.target === "string")
+                    message.target = parseInt(object.target, 10);
+                else if (typeof object.target === "number")
+                    message.target = object.target;
+                else if (typeof object.target === "object")
+                    message.target = new $util.LongBits(object.target.low >>> 0, object.target.high >>> 0).toNumber(true);
+            if (object.startTime != null)
+                if ($util.Long)
+                    (message.startTime = $util.Long.fromValue(object.startTime)).unsigned = true;
+                else if (typeof object.startTime === "string")
+                    message.startTime = parseInt(object.startTime, 10);
+                else if (typeof object.startTime === "number")
+                    message.startTime = object.startTime;
+                else if (typeof object.startTime === "object")
+                    message.startTime = new $util.LongBits(object.startTime.low >>> 0, object.startTime.high >>> 0).toNumber(true);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from an UpdateUiSyncProgress message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.UpdateUiSyncProgress
+         * @static
+         * @param {p2p.UpdateUiSyncProgress} message UpdateUiSyncProgress
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        UpdateUiSyncProgress.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.current = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.current = options.longs === String ? "0" : 0;
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.target = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.target = options.longs === String ? "0" : 0;
+                if ($util.Long) {
+                    var long = new $util.Long(0, 0, true);
+                    object.startTime = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.startTime = options.longs === String ? "0" : 0;
+            }
+            if (message.current != null && message.hasOwnProperty("current"))
+                if (typeof message.current === "number")
+                    object.current = options.longs === String ? String(message.current) : message.current;
+                else
+                    object.current = options.longs === String ? $util.Long.prototype.toString.call(message.current) : options.longs === Number ? new $util.LongBits(message.current.low >>> 0, message.current.high >>> 0).toNumber(true) : message.current;
+            if (message.target != null && message.hasOwnProperty("target"))
+                if (typeof message.target === "number")
+                    object.target = options.longs === String ? String(message.target) : message.target;
+                else
+                    object.target = options.longs === String ? $util.Long.prototype.toString.call(message.target) : options.longs === Number ? new $util.LongBits(message.target.low >>> 0, message.target.high >>> 0).toNumber(true) : message.target;
+            if (message.startTime != null && message.hasOwnProperty("startTime"))
+                if (typeof message.startTime === "number")
+                    object.startTime = options.longs === String ? String(message.startTime) : message.startTime;
+                else
+                    object.startTime = options.longs === String ? $util.Long.prototype.toString.call(message.startTime) : options.longs === Number ? new $util.LongBits(message.startTime.low >>> 0, message.startTime.high >>> 0).toNumber(true) : message.startTime;
+            return object;
+        };
+
+        /**
+         * Converts this UpdateUiSyncProgress to JSON.
+         * @function toJSON
+         * @memberof p2p.UpdateUiSyncProgress
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        UpdateUiSyncProgress.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for UpdateUiSyncProgress
+         * @function getTypeUrl
+         * @memberof p2p.UpdateUiSyncProgress
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        UpdateUiSyncProgress.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.UpdateUiSyncProgress";
+        };
+
+        return UpdateUiSyncProgress;
+    })();
+
+    p2p.UiNetworkInitialized = (function() {
+
+        /**
+         * Properties of an UiNetworkInitialized.
+         * @memberof p2p
+         * @interface IUiNetworkInitialized
+         */
+
+        /**
+         * Constructs a new UiNetworkInitialized.
+         * @memberof p2p
+         * @classdesc Represents an UiNetworkInitialized.
+         * @implements IUiNetworkInitialized
+         * @constructor
+         * @param {p2p.IUiNetworkInitialized=} [properties] Properties to set
+         */
+        function UiNetworkInitialized(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * Creates a new UiNetworkInitialized instance using the specified properties.
+         * @function create
+         * @memberof p2p.UiNetworkInitialized
+         * @static
+         * @param {p2p.IUiNetworkInitialized=} [properties] Properties to set
+         * @returns {p2p.UiNetworkInitialized} UiNetworkInitialized instance
+         */
+        UiNetworkInitialized.create = function create(properties) {
+            return new UiNetworkInitialized(properties);
+        };
+
+        /**
+         * Encodes the specified UiNetworkInitialized message. Does not implicitly {@link p2p.UiNetworkInitialized.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.UiNetworkInitialized
+         * @static
+         * @param {p2p.IUiNetworkInitialized} message UiNetworkInitialized message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UiNetworkInitialized.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified UiNetworkInitialized message, length delimited. Does not implicitly {@link p2p.UiNetworkInitialized.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.UiNetworkInitialized
+         * @static
+         * @param {p2p.IUiNetworkInitialized} message UiNetworkInitialized message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UiNetworkInitialized.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes an UiNetworkInitialized message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.UiNetworkInitialized
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.UiNetworkInitialized} UiNetworkInitialized
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UiNetworkInitialized.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.UiNetworkInitialized();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes an UiNetworkInitialized message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.UiNetworkInitialized
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.UiNetworkInitialized} UiNetworkInitialized
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UiNetworkInitialized.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an UiNetworkInitialized message.
+         * @function verify
+         * @memberof p2p.UiNetworkInitialized
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        UiNetworkInitialized.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            return null;
+        };
+
+        /**
+         * Creates an UiNetworkInitialized message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.UiNetworkInitialized
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.UiNetworkInitialized} UiNetworkInitialized
+         */
+        UiNetworkInitialized.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.UiNetworkInitialized)
+                return object;
+            return new $root.p2p.UiNetworkInitialized();
+        };
+
+        /**
+         * Creates a plain object from an UiNetworkInitialized message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.UiNetworkInitialized
+         * @static
+         * @param {p2p.UiNetworkInitialized} message UiNetworkInitialized
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        UiNetworkInitialized.toObject = function toObject() {
+            return {};
+        };
+
+        /**
+         * Converts this UiNetworkInitialized to JSON.
+         * @function toJSON
+         * @memberof p2p.UiNetworkInitialized
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        UiNetworkInitialized.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for UiNetworkInitialized
+         * @function getTypeUrl
+         * @memberof p2p.UiNetworkInitialized
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        UiNetworkInitialized.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.UiNetworkInitialized";
+        };
+
+        return UiNetworkInitialized;
+    })();
+
+    p2p.UiWalletLoaded = (function() {
+
+        /**
+         * Properties of an UiWalletLoaded.
+         * @memberof p2p
+         * @interface IUiWalletLoaded
+         * @property {string|null} [walletId] UiWalletLoaded walletId
+         * @property {string|null} [balance] UiWalletLoaded balance
+         * @property {string|null} [address] UiWalletLoaded address
+         */
+
+        /**
+         * Constructs a new UiWalletLoaded.
+         * @memberof p2p
+         * @classdesc Represents an UiWalletLoaded.
+         * @implements IUiWalletLoaded
+         * @constructor
+         * @param {p2p.IUiWalletLoaded=} [properties] Properties to set
+         */
+        function UiWalletLoaded(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * UiWalletLoaded walletId.
+         * @member {string} walletId
+         * @memberof p2p.UiWalletLoaded
+         * @instance
+         */
+        UiWalletLoaded.prototype.walletId = "";
+
+        /**
+         * UiWalletLoaded balance.
+         * @member {string} balance
+         * @memberof p2p.UiWalletLoaded
+         * @instance
+         */
+        UiWalletLoaded.prototype.balance = "";
+
+        /**
+         * UiWalletLoaded address.
+         * @member {string} address
+         * @memberof p2p.UiWalletLoaded
+         * @instance
+         */
+        UiWalletLoaded.prototype.address = "";
+
+        /**
+         * Creates a new UiWalletLoaded instance using the specified properties.
+         * @function create
+         * @memberof p2p.UiWalletLoaded
+         * @static
+         * @param {p2p.IUiWalletLoaded=} [properties] Properties to set
+         * @returns {p2p.UiWalletLoaded} UiWalletLoaded instance
+         */
+        UiWalletLoaded.create = function create(properties) {
+            return new UiWalletLoaded(properties);
+        };
+
+        /**
+         * Encodes the specified UiWalletLoaded message. Does not implicitly {@link p2p.UiWalletLoaded.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.UiWalletLoaded
+         * @static
+         * @param {p2p.IUiWalletLoaded} message UiWalletLoaded message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UiWalletLoaded.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.walletId != null && Object.hasOwnProperty.call(message, "walletId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.walletId);
+            if (message.balance != null && Object.hasOwnProperty.call(message, "balance"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.balance);
+            if (message.address != null && Object.hasOwnProperty.call(message, "address"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.address);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified UiWalletLoaded message, length delimited. Does not implicitly {@link p2p.UiWalletLoaded.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.UiWalletLoaded
+         * @static
+         * @param {p2p.IUiWalletLoaded} message UiWalletLoaded message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UiWalletLoaded.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes an UiWalletLoaded message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.UiWalletLoaded
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.UiWalletLoaded} UiWalletLoaded
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UiWalletLoaded.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.UiWalletLoaded();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.walletId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.balance = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.address = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes an UiWalletLoaded message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.UiWalletLoaded
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.UiWalletLoaded} UiWalletLoaded
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UiWalletLoaded.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an UiWalletLoaded message.
+         * @function verify
+         * @memberof p2p.UiWalletLoaded
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        UiWalletLoaded.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                if (!$util.isString(message.walletId))
+                    return "walletId: string expected";
+            if (message.balance != null && message.hasOwnProperty("balance"))
+                if (!$util.isString(message.balance))
+                    return "balance: string expected";
+            if (message.address != null && message.hasOwnProperty("address"))
+                if (!$util.isString(message.address))
+                    return "address: string expected";
+            return null;
+        };
+
+        /**
+         * Creates an UiWalletLoaded message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.UiWalletLoaded
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.UiWalletLoaded} UiWalletLoaded
+         */
+        UiWalletLoaded.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.UiWalletLoaded)
+                return object;
+            var message = new $root.p2p.UiWalletLoaded();
+            if (object.walletId != null)
+                message.walletId = String(object.walletId);
+            if (object.balance != null)
+                message.balance = String(object.balance);
+            if (object.address != null)
+                message.address = String(object.address);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from an UiWalletLoaded message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.UiWalletLoaded
+         * @static
+         * @param {p2p.UiWalletLoaded} message UiWalletLoaded
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        UiWalletLoaded.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults) {
+                object.walletId = "";
+                object.balance = "";
+                object.address = "";
+            }
+            if (message.walletId != null && message.hasOwnProperty("walletId"))
+                object.walletId = message.walletId;
+            if (message.balance != null && message.hasOwnProperty("balance"))
+                object.balance = message.balance;
+            if (message.address != null && message.hasOwnProperty("address"))
+                object.address = message.address;
+            return object;
+        };
+
+        /**
+         * Converts this UiWalletLoaded to JSON.
+         * @function toJSON
+         * @memberof p2p.UiWalletLoaded
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        UiWalletLoaded.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for UiWalletLoaded
+         * @function getTypeUrl
+         * @memberof p2p.UiWalletLoaded
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        UiWalletLoaded.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.UiWalletLoaded";
+        };
+
+        return UiWalletLoaded;
+    })();
+
+    p2p.UiPeerList = (function() {
+
+        /**
+         * Properties of an UiPeerList.
+         * @memberof p2p
+         * @interface IUiPeerList
+         * @property {Array.<string>|null} [peerIds] UiPeerList peerIds
+         */
+
+        /**
+         * Constructs a new UiPeerList.
+         * @memberof p2p
+         * @classdesc Represents an UiPeerList.
+         * @implements IUiPeerList
+         * @constructor
+         * @param {p2p.IUiPeerList=} [properties] Properties to set
+         */
+        function UiPeerList(properties) {
+            this.peerIds = [];
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * UiPeerList peerIds.
+         * @member {Array.<string>} peerIds
+         * @memberof p2p.UiPeerList
+         * @instance
+         */
+        UiPeerList.prototype.peerIds = $util.emptyArray;
+
+        /**
+         * Creates a new UiPeerList instance using the specified properties.
+         * @function create
+         * @memberof p2p.UiPeerList
+         * @static
+         * @param {p2p.IUiPeerList=} [properties] Properties to set
+         * @returns {p2p.UiPeerList} UiPeerList instance
+         */
+        UiPeerList.create = function create(properties) {
+            return new UiPeerList(properties);
+        };
+
+        /**
+         * Encodes the specified UiPeerList message. Does not implicitly {@link p2p.UiPeerList.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.UiPeerList
+         * @static
+         * @param {p2p.IUiPeerList} message UiPeerList message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UiPeerList.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.peerIds != null && message.peerIds.length)
+                for (var i = 0; i < message.peerIds.length; ++i)
+                    writer.uint32(/* id 1, wireType 2 =*/10).string(message.peerIds[i]);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified UiPeerList message, length delimited. Does not implicitly {@link p2p.UiPeerList.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.UiPeerList
+         * @static
+         * @param {p2p.IUiPeerList} message UiPeerList message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UiPeerList.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes an UiPeerList message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.UiPeerList
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.UiPeerList} UiPeerList
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UiPeerList.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.UiPeerList();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        if (!(message.peerIds && message.peerIds.length))
+                            message.peerIds = [];
+                        message.peerIds.push(reader.string());
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes an UiPeerList message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.UiPeerList
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.UiPeerList} UiPeerList
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UiPeerList.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an UiPeerList message.
+         * @function verify
+         * @memberof p2p.UiPeerList
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        UiPeerList.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.peerIds != null && message.hasOwnProperty("peerIds")) {
+                if (!Array.isArray(message.peerIds))
+                    return "peerIds: array expected";
+                for (var i = 0; i < message.peerIds.length; ++i)
+                    if (!$util.isString(message.peerIds[i]))
+                        return "peerIds: string[] expected";
+            }
+            return null;
+        };
+
+        /**
+         * Creates an UiPeerList message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.UiPeerList
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.UiPeerList} UiPeerList
+         */
+        UiPeerList.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.UiPeerList)
+                return object;
+            var message = new $root.p2p.UiPeerList();
+            if (object.peerIds) {
+                if (!Array.isArray(object.peerIds))
+                    throw TypeError(".p2p.UiPeerList.peerIds: array expected");
+                message.peerIds = [];
+                for (var i = 0; i < object.peerIds.length; ++i)
+                    message.peerIds[i] = String(object.peerIds[i]);
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from an UiPeerList message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.UiPeerList
+         * @static
+         * @param {p2p.UiPeerList} message UiPeerList
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        UiPeerList.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.arrays || options.defaults)
+                object.peerIds = [];
+            if (message.peerIds && message.peerIds.length) {
+                object.peerIds = [];
+                for (var j = 0; j < message.peerIds.length; ++j)
+                    object.peerIds[j] = message.peerIds[j];
+            }
+            return object;
+        };
+
+        /**
+         * Converts this UiPeerList to JSON.
+         * @function toJSON
+         * @memberof p2p.UiPeerList
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        UiPeerList.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for UiPeerList
+         * @function getTypeUrl
+         * @memberof p2p.UiPeerList
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        UiPeerList.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.UiPeerList";
+        };
+
+        return UiPeerList;
+    })();
+
+    p2p.UiTotalSupply = (function() {
+
+        /**
+         * Properties of an UiTotalSupply.
+         * @memberof p2p
+         * @interface IUiTotalSupply
+         * @property {string|null} [supplyString] UiTotalSupply supplyString
+         */
+
+        /**
+         * Constructs a new UiTotalSupply.
+         * @memberof p2p
+         * @classdesc Represents an UiTotalSupply.
+         * @implements IUiTotalSupply
+         * @constructor
+         * @param {p2p.IUiTotalSupply=} [properties] Properties to set
+         */
+        function UiTotalSupply(properties) {
+            if (properties)
+                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * UiTotalSupply supplyString.
+         * @member {string} supplyString
+         * @memberof p2p.UiTotalSupply
+         * @instance
+         */
+        UiTotalSupply.prototype.supplyString = "";
+
+        /**
+         * Creates a new UiTotalSupply instance using the specified properties.
+         * @function create
+         * @memberof p2p.UiTotalSupply
+         * @static
+         * @param {p2p.IUiTotalSupply=} [properties] Properties to set
+         * @returns {p2p.UiTotalSupply} UiTotalSupply instance
+         */
+        UiTotalSupply.create = function create(properties) {
+            return new UiTotalSupply(properties);
+        };
+
+        /**
+         * Encodes the specified UiTotalSupply message. Does not implicitly {@link p2p.UiTotalSupply.verify|verify} messages.
+         * @function encode
+         * @memberof p2p.UiTotalSupply
+         * @static
+         * @param {p2p.IUiTotalSupply} message UiTotalSupply message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UiTotalSupply.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.supplyString != null && Object.hasOwnProperty.call(message, "supplyString"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.supplyString);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified UiTotalSupply message, length delimited. Does not implicitly {@link p2p.UiTotalSupply.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof p2p.UiTotalSupply
+         * @static
+         * @param {p2p.IUiTotalSupply} message UiTotalSupply message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        UiTotalSupply.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes an UiTotalSupply message from the specified reader or buffer.
+         * @function decode
+         * @memberof p2p.UiTotalSupply
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {p2p.UiTotalSupply} UiTotalSupply
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UiTotalSupply.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.p2p.UiTotalSupply();
+            while (reader.pos < end) {
+                var tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.supplyString = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes an UiTotalSupply message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof p2p.UiTotalSupply
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {p2p.UiTotalSupply} UiTotalSupply
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        UiTotalSupply.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an UiTotalSupply message.
+         * @function verify
+         * @memberof p2p.UiTotalSupply
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        UiTotalSupply.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.supplyString != null && message.hasOwnProperty("supplyString"))
+                if (!$util.isString(message.supplyString))
+                    return "supplyString: string expected";
+            return null;
+        };
+
+        /**
+         * Creates an UiTotalSupply message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof p2p.UiTotalSupply
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {p2p.UiTotalSupply} UiTotalSupply
+         */
+        UiTotalSupply.fromObject = function fromObject(object) {
+            if (object instanceof $root.p2p.UiTotalSupply)
+                return object;
+            var message = new $root.p2p.UiTotalSupply();
+            if (object.supplyString != null)
+                message.supplyString = String(object.supplyString);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from an UiTotalSupply message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof p2p.UiTotalSupply
+         * @static
+         * @param {p2p.UiTotalSupply} message UiTotalSupply
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        UiTotalSupply.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            var object = {};
+            if (options.defaults)
+                object.supplyString = "";
+            if (message.supplyString != null && message.hasOwnProperty("supplyString"))
+                object.supplyString = message.supplyString;
+            return object;
+        };
+
+        /**
+         * Converts this UiTotalSupply to JSON.
+         * @function toJSON
+         * @memberof p2p.UiTotalSupply
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        UiTotalSupply.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for UiTotalSupply
+         * @function getTypeUrl
+         * @memberof p2p.UiTotalSupply
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        UiTotalSupply.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/p2p.UiTotalSupply";
+        };
+
+        return UiTotalSupply;
+    })();
+
     return p2p;
 })();
 

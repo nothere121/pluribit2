@@ -5,6 +5,8 @@ import chalk from 'chalk';
 import readline from 'readline';
 import util from 'node:util';
 import {printGlitchLogo} from './logo.js';
+import pkg from './src/p2p_pb.cjs';
+const { p2p } = pkg;
 
 // --- Setup ---
 const __filename = fileURLToPath(import.meta.url);
@@ -239,8 +241,23 @@ async function handleCommand(command, args) {
             break;
 
         case 'load':
-            if (args[0]) worker.postMessage({ action: 'loadWallet', walletId: args[0] });
-            else console.log('Usage: load <wallet_name>');
+            if (args[0]) {
+                // 1. Create the Protobuf request object
+                const request = p2p.JSToRust_Command.create({
+                    loadWallet: { walletId: args[0] }
+                });
+
+                // 2. Encode to Uint8Array
+                const requestBytes = p2p.JSToRust_Command.encode(request).finish();
+
+                // 3. Send the RAW BYTES to the worker
+                worker.postMessage({
+                    action: 'handle_command', // Use our new, single action
+                    payload: requestBytes 
+                });
+            } else {
+                console.log('Usage: load <wallet_name>');
+            }
             break;
 
         case 'connect':
@@ -295,7 +312,19 @@ async function handleCommand(command, args) {
             if (loadedWalletId === null) {
                 console.log(chalk.red('Error: No wallet loaded.'));
             } else {
-                worker.postMessage({ action: 'getBalance', walletId: loadedWalletId });
+                // 1. Create the Protobuf request object
+                const request = p2p.JSToRust_Command.create({
+                    balanceRequest: { walletId: loadedWalletId }
+                });
+                
+                // 2. Encode to Uint8Array
+                const requestBytes = p2p.JSToRust_Command.encode(request).finish();
+
+                // 3. Send the RAW BYTES to the worker
+                worker.postMessage({
+                    action: 'handle_command', // A new, single action type
+                    payload: requestBytes 
+                });
             }
             break;
             
