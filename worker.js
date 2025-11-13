@@ -217,7 +217,11 @@ global.commit_staged_reorg = async (...args) => {
 global.save_coinbase_index = async (...args) => native_db.save_coinbase_index(...args);
 global.delete_coinbase_index = async (...args) => native_db.delete_coinbase_index(...args);
 global.loadAllCoinbaseIndexes = async (...args) => native_db.loadAllCoinbaseIndexes(...args); // Returns JS object, OK
-// --- END: Changed global assignments ---
+
+global.save_block_filter = async (height, filter_json) => native_db.save_block_filter(height, filter_json);
+global.load_block_filter_range = async (start_height, end_height) => native_db.load_block_filter_range(start_height, end_height);
+global.delete_block_filter = async (height) => native_db.delete_block_filter(height);
+
 global.load_wallet_from_db = async (walletId) => native_db.loadWallet(walletId);
 global.save_wallet_to_db = async (walletId, walletJson) => native_db.saveWallet(walletId, walletJson);
 

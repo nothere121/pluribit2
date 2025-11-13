@@ -78,6 +78,9 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("save_coinbase_index", db::save_coinbase_index)?;
     cx.export_function("delete_coinbase_index", db::delete_coinbase_index)?;
     cx.export_function("loadAllCoinbaseIndexes", db::load_all_coinbase_indexes)?; // Also used by worker.js
+    cx.export_function("save_block_filter", db::save_block_filter)?;
+    cx.export_function("load_block_filter_range", db::load_block_filter_range)?;
+    cx.export_function("delete_block_filter", db::delete_block_filter)?;
     cx.export_function("save_reorg_marker", db::save_reorg_marker)?;
     cx.export_function("clear_reorg_marker", db::clear_reorg_marker)?;
     cx.export_function("check_incomplete_reorg", db::check_incomplete_reorg)?;

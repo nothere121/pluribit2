@@ -19,8 +19,7 @@ use serde::{Serialize, Deserialize};
 use crate::constants::{COINBASE_MATURITY, DEFAULT_VRF_THRESHOLD, INITIAL_VDF_ITERATIONS, MAX_FUTURE_DRIFT_MS};
 use crate::save_coinbase_index_to_db;
 
-use crate::{save_utxo_to_db, delete_utxo_from_db};
-
+use crate::{save_utxo_to_db, delete_utxo_from_db, save_block_filter_to_db};
 
 lazy_static! {
     pub static ref UTXO_SET: Mutex<HashMap<Vec<u8>, TransactionOutput>> =
@@ -28,6 +27,13 @@ lazy_static! {
     // commitment -> block_height (only for coinbase outputs)
     pub static ref COINBASE_INDEX: Mutex<HashMap<Vec<u8>, u64>> =
         Mutex::new(HashMap::new());
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockFilterEntry {
+    pub ephemeral_key: Vec<u8>,
+    pub view_tag: Vec<u8>,
+    pub commitment: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -472,6 +478,34 @@ impl Blockchain {
             { COINBASE_INDEX.lock().unwrap().insert(commitment, height); }
         }
         log("[BLOCK VALIDATION] UTXO set updated successfully");
+
+        // --- Generate and Save Block Filter ---
+        // We do this *after* all validation is complete
+        let mut filter_entries = Vec::<BlockFilterEntry>::new();
+        for tx in &block.transactions {
+            for output in &tx.outputs {
+                if let (Some(ephemeral_key), Some(view_tag)) = 
+                    (output.ephemeral_key.as_ref(), output.view_tag.as_ref()) 
+                {
+                    // Only add if it's a stealth output (has both key and tag)
+                    if !ephemeral_key.is_empty() && !view_tag.is_empty() {
+                        filter_entries.push(BlockFilterEntry {
+                            ephemeral_key: ephemeral_key.clone(),
+                            view_tag: view_tag.clone(),
+                            commitment: output.commitment.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Asynchronously save the filter to the DB
+        if !filter_entries.is_empty() {
+            log(&format!("[FILTER] Saving block filter for height {} with {} entries", *block.height, filter_entries.len()));
+            // This function is defined in `src/lib.rs`
+            save_block_filter_to_db(*block.height, &filter_entries).await
+                .map_err(|e| PluribitError::StateError(format!("Failed to save block filter: {:?}", e)))?;
+        }
 
         
         // === 4. Update Chain State ===

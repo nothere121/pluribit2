@@ -694,6 +694,100 @@ pub fn clear_all_utxos(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     Ok(cx.undefined())
 }
 
+/// (JS: save_block_filter(height, filter_json))
+/// Saves a block filter for a given height.
+/// Args: 0: height (JsValue), 1: filter_json (JsString)
+pub fn save_block_filter(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let height_js = cx.argument::<JsValue>(0)?;
+    let height = js_value_to_u64(&mut cx, height_js)?;
+    let filter_json = cx.argument::<JsString>(1)?.value(&mut cx);
+    
+    with_db(|db| {
+        // Pad height to 16 chars for correct lexicographical sorting by height
+        let key = format!("filter:{:0>16}", height); 
+        db.put(key.as_bytes(), filter_json.as_bytes())
+            .map_err(|e| format!("Failed to save block filter: {}", e))
+    }).or_else(|e| cx.throw_error(e))?;
+    
+    Ok(cx.undefined())
+}
+
+// --- ADD THIS NEW FUNCTION ---
+/// (JS: load_block_filter_range(startHeight, endHeight))
+/// Loads all block filters in a given height range.
+/// Args: 0: startHeight (JsValue), 1: endHeight (JsValue)
+/// Returns: Object map of { height_str: filter_json_str }
+pub fn load_block_filter_range(mut cx: FunctionContext) -> JsResult<JsObject> {
+    let start_height_js = cx.argument::<JsValue>(0)?;
+    let end_height_js = cx.argument::<JsValue>(1)?;
+    let start_height = js_value_to_u64(&mut cx, start_height_js)?;
+    let end_height = js_value_to_u64(&mut cx, end_height_js)?;
+
+    // Use the padded key for the start of the iterator range
+    let start_key = format!("filter:{:0>16}", start_height);
+    
+    let filters = with_db(|db| {
+        // This HashMap will store height as String -> filter as String
+        let mut result = HashMap::new();
+        let iter = db.iterator(IteratorMode::From(start_key.as_bytes(), Direction::Forward));
+        
+        for item in iter {
+            let (key, value) = item.map_err(|e| format!("Iterator error: {}", e))?;
+            let key_str = String::from_utf8_lossy(&key);
+            
+            // Stop iterating if we've gone past the filter prefix
+            if !key_str.starts_with("filter:") {
+                break;
+            }
+            
+            // Extract height from key: "filter:0000...00123" -> "123"
+            let height_str = match key_str.strip_prefix("filter:") {
+                Some(h_str) => h_str.trim_start_matches('0').to_string(), // Get "123"
+                None => continue,
+            };
+            
+            // Parse the height to check if we've passed the end
+            let height = height_str.parse::<u64>().unwrap_or(0);
+            if height > end_height {
+                break;
+            }
+            
+            // Store the raw JSON string
+            let filter_json = String::from_utf8_lossy(&value).to_string();
+            // Use the un-padded height string as the key
+            result.insert(height_str, filter_json); 
+        }
+        Ok(result)
+    }).or_else(|e: String| cx.throw_error(e))?;
+    
+    // Serialize the HashMap<String, String> to a JS Object { "123": "[...]", "124": "[...]" }
+    let js_object = cx.empty_object();
+    for (height_str, filter_json) in filters {
+        let js_height_str = cx.string(height_str);
+        let js_filter_str = cx.string(filter_json);
+        js_object.set(&mut cx, js_height_str, js_filter_str)?;
+    }
+    
+    Ok(js_object)
+}
+
+// --- ADD THIS NEW FUNCTION ---
+/// (JS: delete_block_filter(height))
+/// Deletes a block filter for a given height (used in reorgs).
+/// Args: 0: height (JsValue)
+pub fn delete_block_filter(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let height_js = cx.argument::<JsValue>(0)?;
+    let height = js_value_to_u64(&mut cx, height_js)?;
+    
+    with_db(|db| {
+        let key = format!("filter:{:0>16}", height);
+        db.delete(key.as_bytes())
+            .map_err(|e| format!("Failed to delete block filter: {}", e))
+    }).or_else(|_| Ok(()))?; // Ignore not found errors
+    
+    Ok(cx.undefined())
+}
+
 /// (JS: save_coinbase_index(commitmentHex, height))
 /// Saves a coinbase index entry.
 /// Args: 0: commitmentHex (JsString), 1: height (JsValue: BigInt, Number, or String)

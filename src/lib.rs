@@ -10,7 +10,7 @@ use sha2::{Sha256, Digest};
 use curve25519_dalek::{ristretto::{CompressedRistretto, RistrettoPoint}, scalar::Scalar, traits::Identity};
 use crate::atomic_swap::{AtomicSwap, SwapState};
 use crate::payment_channel::{MuSigKernelMetadata, PaymentChannel, ChannelState, Party};
-use crate::blockchain::Blockchain;
+use crate::blockchain::{Blockchain, BlockFilterEntry};
 use crate::vrf::VrfProof;
 use crate::constants::DIFFICULTY_ADJUSTMENT_INTERVAL;
 use crate::wallet::Wallet;
@@ -235,7 +235,16 @@ extern "C" {
 
     #[wasm_bindgen(js_name = "loadAllCoinbaseIndexes")]
     fn load_all_coinbase_indexes_raw() -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = "save_block_filter")]
+    fn save_block_filter_raw(height: u64, filter_json: &str) -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = "load_block_filter_range")]
+    fn load_block_filter_range_raw(start_height: u64, end_height: u64) -> js_sys::Promise;
     
+    #[wasm_bindgen(js_name = "delete_block_filter")]
+    fn delete_block_filter_raw(height: u64) -> js_sys::Promise;
+
     #[wasm_bindgen(js_name = postRustCommands)]
     fn post_rust_commands_raw(response_bytes: Vec<u8>);
     
@@ -749,6 +758,35 @@ async fn load_all_coinbase_indexes_from_db() -> Result<HashMap<Vec<u8>, u64>, Js
         rust_map.insert(commitment_bytes, *wasm_height);
     }
     Ok(rust_map)
+}
+
+/// (Internal) Saves a block's filter to the DB via the JS bridge.
+pub async fn save_block_filter_to_db(height: u64, filter: &Vec<BlockFilterEntry>) -> Result<(), JsValue> {
+    // Serialize the filter to a JSON string
+    let filter_json = serde_json::to_string(filter)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    
+    // Call the raw JS function and await its promise
+    wasm_bindgen_futures::JsFuture::from(save_block_filter_raw(height, &filter_json)).await?;
+    Ok(())
+}
+
+/// (Internal) Deletes a block's filter from the DB via the JS bridge.
+pub async fn delete_block_filter_from_db(height: u64) -> Result<(), JsValue> {
+    wasm_bindgen_futures::JsFuture::from(delete_block_filter_raw(height)).await?;
+    Ok(())
+}
+
+/// (Public WASM Export) Loads a range of block filters from the DB.
+/// Returns a JSValue (representing a JS object: { "height": "[...entries...]", ... })
+#[wasm_bindgen]
+pub async fn load_block_filter_range(start_height: u64, end_height: u64) -> Result<JsValue, JsValue> {
+    let promise = load_block_filter_range_raw(start_height, end_height);
+    let result_js = wasm_bindgen_futures::JsFuture::from(promise).await?;
+    
+    // The result from JS is already a serialized object/map.
+    // We pass it directly back to the JS caller.
+    Ok(result_js)
 }
 
 // helper
@@ -2935,11 +2973,17 @@ pub async fn plan_reorg_for_tip(tip_hash: String) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&out).map_err(|e| e.into())
 }
 
-// CRITICAL FIX #2: Helper types for lock-free change tracking
+// Helper types for lock-free change tracking
 #[derive(Clone)]
 enum UtxoChange {
     Add(Vec<u8>, TransactionOutput),
     Remove(Vec<u8>),
+}
+
+#[derive(Clone)]
+enum FilterChange {
+    Add(u64, Vec<BlockFilterEntry>),
+    Remove(u64),
 }
 
 #[derive(Clone)]
@@ -2964,6 +3008,7 @@ struct StateSnapshot {
 struct ReorgChanges {
     utxo_changes: Vec<UtxoChange>,
     coinbase_changes: Vec<CoinbaseChange>,
+    filter_changes: Vec<FilterChange>,
     wallet_updates: Vec<WalletUpdate>,
     mempool_txs_to_add: Vec<Transaction>,
     new_height: u64,
@@ -2979,6 +3024,7 @@ impl ReorgChanges {
         Self {
             utxo_changes: Vec::new(),
             coinbase_changes: Vec::new(),
+            filter_changes: Vec::new(),
             wallet_updates: Vec::new(),
             mempool_txs_to_add: Vec::new(),
             new_height: 0,
@@ -3134,6 +3180,9 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
         log(&format!("[REORG] Planning detach of block #{} ({}...)", 
             block.height, &block.hash()[..12]));
 
+        //plan filter deletion
+        changes.filter_changes.push(FilterChange::Remove(*block.height));
+        
         // Collect outputs to remove
         let block_outputs: HashSet<Vec<u8>> = block.transactions.iter()
             .flat_map(|tx| tx.outputs.iter().map(|o| o.commitment.clone()))
@@ -3210,6 +3259,29 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
         
         log(&format!("[REORG] Planning attach of block #{} ({}...)", 
             block.height, &block.hash()[..12]));
+
+        //Generate filter for attached block
+        let mut filter_entries = Vec::<BlockFilterEntry>::new();
+        for tx in &block.transactions {
+            for output in &tx.outputs {
+                if let (Some(ephemeral_key), Some(view_tag)) = 
+                    (output.ephemeral_key.as_ref(), output.view_tag.as_ref()) 
+                {
+                    if !ephemeral_key.is_empty() && !view_tag.is_empty() {
+                        filter_entries.push(BlockFilterEntry {
+                            ephemeral_key: ephemeral_key.clone(),
+                            view_tag: view_tag.clone(),
+                            commitment: output.commitment.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        if !filter_entries.is_empty() {
+            log(&format!("[REORG] Planning filter for block #{}: {} entries", *block.height, filter_entries.len()));
+            changes.filter_changes.push(FilterChange::Add(*block.height, filter_entries));
+        }
+
 
         for tx in &block.transactions {
             // Remove inputs
@@ -3302,6 +3374,23 @@ pub async fn atomic_reorg(plan_js: JsValue) -> Result<(), JsValue> {
             }
         }
     } // Coinbase lock released
+    
+    //Step 4.2b: Apply filter changes (in database only)
+    {
+        for change in &changes.filter_changes {
+            match change {
+                FilterChange::Add(height, entries) => {
+                    // This function is defined later in this file
+                    save_block_filter_to_db(*height, entries).await?;
+                }
+                FilterChange::Remove(height) => {
+                    // This function is defined later in this file
+                    delete_block_filter_from_db(*height).await.ok(); // Ignore errors
+                }
+            }
+        }
+        log("[REORG] Applied filter changes to database");
+    } // No lock needed here
     
     // Step 4.3: Apply wallet updates
     {
