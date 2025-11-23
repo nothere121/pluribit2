@@ -263,6 +263,25 @@ message PaymentAcceptance {
     uint64 accepted_at = 5;
 }
 
+// 1. The Request
+message GetBlockFiltersRequest {
+  uint64 start_height = 1;
+  uint64 end_height = 2;
+  string request_id = 3;
+}
+
+// 2. The Data (Wraps the JSON/bytes you already store)
+message BlockFilterData {
+  uint64 height = 1;
+  bytes filter_entries = 2; // The raw bytes from load_block_filter_range
+}
+
+// 3. The Response
+message BlockFiltersResponse {
+  repeated BlockFilterData filters = 1;
+  string request_id = 2;
+}
+
 // Top-level message wrapper.
 message P2pMessage {
   oneof payload {
@@ -289,6 +308,10 @@ message P2pMessage {
     PaymentAcceptance channel_pay_accept = 17;
     ChannelNonce channel_close_nonce = 18;
     ChannelPartialSig channel_close_sig = 19;
+    
+    //compact block filters
+    GetBlockFiltersRequest get_block_filters = 20;        
+    BlockFiltersResponse block_filters_response = 21;         
   }
 }
 // ===================================================================

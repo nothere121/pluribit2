@@ -2426,22 +2426,50 @@ async function requestAllHashes(peerId, startHeight) {
 
 async function setupMessageHandlers() {
     const { p2p } = workerState;
+    const TOPIC_FILTERS = `/pluribit/${process.env.PLURIBIT_NET || 'mainnet'}/filters/1.0.0`;
+    
+    await p2p.subscribe(TOPICS.BLOCKS, async (block) => {
+        // The received message IS the block object from the Protobuf payload.
+        // We just need to validate it has the properties of a block and process it.
+        if (block && typeof block.height !== 'undefined') {
+            log(`Received full block #${block.height} from network`, 'info');
+            await handleRemoteBlockDownloaded({ block: block });
+        } else {
+            log(`[WARN] Received an invalid or empty message on the BLOCKS topic.`, 'warn');
+        }
+    });
 
-await p2p.subscribe(TOPICS.BLOCKS, async (block) => {
-    // The received message IS the block object from the Protobuf payload.
-    // We just need to validate it has the properties of a block and process it.
-    if (block && typeof block.height !== 'undefined') {
-        log(`Received full block #${block.height} from network`, 'info');
-        await handleRemoteBlockDownloaded({ block: block });
-    } else {
-        log(`[WARN] Received an invalid or empty message on the BLOCKS topic.`, 'warn');
-    }
-});
+    // 2. Listen for Requests
+    await p2p.subscribe(TOPIC_FILTERS, async (message, { from }) => {
+        if (message.payload === 'getBlockFilters') {
+            const { startHeight, endHeight, requestId } = message.getBlockFilters;
+            
+            // Limit range to prevent DoS
+            if (endHeight - startHeight > 1000) return;
 
+            try {
+                // Use the existing native function 
+                // This returns a JS object: { "100": "[entry...]", "101": "[entry...]" }
+                const filtersMap = await global.load_block_filter_range(startHeight, endHeight);
+                
+                const filtersList = Object.entries(filtersMap).map(([h, json]) => ({
+                    height: BigInt(h),
+                    filterEntries: new TextEncoder().encode(json) // Send raw bytes
+                }));
 
-// (Note: You will need to define new Protobuf messages for these payloads)
-    // (For now, we assume the payload is the raw JSON object for simplicity)
-
+                // Respond
+                await workerState.p2p.publish(TOPIC_FILTERS, {
+                    blockFiltersResponse: {
+                        filters: filtersList,
+                        requestId
+                    }
+                });
+            } catch (e) {
+                log(`Failed to serve filters: ${e.message}`, 'error');
+            }
+        }
+    });
+    
     await p2p.subscribe(TOPICS.CHANNEL_PROPOSE, async (proposal, { from }) => {
         await handleChannelPropose(proposal, from);
     });

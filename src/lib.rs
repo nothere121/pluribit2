@@ -777,6 +777,37 @@ pub async fn delete_block_filter_from_db(height: u64) -> Result<(), JsValue> {
     Ok(())
 }
 
+#[wasm_bindgen]
+pub fn wallet_check_filter(wallet_json: &str, filter_entries_json: &str) -> Result<bool, JsValue> {
+    // 1. Load Wallet
+    let wallet: Wallet = serde_json::from_str(wallet_json)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    // 2. Load Filter Entries (reusing your existing struct from blockchain.rs [cite: 747])
+    let entries: Vec<BlockFilterEntry> = serde_json::from_str(filter_entries_json)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    // 3. Check View Tags (Fast Match)
+    for entry in entries {
+        if let Ok(compressed_point) = CompressedRistretto::from_slice(&entry.ephemeral_key) {
+            if let Some(r_point) = compressed_point.decompress() {
+                // Recalculate shared secret s = Hs(r * P_scan)
+                let apr = (&r_point * &wallet.scan_priv).compress().to_bytes();
+                let s_prime = stealth::hash_to_scalar(b"Stealth", &apr);
+                let expected_view_tag = stealth::derive_view_tag(&s_prime);
+
+                // Compare against the tag in the filter 
+                // entry.view_tag is Vec<u8>, usually 1 byte
+                if !entry.view_tag.is_empty() && entry.view_tag[0] == expected_view_tag {
+                    return Ok(true); // Match found! Request full block.
+                }
+            }
+        }
+    }
+
+    Ok(false)
+}
+
 /// (Public WASM Export) Loads a range of block filters from the DB.
 /// Returns a JSValue (representing a JS object: { "height": "[...entries...]", ... })
 #[wasm_bindgen]
