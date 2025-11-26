@@ -399,6 +399,18 @@ message RustToJs_CommandBatch {
   repeated RustCommand commands = 1;
 }
 
+message ControlMining {
+  bool start = 1;
+  // All fields below are required if start=true
+  uint64 height = 2;
+  bytes miner_pubkey = 3;
+  bytes miner_secret_key = 4;
+  string prev_hash = 5;
+  bytes vrf_threshold = 6;
+  uint64 vdf_iterations = 7;
+  uint64 job_id = 8;
+}
+
 // A single command for the "dumb" JS layer to execute.
 message RustCommand {
   oneof command {
@@ -416,6 +428,7 @@ message RustCommand {
     UiWalletLoaded ui_wallet_loaded = 9;
     UiPeerList ui_peer_list = 10;
     UiTotalSupply ui_total_supply = 11;
+    ControlMining control_mining = 12; 
   }
 }
 
