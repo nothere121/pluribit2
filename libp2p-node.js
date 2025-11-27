@@ -810,7 +810,7 @@ export class PluribitP2P {
                 webRTC(),
                 // Conditionally configure relay client
                 circuitRelayTransport({
-                    discoverRelays: this.isBootstrap ? 0 : 1
+                    discoverRelays: this.isBootstrap ? 0 : 2
                 })
             ],
             connectionEncrypters: [noise()],
@@ -823,7 +823,7 @@ export class PluribitP2P {
                 dht: kadDHT({
                     // Use the public IPFS DHT protocol so we can use content routing on the open network
                     protocol: '/ipfs/kad/1.0.0',
-                    clientMode: !this.isBootstrap,
+                    clientMode: false,
                     // @ts-ignore - validators API varies across versions
                     validators: {
                         pluribit: {
@@ -1297,6 +1297,14 @@ if (this.isBootstrap) {
         this.node.addEventListener('peer:connect', async (evt) => {
             const peerId = evt.detail.toString();
             this.log(`[P2P] Connected to ${peerId}`, 'debug');
+
+        // If we connected to a bootstrap node, trigger discovery immediately
+            const isBootstrap = this.config.bootstrap.some(addr => addr.includes(peerId));
+            if (isBootstrap) {
+                this.log('[P2P] Connected to bootstrap, triggering immediate rendezvous...', 'info');
+                this._announceAndDiscoverProviders().catch(e => {});
+            }
+    
             setTimeout(() => { try { bootstrapSync() } catch(e){} }, 3000); // Trigger a sync check 3s after ANY new peer connects
             // Give the connection a moment to stabilize before sending a challenge.
             setTimeout(async () => {
