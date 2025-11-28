@@ -218,7 +218,7 @@ export class PluribitP2P {
         const short = peerIdStr.slice(-8);
         this.log(`[P2P] ⚡ BANNED peer ${short} — ${reason}`, 'warn');
 
-        const banMs = permanent ? 365 * 24 * 60 * 60 * 1000 : 30 * 60 * 1000;
+               const banMs = permanent ? Number.MAX_SAFE_INTEGER : 30 * 60 * 1000;
         this._badBlockPeers.set(peerIdStr, {
             count: 999,
             bannedUntil: Date.now() + banMs
@@ -565,13 +565,16 @@ export class PluribitP2P {
                 this._updateVerificationState(peerId, { powSolved: true, isSubscribed: undefined });
                 this._peerChallenges.delete(peerId);
                 this.log(`[P2P] ✓ Peer ${peerId} solved challenge (difficulty: ${currentDifficulty.length})`, 'success');
-                
-                // --- NEW: On success, reset failure count for this IP ---
-                if (ip) {
-                    this._ipChallengeTracker.delete(ip);
-                }
-                // --- END NEW ---
 
+                // <<< IF THIS PEER WAS BANNED, WASTE THEIR TIME THEN HANG UP >>>
+                if (this._badBlockPeers.has(peerId)) {
+                    this.log(`[P2P] 🖕 Banned peer ${peerId.slice(-8)} solved hard PoW — hanging up anyway`, 'warn');
+                    try { await this.node.hangUp(peerId); } catch {}
+                    return false;
+                }
+
+                // reset IP failures on success
+                if (ip) this._ipChallengeTracker.delete(ip);
                 return true;
             }
 
@@ -1378,6 +1381,14 @@ if (this.isBootstrap) {
         
         this.node.addEventListener('peer:connect', async (evt) => {
             const peerId = evt.detail.toString();
+    
+    // <<< INSTANT REJECT IF PERMANENTLY BANNED >>>
+            if (this.isPeerBannedForBadBlocks(peerId)) {
+                this.log(`[P2P] ⚡ Rejecting reconnection from permanently banned peer ${peerId.slice(-8)}`, 'warn');
+                try { await this.node.hangUp(peerId); } catch {}
+                return;
+            }
+    
             this.log(`[P2P] Connected to ${peerId}`, 'debug');
 
         // If we connected to a bootstrap node, trigger discovery immediately
@@ -1391,12 +1402,19 @@ if (this.isBootstrap) {
             // Give the connection a moment to stabilize before sending a challenge.
             setTimeout(async () => {
                 try {
+                    // <<< IF PEER IS IN BAD-BLOCK LIST (even temporary), make challenge brutal >>>
+                    const badEntry = this._badBlockPeers.get(peerId);
+                    if (badEntry && badEntry.count >= 1) {
+                        // 20+ leading zeros = attacker burns serious CPU
+                        this._currentChallengeDifficulty = '0'.repeat(20 + Math.min(badEntry.count, 10));
+                        this.log(`[P2P] Bad peer ${peerId.slice(-8)} gets ${this._currentChallengeDifficulty.length} zero difficulty`, 'warn');
+                    }
+
                     await this.sendDirectChallenge(peerId);
                 } catch (e) {
-                    const err = /** @type {Error} */ (e);
-                    this.log(`[P2P] Challenge error for ${peerId}: ${err.message}`, 'error');
+                    // ignore
                 }
-            }, 2000); // Increased delay to 2 seconds
+            }, 2000);
         });
         
         this.node.addEventListener('peer:disconnect', (evt) => {
