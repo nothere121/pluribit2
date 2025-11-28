@@ -1852,8 +1852,8 @@ log(`[JS PRE-SAVE MINED] Block #${block?.height} Coinbase output 0 viewTag: ${bl
 
 
 
-async function handleRemoteBlockDownloaded({ block }) {
-    log(`[JS RECEIVED BLOCK] Block #${block?.height} Coinbase output 0 viewTag: ${block?.transactions?.[0]?.outputs?.[0]?.viewTag ?? 'N/A'}`, 'debug'); // <-- ADD THIS LINE (at the top)
+async function handleRemoteBlockDownloaded({ block, peerId }) {
+    log(`[JS RECEIVED BLOCK] Block #${block?.height} Coinbase output 0 viewTag: ${block?.transactions?.[0]?.outputs?.[0]?.viewTag ?? 'N/A'}`, 'debug'); 
     const release = await globalMutex.acquire();
     try {
         const currentHeight = (await pluribit.get_blockchain_state()).current_height;
@@ -1874,25 +1874,21 @@ async function handleRemoteBlockDownloaded({ block }) {
             return;
         }
 
-        log(`[DEBUG] Processing block #${block.height} hash: ${block.hash.substring(0,12)}...`);
 
         try {
             // RATIONALE: Encode the JavaScript block object into Protobuf binary format.
             // This is required by the new, more secure 'ingest_block_bytes' Rust function.
-            const blockBytes = p2p.Block.encode(block).finish();
+            let blockBytes = p2p.Block.encode(block).finish();
 
+            // --- FIX (Serialization): Ensure pure Uint8Array for Wasm ---
+            if (blockBytes.buffer) {
+                blockBytes = new Uint8Array(blockBytes.buffer, blockBytes.byteOffset, blockBytes.byteLength);
+            }
 
-            // RATIONALE (BUGFIX): The `ingest_block_bytes` function returns a `JsValue`
-            // from Rust, which `wasm-bindgen` automatically converts into a plain JavaScript
-            // object. The original code incorrectly tried to deserialize this object again
-            // using a non-existent `serde_wasm_bindgen.fromValue` function, causing the TypeError.
-            //
-            // The fix is to use the returned JavaScript object directly, as it is already
-            // in the correct format.
-            // Wrap block ingestion with error handling
-            let result;
+           let result;
             try {
-                result = await wasm.ingest_block_bytes(blockBytes);
+                // Ensure we await the async Rust function
+                result = await pluribit.ingest_block_bytes(blockBytes);
             } catch (e) {
                 // Deserialize failed - ban peer
                 if (e.message && e.message.includes('Deserialize error')) {
@@ -1922,6 +1918,31 @@ async function handleRemoteBlockDownloaded({ block }) {
               }
               return; // wait for parent
             }
+
+
+       
+            if (t === 'invalid') {
+                        const reason = result.reason || 'Unknown consensus failure';
+                        log(`[CONSENSUS] 🛡️ Rust rejected block: ${reason}`, 'warn');
+
+                        if (peerId && workerState.p2p) {
+                            // 1. Trigger the Bad Block Counter from libp2p-node.js
+                            // This increments the count and bans if > 3 
+                            const isBanned = workerState.p2p.recordBadBlock(peerId, block.hash);
+                            
+                            if (isBanned) {
+                                log(`[P2P] ⚡ Peer ${peerId.slice(-6)} banned by Consensus Shield logic.`, 'warn');
+                            }
+
+                            // 2. Trigger Hash Poisoning for severe violations
+                            // If it's a signature failure or double spend, poison the hash globally [cite: 331]
+                            if (reason.includes("signature") || reason.includes("Double-spend")) {
+                                log(`[CONSENSUS] ☠️ Poisoning hash ${block.hash.substring(0,12)}...`, 'warn');
+                                workerState.p2p.poisonHash(block.hash, reason, peerId);
+                            }
+                        }
+                        return;
+                }
 
             if (t === 'acceptedandextended') {
               try {
@@ -2256,6 +2277,12 @@ blockRequestCleanupTimer = setInterval(() => {
                         continue;
                     }
 
+                    const myPeerId = workerState.p2p.node.peerId.toString();
+                    if (peerId === myPeerId) {
+                        // Silently skip our own address
+                        continue;
+                    }
+
                     // Check if we are connected
                     if (!connectedPeerSet.has(peerId)) {
                         log(`[WATCHDOG] Not connected to bootstrap peer ${peerId}. Attempting to dial...`, 'warn');
@@ -2543,12 +2570,12 @@ async function setupMessageHandlers() {
     const { p2p } = workerState;
     const TOPIC_FILTERS = `/pluribit/${process.env.PLURIBIT_NET || 'mainnet'}/filters/1.0.0`;
     
-    await p2p.subscribe(TOPICS.BLOCKS, async (block) => {
+await p2p.subscribe(TOPICS.BLOCKS, async (block, msg) => { // <-- ADD msg here
         // The received message IS the block object from the Protobuf payload.
-        // We just need to validate it has the properties of a block and process it.
         if (block && typeof block.height !== 'undefined') {
             log(`Received full block #${block.height} from network`, 'info');
-            await handleRemoteBlockDownloaded({ block: block });
+            // FIX: Pass the peerId (msg.from) to the handler
+            await handleRemoteBlockDownloaded({ block: block, peerId: msg.from }); 
         } else {
             log(`[WARN] Received an invalid or empty message on the BLOCKS topic.`, 'warn');
         }
