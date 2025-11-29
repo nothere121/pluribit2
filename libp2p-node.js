@@ -26,7 +26,6 @@ import nacl from 'tweetnacl';
 import fs from 'fs/promises';
 import path from 'path';
 import { peerIdFromString } from '@libp2p/peer-id';
-import { createFromPrivKey } from '@libp2p/peer-id-factory';
 import { unmarshalPrivateKey } from '@libp2p/crypto/keys';
 
 // Rationale: In an ES Module project, CommonJS files must be loaded using `createRequire`.
