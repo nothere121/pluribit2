@@ -2258,71 +2258,89 @@ blockRequestCleanupTimer = setInterval(() => {
         log(`[MESH] Failed to parse bootstrap addresses: ${e.message}`, 'error');
     }
 
-    setInterval(safe(async () => {
+ setInterval(safe(async () => {
         if (!workerState.p2p || !workerState.p2p.node) return;
 
         const myPeerId = workerState.p2p.node.peerId.toString();
         const connectedPeers = workerState.p2p.node.getConnections().map(c => c.remotePeer.toString());
         const connectedSet = new Set(connectedPeers);
+        
+        // 1. PEX (Peer Exchange) - The missing piece
+        // Pick 2 random connected peers and swap address books
+        if (connectedPeers.length > 0) {
+            const peersToPex = connectedPeers.sort(() => Math.random() - 0.5).slice(0, 2);
+            for (const p of peersToPex) {
+                workerState.p2p.exchangePeers(p);
+            }
+        }
 
-        // --- 1. BOOTSTRAP KEEPALIVE (Priority 1) ---
+        // 2. BOOTSTRAP RECONNECT
+        // Ensure we always maintain a line to the boss
         for (const addr of bootstrapAddresses) {
             try {
                 const peerId = addr.getPeerId();
-                if (!peerId || peerId === myPeerId) continue;
-
-                if (!connectedSet.has(peerId)) {
-                    log(`[MESH] Lost connection to Bootstrap ${peerId.slice(-6)}. Redialing...`, 'warn');
-                    await workerState.p2p.node.dial(addr);
+                if (peerId && !connectedSet.has(peerId) && peerId !== myPeerId) {
+                    // Only redial if we are mostly empty
+                    if (connectedPeers.length < CONFIG.P2P.MIN_CONNECTIONS) {
+                        await workerState.p2p.node.dial(addr);
+                    }
                 }
-            } catch (e) { /* ignore dial errors, we will retry next tick */ }
+            } catch (e) {}
         }
 
-        // --- 2. MESH FORMATION (Priority 2) ---
-        // If we have slots available, try to connect to peers we know about but aren't connected to.
+        // 3. AGGRESSIVE MESH EXPANSION
         const MAX_CONNS = CONFIG.P2P.MAX_CONNECTIONS || 50;
         
+        // If we have room, dial known peers actively
         if (connectedPeers.length < MAX_CONNS) {
             const knownPeers = await workerState.p2p.getKnownPeers();
-            // Filter out self and currently connected
+            
+            // Filter: Not self, Not already connected
             const candidates = knownPeers.filter(id => id !== myPeerId && !connectedSet.has(id));
             
-            // Shuffle candidates to ensure random mesh topology
+            // Randomize to avoid everyone dialing the same list in order
             candidates.sort(() => Math.random() - 0.5);
 
+            // Dial up to 3 new peers per tick to fill slots
             const slotsAvailable = MAX_CONNS - connectedPeers.length;
-            const peersToDial = candidates.slice(0, slotsAvailable);
+            const peersToDial = candidates.slice(0, Math.min(slotsAvailable, 3));
 
             if (peersToDial.length > 0) {
-                log(`[MESH] Dialing ${peersToDial.length} known peers to expand mesh...`, 'debug');
+                log(`[MESH] Dialing ${peersToDial.length} peers to expand mesh (Current: ${connectedPeers.length}/${MAX_CONNS})...`, 'debug');
                 for (const peerId of peersToDial) {
                     try {
                         // We rely on the address book having the multiaddr
-                        await workerState.p2p.node.dial(multiaddr(peerId) ? peerId : peerId); // Libp2p handles lookup
+                        await workerState.p2p.node.dial(multiaddr(peerId) ? peerId : peerId); 
                     } catch (e) {
-                        // Peer might be offline, ignore
+                        // Peer likely offline, ignore
                     }
                 }
             }
         }
 
-        // --- 3. ACTIVE PING / KEEPALIVE (Priority 3) ---
-        // Iterate ALL connected peers and send a ping.
+        // 4. PRUNING / HEALTH CHECK
+        // If we are OVER the limit, prune the worst performing peers
+        if (connectedPeers.length > MAX_CONNS) {
+            const peersToPrune = connectedPeers.slice(MAX_CONNS); // Simple LIFO for now, or implement scoring
+            for (const p of peersToPrune) {
+                log(`[MESH] Pruning excess connection: ${p.slice(-6)}`, 'debug');
+                try { await workerState.p2p.node.hangUp(p); } catch {}
+            }
+        }
+
+        // 5. KEEPALIVE via Re-Verify (replaces unreliable libp2p ping)
         for (const peerId of connectedPeers) {
             try {
-                // p2p.pingPeer uses the libp2p ping service (application layer ping)
-                const latency = await workerState.p2p.pingPeer(peerId);
+                const isAlive = await workerState.p2p.reVerifyPeer(peerId, 5000);
                 
-                // If latency is extremely high, we might consider them unstable, but for now just log debug
-                if (latency > 5000) {
-                    log(`[MESH] ⚠️ High latency peer: ${peerId.slice(-6)} (${latency}ms)`, 'warn');
+                if (!isAlive) {
+                    log(`[MESH] Peer ${peerId.slice(-6)} failed re-verify. Disconnecting zombie.`, 'warn');
+                    try {
+                        await workerState.p2p.node.hangUp(peerId);
+                    } catch (err) {}
                 }
             } catch (e) {
-                log(`[MESH] Peer ${peerId.slice(-6)} failed ping. Disconnecting zombie socket.`, 'warn');
-                try {
-                    // Force disconnect if ping fails - this clears "ghost" peers
-                    await workerState.p2p.node.hangUp(peerId);
-                } catch (err) {}
+                log(`[MESH] Error re-verifying ${peerId.slice(-6)}: ${e.message}`, 'debug');
             }
         }
 
@@ -2565,7 +2583,7 @@ async function requestAllHashes(peerId, startHeight) {
             hashes: [], 
             resolve, 
             reject, 
-            peerId,
+            peerId: peerId.toString(), 
             lastChunkTime: Date.now() // Track when we last heard from them
         });
     } finally {
@@ -2866,6 +2884,15 @@ await p2p.subscribe(TOPICS.SWAP_PROPOSE, async (proposal, { from }) => {
             const request = syncState.hashRequestState.get(requestId);
             if (!request) {
                 return; // Ignore stale or unknown responses
+            }
+
+            // FIX: Only accept responses from the peer we actually asked
+            // Without this check, ANY peer can respond to our request (gossipsub broadcasts to all),
+            // and a peer at height 0 will send empty hashes, making us think we're synced.
+            const fromStr = from.toString();
+            if (fromStr !== request.peerId) {
+                log(`[SYNC] Ignoring hash response from ${fromStr.slice(-6)} (expected ${request.peerId.slice(-6)})`, 'debug');
+                return;
             }
         
             // --- RATIONALE: Enforce a hard limit on total hashes received ---

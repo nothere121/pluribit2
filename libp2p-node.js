@@ -93,9 +93,10 @@ export const TOPICS = {
   CHANNEL_CLOSE_SIG: `/pluribit/${NET}/channel-close-sig/1.0.0`,
   SWAP_PROPOSE: `/pluribit/${NET}/swap-propose/1.0.0`,
   SWAP_RESPOND: `/pluribit/${NET}/swap-respond/1.0.0`,
-  SWAP_ALICE_ADAPTOR_SIG: `/pluribit/${NET}/swap-alice-sig/1.0.0`
+  SWAP_ALICE_ADAPTOR_SIG: `/pluribit/${NET}/swap-alice-sig/1.0.0`,
 };
 
+const PEX_PROTOCOL = `/pluribit/${NET}/pex/1.0.0`;
 export class PluribitP2P {
     /**
      * @param {(msg: string, level?: string) => void} log
@@ -1071,7 +1072,7 @@ if (this.node.peerId.toString() !== peerId.toString()) {
                 // @ts-ignore - protobuf message property access
                 const { challenge, from, difficulty} = data;
 
-                if (!difficulty || !challenge) {
+                if (difficulty === undefined || difficulty === null || !challenge) {
                     this.log(`[P2P] ✗ Peer ${from} sent an invalid challenge. Hanging up.`, 'warn');
                     try { await stream.close(); } catch {}
                     return;
@@ -1107,7 +1108,7 @@ if (this.node.peerId.toString() !== peerId.toString()) {
                 this.log(`[P2P] Error handling challenge protocol: ${err.message}`, 'error');
             }
         });      
-        
+        await this.node.handle(PEX_PROTOCOL, this._handlePexRequest.bind(this));
         // Register protocol for direct block transfers
         const BLOCK_TRANSFER_PROTOCOL = `/pluribit/${NET}/block-transfer/1.0.0`;
         await this.node.handle(BLOCK_TRANSFER_PROTOCOL, async ({ stream, connection }) => {
@@ -1942,17 +1943,60 @@ if (this.isBootstrap) {
         return peers;
     }
 
-    /**
-     * Ping a specific peer to check latency and liveness.
-     * @param {string} peerId 
-     * @returns {Promise<number>} Latency in ms
-     */
-    async pingPeer(peerId) {
-        if (!this.node) throw new Error("Node not started");
-        // The ping service returns the latency in ms
-        const latency = await this.node.services.ping.ping(multiaddr(peerId) ? peerId : peerId);
-        return latency;
+/**
+ * Lightweight keepalive using challenge protocol with difficulty=0 (instant solve).
+ * Returns true if peer is responsive, false if dead.
+ * @param {string} peerId
+ * @param {number} timeoutMs
+ * @returns {Promise<boolean>}
+ */
+async reVerifyPeer(peerId, timeoutMs = 5000) {
+    try {
+        if (!this.node) return false;
+        
+        const connections = this.node.getConnections();
+        const connection = connections.find(c => c.remotePeer.toString() === peerId);
+        if (!connection) return false;
+        
+        const challenge = crypto.randomBytes(16).toString('hex');
+        
+        // Use AbortController for timeout
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        
+        try {
+            const stream = await connection.newStream('/pluribit/challenge/1.0.0', {
+                signal: controller.signal
+            });
+            
+            // Difficulty "" means any hash is valid - instant solve
+            const message = p2p.Challenge.create({ 
+                challenge, 
+                from: this.node.peerId.toString(),
+                difficulty: "" // No PoW required - just connectivity check
+            });
+            
+            await pipe([p2p.Challenge.encode(message).finish()], stream.sink);
+            
+            // Wait for any response - if they respond, they're alive
+            const chunks = [];
+            for await (const chunk of stream.source) {
+                chunks.push(chunk.subarray());
+                break; // Got data, peer is alive
+            }
+            
+            clearTimeout(timeout);
+            return chunks.length > 0;
+            
+        } catch (e) {
+            clearTimeout(timeout);
+            return false;
+        }
+        
+    } catch (e) {
+        return false;
     }
+}
     
 /**
      * Save known peers to disk so we remember them after restart.
@@ -2103,6 +2147,79 @@ if (this.isBootstrap) {
             case TOPICS.CHANNEL_CLOSE_SIG: return 'channelCloseSig';
 
             default: return null;
+        }
+    }
+
+// --- NEW: Explicit Peer Exchange (PEX) ---
+    async exchangePeers(peerId) {
+        if (!this.node) return;
+        try {
+            const connection = this.node.getConnections().find(c => c.remotePeer.toString() === peerId);
+            if (!connection) return;
+
+            // 1. Get a random sample of peers we know (up to 20) to share
+            const allPeers = await this.node.peerStore.all();
+            const shareablePeers = allPeers
+                .filter(p => p.addresses.length > 0 && p.id.toString() !== peerId) // Don't send them back to themselves
+                .sort(() => Math.random() - 0.5)
+                .slice(0, 20)
+                .map(p => ({
+                    id: p.id.toString(),
+                    addrs: p.addresses.map(a => a.multiaddr.toString())
+                }));
+
+            if (shareablePeers.length === 0) return;
+
+            // 2. Open stream and send
+            const stream = await connection.newStream(PEX_PROTOCOL);
+            const payload = JSON.stringify(shareablePeers);
+            
+            await pipe(
+                [new TextEncoder().encode(payload)],
+                stream.sink
+            );
+            
+        } catch (e) {
+            // PEX failures are common (peer busy, protocol not supported), just log debug
+            this.log(`[PEX] Failed to exchange with ${peerId.slice(-6)}: ${e.message}`, 'debug');
+        }
+    }
+
+    async _handlePexRequest({ stream, connection }) {
+        try {
+            const remotePeerId = connection.remotePeer.toString();
+            
+            const chunks = [];
+            for await (const chunk of stream.source) {
+                chunks.push(chunk.subarray());
+            }
+            const data = Buffer.concat(chunks).toString();
+            const peers = JSON.parse(data);
+
+            let newCount = 0;
+            for (const p of peers) {
+                // Don't add self
+                if (p.id === this.node.peerId.toString()) continue;
+
+                try {
+                    const multiaddrs = p.addrs.map(a => multiaddr(a));
+                    await this._addToAddressBookCompat(p.id, multiaddrs);
+                    
+                    // Trigger discovery event to potentially dial them immediately
+                    this.node.dispatchEvent(new CustomEvent('peer:discovery', { 
+                        detail: { id: p.id, multiaddrs } 
+                    }));
+                    newCount++;
+                } catch(e) {}
+            }
+            
+            if (newCount > 0) {
+                this.log(`[PEX] Learned ${newCount} new peers from ${remotePeerId.slice(-6)}`, 'debug');
+            }
+        } catch (e) {
+            this.log(`[PEX] Error handling incoming PEX: ${e.message}`, 'debug');
+        } finally {
+            try { await stream.close(); } catch{}
         }
     }
 
