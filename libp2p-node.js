@@ -35,6 +35,7 @@ const { p2p } = require('./src/p2p_pb.cjs');
 const { Block } = p2p;
 export { Block as P2PBlock, p2p };
 
+const PEER_STORE_PATH = './pluribit-data/peers.json';
 // ---- Signing helpers (stable stringify + sha256) ----
 /**
  * @param {any} obj
@@ -103,6 +104,7 @@ export class PluribitP2P {
     constructor(log, options = {}) {
         this._peerVerificationState = new Map(); // peerId -> { powSolved: bool, isSubscribed: bool }
         this._badBlockPeers = new Map(); // peerId -> { count, bannedUntil }
+        this._trustedPeers = new Set();
         this.log = log;
         this.node = null;
         this.handlers = new Map();
@@ -168,9 +170,37 @@ export class PluribitP2P {
         }, 15_000);
     } 
     
+    _extractTrustedPeers() {
+        if (!this.config.bootstrap || !Array.isArray(this.config.bootstrap)) return;
+        
+        for (const addrStr of this.config.bootstrap) {
+            try {
+                const ma = multiaddr(addrStr);
+                const peerId = ma.getPeerId();
+                if (peerId) {
+                    this._trustedPeers.add(peerId);
+                    this.log(`[P2P] 🛡️ Added Bootstrap Boss to Trusted List: ${peerId}`, 'debug');
+                }
+            } catch (e) {
+                // ignore invalid addresses
+            }
+        }
+    }
+    
     // Track peers sending bad blocks
     recordBadBlock(peerId, hash = null) {
-        const entry = this._badBlockPeers.get(peerId) || { count: 0, bannedUntil: 0 };
+        const peerIdStr = peerId.toString();
+
+        // --- FIX 1: IMMUNITY CHECK ---
+        if (peerIdStr === this.node.peerId.toString()) {
+            this.log(`[P2P] 🛡️ Ignored bad block record for SELF.`, 'debug');
+            return false;
+        }
+        if (this._trustedPeers.has(peerIdStr)) {
+            this.log(`[P2P] 🛡️ Ignored bad block record for BOSS (Bootstrap) ${peerIdStr.slice(-6)}.`, 'warn');
+            return false;
+        }
+        const entry = this._badBlockPeers.get(peerIdStr) || { count: 0, bannedUntil: 0 };
         entry.count++;
 
         if (entry.count >= 3) {
@@ -212,8 +242,19 @@ export class PluribitP2P {
     }
 
     // Enhanced ban that also poisons any associated hash
-    async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = null) {
+async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = null) {
         if (!this.node) return;
+
+        // --- FIX 2: IMMUNITY CHECK ---
+        if (peerIdStr === this.node.peerId.toString()) {
+            this.log(`[P2P] 🛡️ Prevented SELF-BAN. Reason: ${reason}`, 'warn');
+            return;
+        }
+        if (this._trustedPeers.has(peerIdStr)) {
+            this.log(`[P2P] 🛡️ Prevented BOSS-BAN on ${peerIdStr.slice(-6)}. Reason: ${reason}`, 'warn');
+            return;
+        }
+        // -----------------------------
 
         const short = peerIdStr.slice(-8);
         this.log(`[P2P] ⚡ BANNED peer ${short} — ${reason}`, 'warn');
@@ -859,7 +900,7 @@ export class PluribitP2P {
 
 
     const peerId = await this.loadOrCreatePeerId();
-    
+    this._extractTrustedPeers();
     this.log(`[P2P DEBUG] loadOrCreatePeerId returned: ${peerId.toString()}`, 'debug');
     this.log(`[P2P DEBUG] privateKey length: ${peerId.privateKey?.length}`, 'debug');
     
@@ -993,6 +1034,11 @@ export class PluribitP2P {
         
         // Start the node
         await this.node.start();
+        // 1. Load old friends
+        await this.loadPeers();
+
+        // 2. Periodic save (every 5 minutes)
+        setInterval(() => this.savePeers(), 5 * 60 * 1000);
         this.log(`[P2P] Node started with ID: ${this.node.peerId.toString()}`);
 this.log(`[P2P DEBUG] Node peerId matches loaded peerId: ${this.node.peerId.toString() === peerId.toString()}`, 'debug');
 if (this.node.peerId.toString() !== peerId.toString()) {
@@ -1006,6 +1052,10 @@ if (this.node.peerId.toString() !== peerId.toString()) {
 
         // Register custom protocol for direct challenge-response
         const CHALLENGE_PROTOCOL = '/pluribit/challenge/1.0.0';
+
+
+
+
 
         await this.node.handle(CHALLENGE_PROTOCOL, async ({ stream, connection }) => {
             try {
@@ -1206,6 +1256,10 @@ if (this.node.peerId.toString() !== peerId.toString()) {
             });
         }, CONFIG.P2P.RENDEZVOUS_DISCOVERY_INTERVAL_MS); // <-- USE THE CONFIG VALUE
         
+        
+        
+        
+        
         // --- Dynamic PoW Adjustment Interval ---
         setInterval(() => {
             const rate = this._connectionAttempts;
@@ -1233,6 +1287,33 @@ if (this.node.peerId.toString() !== peerId.toString()) {
             }
         }, CONFIG.P2P.DYNAMIC_POW.ADJUSTMENT_INTERVAL_MS);
                
+ 
+        // --- ACTIVE PEER DISCOVERY LOOP ---
+        // RATIONALE: Don't just wait for MDNS or Bootstrap. Actively query the DHT 
+        // to find other peers connected to the bootstrap node to form a mesh.
+        setInterval(async () => {
+            if (!this.node) return;
+            
+            const connectedCount = this.node.getConnections().length;
+            const maxConns = CONFIG.P2P.MAX_CONNECTIONS;
+            
+            // Only search if we aren't full
+            if (connectedCount < maxConns) {
+                try {
+                    // Ask the network: "Who is close to me?"
+                    // This forces the bootstrap node to give us a list of other peers it knows.
+                    const neighborGen = this.node.services.dht.getClosestPeers(this.node.peerId.toBytes());
+                    
+                    for await (const event of neighborGen) {
+                        // The 'peer:discovery' event will fire automatically when 
+                        // new peers are found during this query, triggering the 
+                        // auto-dial logic defined in setupEventHandlers.
+                    }
+                } catch (e) {
+                    // Ignore DHT timeouts/errors during discovery
+                }
+            }
+        }, 30000); // Run every 30 seconds
         
         return this.node;
     }
@@ -1844,6 +1925,100 @@ if (this.isBootstrap) {
     }
     
     /**
+     * Get a list of ALL known peers from the address book, 
+     * including those not currently connected.
+     */
+    async getKnownPeers() {
+        if (!this.node) return [];
+        const peers = [];
+        // peerStore.all() returns an AsyncIterable
+        for await (const peer of this.node.peerStore.all()) {
+            peers.push(peer.id.toString());
+        }
+        return peers;
+    }
+
+    /**
+     * Ping a specific peer to check latency and liveness.
+     * @param {string} peerId 
+     * @returns {Promise<number>} Latency in ms
+     */
+    async pingPeer(peerId) {
+        if (!this.node) throw new Error("Node not started");
+        // The ping service returns the latency in ms
+        const latency = await this.node.services.ping.ping(multiaddr(peerId) ? peerId : peerId);
+        return latency;
+    }
+    
+    /**
+     * Save known peers to disk so we remember them after restart.
+     */
+    async savePeers() {
+        if (!this.node) return;
+        try {
+            const peersToSave = [];
+            // Iterate all peers we know about
+            for await (const peer of this.node.peerStore.all()) {
+                const addrs = peer.addresses.map(a => a.multiaddr.toString());
+                if (addrs.length > 0) {
+                    peersToSave.push({
+                        id: peer.id.toString(),
+                        addrs: addrs
+                    });
+                }
+            }
+            
+            // Ensure directory exists
+            await fs.mkdir(path.dirname(PEER_STORE_PATH), { recursive: true });
+            // Write to file
+            await fs.writeFile(PEER_STORE_PATH, JSON.stringify(peersToSave, null, 2));
+            this.log(`[PERSISTENCE] Saved ${peersToSave.length} peers to disk.`, 'debug');
+        } catch (e) {
+            this.log(`[PERSISTENCE] Failed to save peers: ${e.message}`, 'warn');
+        }
+    }
+
+    /**
+     * Load peers from disk and add them to the address book.
+     */
+    async loadPeers() {
+        if (!this.node) return;
+        try {
+            // Check if file exists
+            try {
+                await fs.access(PEER_STORE_PATH);
+            } catch {
+                this.log('[PERSISTENCE] No saved peers found. Starting fresh.', 'debug');
+                return;
+            }
+
+            const data = await fs.readFile(PEER_STORE_PATH, 'utf-8');
+            const peers = JSON.parse(data);
+            
+            let count = 0;
+            for (const p of peers) {
+                try {
+                    const peerId = await createFromPubKey({ publicKey:  /* not needed for add */ null }) 
+                                    || p.id; // Just using the ID string is enough for address book usually
+                                    
+                    // Convert string addrs back to Multiaddr objects
+                    const multiaddrs = p.addrs.map(a => multiaddr(a));                   
+               
+                    // We will parse the multiaddrs. If valid, we add them.
+                     await this._addToAddressBookCompat(p.id, multiaddrs);
+                     count++;
+                } catch (e) {
+                    // ignore malformed entries
+                }
+            }
+            this.log(`[PERSISTENCE] Loaded ${count} peers from disk.`, 'info');
+        } catch (e) {
+            this.log(`[PERSISTENCE] Failed to load peers: ${e.message}`, 'error');
+        }
+    }
+    
+    
+    /**
      * Removes a specific handler for a given topic.
      * @param {string} topic - The topic to unsubscribe the handler from.
      * @param {Function} handler - The specific handler function to remove.
@@ -1882,7 +2057,7 @@ if (this.isBootstrap) {
             clearTimeout(timer);
         }
         this._embargoedTransactions.clear();
-        
+        await this.savePeers();
         if (this.node) {
             await this.node.stop();
         }

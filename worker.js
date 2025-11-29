@@ -1591,6 +1591,10 @@ async function syncForward(targetHeight, targetHash, trustedPeers) {
                     const PENALTY = 25; // Score penalty for providing an invalid block.
                     log(`[SYNC] Invalid block ${hash} received. Penalizing ${trustedPeers.length} peers.`, 'warn');
                     for (const peer of trustedPeers) {
+                        if (isImmune(peer)) {
+                            log(`[SYNC] 🛡️ Skipping penalty for Boss/Self: ${peer.slice(-6)}`, 'debug');
+                            continue;
+                        }
                         const currentScore = workerState.peerScores.get(peer) || 100;
                         const newScore = Math.max(0, currentScore - PENALTY);
                         workerState.peerScores.set(peer, newScore);
@@ -2232,73 +2236,97 @@ blockRequestCleanupTimer = setInterval(() => {
    // Start API server for block explorer
     startApiServer();
     
-    // --- NEW: Bootstrap Connection Watchdog ---
-    // RATIONALE: This timer periodically checks if we are still connected to
-    // our primary bootstrap nodes. If a connection is dropped, it will
-    // automatically attempt to redial. This ensures a persistent link
-    // to the core network peers defined in your config.
-    const BOOTSTRAP_WATCHDOG_INTERVAL_MS = 30000; // Check every 30 second
-    let bootstrapAddresses = []; // Store the multiaddrs
-    // Initialize a Set to store Boss IDs ---
+    // --- NETWORK MESH & HEALTH MANAGER ---
+    // RATIONALE: To ensure a decentralized mesh, we must:
+    // 1. Maintain connection to the Boss (Bootstrap) for recovery.
+    // 2. Actively fill our slots with other peers we've seen (Mesh).
+    // 3. Ping active connections to kill zombie sockets.
+    
+    const NETWORK_MAINTENANCE_INTERVAL = 30000; // Run every 30 seconds
+
+    // Initialize Bootstrap IDs
     workerState.bootstrapPeerIds = new Set();
+    let bootstrapAddresses = [];
     try {
-        // Get the list of bootstrap multiaddrs from the p2p config
-        // This list is loaded from bootstrap-config.json in libp2p-node.js 
         const bootstrapAddrStrings = workerState.p2p.config.bootstrap || []; 
         bootstrapAddresses = bootstrapAddrStrings.map(addrStr => multiaddr(addrStr)); 
-        //  Extract Peer IDs from the addresses ---
         for (const addr of bootstrapAddresses) {
             const peerId = addr.getPeerId();
-            if (peerId) {
-                workerState.bootstrapPeerIds.add(peerId);
-                log(`[INIT] Registered Bootstrap "Boss" ID: ${peerId}`, 'debug');
-            }
+            if (peerId) workerState.bootstrapPeerIds.add(peerId);
         }
     } catch (e) {
-        log(`[WATCHDOG] Failed to parse bootstrap addresses: ${e.message}`, 'error');
+        log(`[MESH] Failed to parse bootstrap addresses: ${e.message}`, 'error');
     }
 
-    if (bootstrapAddresses.length > 0) {
-        log(`[WATCHDOG] Enabled: Monitoring connection to ${bootstrapAddresses.length} bootstrap peer(s).`, 'info');
+    setInterval(safe(async () => {
+        if (!workerState.p2p || !workerState.p2p.node) return;
 
-        setInterval(safe(async () => {
-            if (!workerState.p2p || !workerState.p2p.node) return;
+        const myPeerId = workerState.p2p.node.peerId.toString();
+        const connectedPeers = workerState.p2p.node.getConnections().map(c => c.remotePeer.toString());
+        const connectedSet = new Set(connectedPeers);
 
-            // Get all currently connected peer IDs
-            const connectedPeers = workerState.p2p.node.getConnections().map(c => c.remotePeer.toString());
-            const connectedPeerSet = new Set(connectedPeers);
+        // --- 1. BOOTSTRAP KEEPALIVE (Priority 1) ---
+        for (const addr of bootstrapAddresses) {
+            try {
+                const peerId = addr.getPeerId();
+                if (!peerId || peerId === myPeerId) continue;
 
-            for (const addr of bootstrapAddresses) {
-                try {
-                    // Get the PeerId from the multiaddr (if it has one)
-                    const peerId = addr.getPeerId();
-                    if (!peerId) {
-                        log(`[WATCHDOG] Bootstrap address ${addr.toString()} has no PeerId, cannot monitor.`, 'debug');
-                        continue;
+                if (!connectedSet.has(peerId)) {
+                    log(`[MESH] Lost connection to Bootstrap ${peerId.slice(-6)}. Redialing...`, 'warn');
+                    await workerState.p2p.node.dial(addr);
+                }
+            } catch (e) { /* ignore dial errors, we will retry next tick */ }
+        }
+
+        // --- 2. MESH FORMATION (Priority 2) ---
+        // If we have slots available, try to connect to peers we know about but aren't connected to.
+        const MAX_CONNS = CONFIG.P2P.MAX_CONNECTIONS || 50;
+        
+        if (connectedPeers.length < MAX_CONNS) {
+            const knownPeers = await workerState.p2p.getKnownPeers();
+            // Filter out self and currently connected
+            const candidates = knownPeers.filter(id => id !== myPeerId && !connectedSet.has(id));
+            
+            // Shuffle candidates to ensure random mesh topology
+            candidates.sort(() => Math.random() - 0.5);
+
+            const slotsAvailable = MAX_CONNS - connectedPeers.length;
+            const peersToDial = candidates.slice(0, slotsAvailable);
+
+            if (peersToDial.length > 0) {
+                log(`[MESH] Dialing ${peersToDial.length} known peers to expand mesh...`, 'debug');
+                for (const peerId of peersToDial) {
+                    try {
+                        // We rely on the address book having the multiaddr
+                        await workerState.p2p.node.dial(multiaddr(peerId) ? peerId : peerId); // Libp2p handles lookup
+                    } catch (e) {
+                        // Peer might be offline, ignore
                     }
-
-                    const myPeerId = workerState.p2p.node.peerId.toString();
-                    if (peerId === myPeerId) {
-                        // Silently skip our own address
-                        continue;
-                    }
-
-                    // Check if we are connected
-                    if (!connectedPeerSet.has(peerId)) {
-                        log(`[WATCHDOG] Not connected to bootstrap peer ${peerId}. Attempting to dial...`, 'warn');
-                        // Use the dial method, same as the 'connectPeer' command 
-                        await workerState.p2p.node.dial(addr);
-                        log(`[WATCHDOG] Dial attempt sent to ${peerId}.`, 'info');
-                    } else {
-                        log(`[WATCHDOG] Connection to bootstrap peer ${peerId} is active.`, 'debug');
-                    }
-                } catch (e) {
-                    log(`[WATCHDOG] Error processing bootstrap peer ${addr.toString()}: ${e.message}`, 'warn');
                 }
             }
-        }), BOOTSTRAP_WATCHDOG_INTERVAL_MS);
-    }
-    // --- END: Bootstrap Connection Watchdog ---
+        }
+
+        // --- 3. ACTIVE PING / KEEPALIVE (Priority 3) ---
+        // Iterate ALL connected peers and send a ping.
+        for (const peerId of connectedPeers) {
+            try {
+                // p2p.pingPeer uses the libp2p ping service (application layer ping)
+                const latency = await workerState.p2p.pingPeer(peerId);
+                
+                // If latency is extremely high, we might consider them unstable, but for now just log debug
+                if (latency > 5000) {
+                    log(`[MESH] ⚠️ High latency peer: ${peerId.slice(-6)} (${latency}ms)`, 'warn');
+                }
+            } catch (e) {
+                log(`[MESH] Peer ${peerId.slice(-6)} failed ping. Disconnecting zombie socket.`, 'warn');
+                try {
+                    // Force disconnect if ping fails - this clears "ghost" peers
+                    await workerState.p2p.node.hangUp(peerId);
+                } catch (err) {}
+            }
+        }
+
+    }), NETWORK_MAINTENANCE_INTERVAL);
     
     
     log('Network initialization complete.', 'success');
@@ -2331,6 +2359,24 @@ async function gracefulShutdown(code = 0) {
 
 process.on('SIGINT', () => gracefulShutdown(0));
 process.on('SIGTERM', () => gracefulShutdown(0));
+
+
+function isImmune(peerId) {
+    if (!peerId) return false;
+    const peerIdStr = peerId.toString();
+    
+    // Check Self
+    if (workerState.p2p && workerState.p2p.node && workerState.p2p.node.peerId.toString() === peerIdStr) {
+        return true;
+    }
+    
+    // Check Bootstrap/Boss
+    if (workerState.bootstrapPeerIds.has(peerIdStr)) {
+        return true;
+    }
+    
+    return false;
+}
 
 
 // Ask peers for their tip, but only when someone is there to hear us.
@@ -2830,14 +2876,19 @@ await p2p.subscribe(TOPICS.SWAP_PROPOSE, async (proposal, { from }) => {
                 request.reject(error);
                 syncState.hashRequestState.delete(requestId);
                 // Penalize the peer for this behavior.
-                const PENALTY = 50; // A large penalty for a severe infraction.
-                const currentScore = workerState.peerScores.get(request.peerId) || 100;
-                const newScore = Math.max(0, currentScore - PENALTY);
-                workerState.peerScores.set(request.peerId, newScore);
-                if (newScore === 0) {
-                    try { workerState.p2p.node.hangUp(request.peerId); } catch(e) {}
+                if (isImmune(request.peerId)) {
+                    log(`[SYNC] 🛡️ Boss Peer ${request.peerId.slice(-6)} exceeded hash limit. Ignoring limit.`, 'warn');
+                    return;
+                } else {
+                    const PENALTY = 50;
+                    const currentScore = workerState.peerScores.get(request.peerId) || 100;
+                    const newScore = Math.max(0, currentScore - PENALTY);
+                    workerState.peerScores.set(request.peerId, newScore);
+                    if (newScore === 0) {
+                        try { workerState.p2p.node.hangUp(request.peerId); } catch(e) {}
+                    }
+                    return;
                 }
-                return;
             }
 
             // Append the received chunk of hashes
