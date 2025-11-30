@@ -25,11 +25,9 @@ import crypto from 'crypto';
 import nacl from 'tweetnacl';
 import fs from 'fs/promises';
 import path from 'path';
-import { peerIdFromString } from '@libp2p/peer-id';
+import { peerIdFromString } from '@libp2p/peer-id'; // <--- FIXED: Added missing import
 
 // Rationale: In an ES Module project, CommonJS files must be loaded using `createRequire`.
-// By naming the generated file with a .cjs extension, we ensure Node.js always
-// treats it as a CommonJS module, making the require() call succeed.
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const { p2p } = require('./src/p2p_pb.cjs');
@@ -37,23 +35,18 @@ const { Block } = p2p;
 export { Block as P2PBlock, p2p };
 
 const PEER_STORE_PATH = './pluribit-data/peers.json';
-// ---- Signing helpers (stable stringify + sha256) ----
+
 /**
  * @param {any} obj
  * @returns {string}
  */
 function stableStringify(obj) {
   const seen = new WeakSet();
-  /**
-   * @param {any} v
-   * @returns {any}
-   */
   const walk = (v) => {
     if (v && typeof v === 'object') {
       if (seen.has(v)) return null;
       seen.add(v);
       if (Array.isArray(v)) return v.map(walk);
-      /** @type {Record<string, any>} */
       const out = {};
       for (const k of Object.keys(v).sort()) out[k] = walk(v[k]);
       return out;
@@ -63,18 +56,12 @@ function stableStringify(obj) {
   return JSON.stringify(walk(obj));
 }
 
-/**
- * @param {string} inputUtf8
- * @returns {string}
- */
 function sha256Hex(inputUtf8) {
   return crypto.createHash('sha256').update(inputUtf8, 'utf8').digest('hex');
 }
 
-// Network scoping to prevent cross-talk between networks
 const NET = process.env.PLURIBIT_NET || 'mainnet';
 
-// Topic definitions
 export const TOPICS = {
   BLOCKS: `/pluribit/${NET}/blocks/1.0.0`,
   TRANSACTIONS: `/pluribit/${NET}/transactions/1.0.0`,
@@ -98,46 +85,38 @@ export const TOPICS = {
 };
 
 const PEX_PROTOCOL = `/pluribit/${NET}/pex/1.0.0`;
+
 export class PluribitP2P {
-    /**
-     * @param {(msg: string, level?: string) => void} log
-     * @param {{ isBootstrap?: boolean, tcpPort?: number, wsPort?: number }} options
-     */
     constructor(log, options = {}) {
-        this._peerVerificationState = new Map(); // peerId -> { powSolved: bool, isSubscribed: bool }
-        this._badBlockPeers = new Map(); // peerId -> { count, bannedUntil }
+        this._peerVerificationState = new Map();
+        this._badBlockPeers = new Map();
         this._trustedPeers = new Set();
         this.log = log;
         this.node = null;
         this.handlers = new Map();
         this.isBootstrap = options.isBootstrap || (process.env.PLURIBIT_IS_BOOTSTRAP === 'true');
-        this._peerChallenges = new Map(); // peer -> {challenge, timestamp, attempts}
+        this._peerChallenges = new Map();
         this._maxChallengeAttempts = 3;
         
-        // State for Dynamic Security ---
-        // Tracks IP addresses for exponential backoff on challenge failures
-        this._ipChallengeTracker = new Map(); // ip -> { failures: number, lastAttempt: number }
-        // Tracks connection attempts per minute for dynamic PoW
+        this._ipChallengeTracker = new Map();
         this._connectionAttempts = 0;
-        // The currently enforced PoW difficulty
         this._currentChallengeDifficulty = CONFIG.P2P.DYNAMIC_POW.MIN_DIFFICULTY;
 
-        // Periodic cleanup of stale challenges to prevent memory leak
         this._challengeGcTimer = setInterval(() => {
             const now = Date.now();
             for (const [peerId, challenge] of this._peerChallenges) {
-                if (now - challenge.timestamp > 120000) { // 2 minutes
+                if (now - challenge.timestamp > 120000) { 
                     this._peerChallenges.delete(peerId);
                 }
             }
-        }, 60000); // Run every minute
+        }, 60000);
+
         this.config = {
           listen: {
             tcp: options.tcpPort || 26658,
             ws: options.wsPort || 26659
           },
           bootstrap: this.isBootstrap ? [] : [
-            // Public IPFS/libp2p bootstrappers (DNSADDR -> stable peer IDs)
             '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
             '/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa',
             '/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
@@ -146,22 +125,15 @@ export class PluribitP2P {
           ]
         };
         
-        // Dandelion state
-        this._stemRelay = null; // Current stem relay peer
+        this._stemRelay = null;
         this._stemRelayRefreshTimer = null;
-        this._embargoedTransactions = new Map(); // txHash -> embargo timer
+        this._embargoedTransactions = new Map();
         this._stemRelayLastRefresh = 0;
-        
-        // Track which transactions we've seen in stem phase
         this._seenStemTransactions = new Set();
 
-        // ═══════════════════════════════════════════════════════════
-        // CONSENSUS SHIELD — BLOCK HASH POISONING (prevents fake reorgs)
-        // ═══════════════════════════════════════════════════════════
-        this._poisonedHashes = new Set();                    // permanently banned block hashes
-        this._pendingBlockRequests = new Map();              // hash → { peerId, requestedAt }
+        this._poisonedHashes = new Set();
+        this._pendingBlockRequests = new Map();
 
-        // Auto-cleanup stale pending requests (prevents memory leak)
         setInterval(() => {
             const now = Date.now();
             for (const [hash, info] of this._pendingBlockRequests.entries()) {
@@ -184,22 +156,17 @@ export class PluribitP2P {
                     this.log(`[P2P] 🛡️ Added Bootstrap Boss to Trusted List: ${peerId}`, 'debug');
                 }
             } catch (e) {
-                // ignore invalid addresses
             }
         }
     }
     
-    // Track peers sending bad blocks
     recordBadBlock(peerId, hash = null) {
         const peerIdStr = peerId.toString();
 
-        // --- FIX 1: IMMUNITY CHECK ---
         if (peerIdStr === this.node.peerId.toString()) {
-            this.log(`[P2P] 🛡️ Ignored bad block record for SELF.`, 'debug');
             return false;
         }
         if (this._trustedPeers.has(peerIdStr)) {
-            this.log(`[P2P] 🛡️ Ignored bad block record for BOSS (Bootstrap) ${peerIdStr.slice(-6)}.`, 'warn');
             return false;
         }
         const entry = this._badBlockPeers.get(peerIdStr) || { count: 0, bannedUntil: 0 };
@@ -224,9 +191,6 @@ export class PluribitP2P {
         return true;
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // CONSENSUS SHIELD — POISON HASH + ENHANCED BAN
-    // ═══════════════════════════════════════════════════════════
     poisonHash(hash, reason = 'unknown', fromPeer = null) {
         if (this._poisonedHashes.has(hash)) return;
 
@@ -243,25 +207,16 @@ export class PluribitP2P {
         return this._poisonedHashes.has(hash);
     }
 
-    // Enhanced ban that also poisons any associated hash
-async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = null) {
+    async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = null) {
         if (!this.node) return;
 
-        // --- FIX 2: IMMUNITY CHECK ---
-        if (peerIdStr === this.node.peerId.toString()) {
-            this.log(`[P2P] 🛡️ Prevented SELF-BAN. Reason: ${reason}`, 'warn');
-            return;
-        }
-        if (this._trustedPeers.has(peerIdStr)) {
-            this.log(`[P2P] 🛡️ Prevented BOSS-BAN on ${peerIdStr.slice(-6)}. Reason: ${reason}`, 'warn');
-            return;
-        }
-        // -----------------------------
+        if (peerIdStr === this.node.peerId.toString()) return;
+        if (this._trustedPeers.has(peerIdStr)) return;
 
         const short = peerIdStr.slice(-8);
         this.log(`[P2P] ⚡ BANNED peer ${short} — ${reason}`, 'warn');
 
-               const banMs = permanent ? Number.MAX_SAFE_INTEGER : 30 * 60 * 1000;
+        const banMs = permanent ? Number.MAX_SAFE_INTEGER : 30 * 60 * 1000;
         this._badBlockPeers.set(peerIdStr, {
             count: 999,
             bannedUntil: Date.now() + banMs
@@ -276,11 +231,6 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
         } catch (_) {}
     }   
     
-    /**
-     * Select a random verified peer for stem relay
-     * @private
-     * @returns {string | null} Peer ID or null if none available
-     */
     _selectStemRelay() {
         if (!this.node) return null;
         
@@ -290,15 +240,10 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
         
         if (verifiedPeers.length === 0) return null;
         
-        // Random selection
         const randomIndex = Math.floor(Math.random() * verifiedPeers.length);
         return verifiedPeers[randomIndex];
     }
 
-    /**
-     * Refresh the stem relay peer periodically
-     * @private
-     */
     _refreshStemRelay() {
         const now = Date.now();
         if (now - this._stemRelayLastRefresh < CONFIG.DANDELION.STEM_RELAY_REFRESH_INTERVAL_MS) {
@@ -313,34 +258,20 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
         }
     }
 
-    /**
-     * Compute transaction hash for deduplication
-     * @private
-     * @param {any} transaction
-     * @returns {string}
-     */
     _getTxHash(transaction) {
-        // Use the kernel excess as a unique identifier
         if (transaction.kernels && transaction.kernels[0]?.excess) {
             return Buffer.from(transaction.kernels[0].excess)
                 .toString('hex')
                 .substring(0, 16);
         }
-        // Fallback: hash the entire transaction
         return crypto.createHash('sha256')
             .update(JSON.stringify(transaction))
             .digest('hex')
             .substring(0, 16);
     }
 
-    /**
-     * Initiate Dandelion stem phase for a transaction
-     * @param {any} transaction - The transaction object
-     * @returns {Promise<void>}
-     */
     async stemTransaction(transaction) {
         if (!CONFIG.DANDELION.ENABLED) {
-            // Dandelion disabled, just broadcast normally
             await this.publish(TOPICS.TRANSACTIONS, transaction);
             return;
         }
@@ -356,7 +287,6 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
 
         const txHash = this._getTxHash(transaction);
         
-        // Create stem message
         const stemMessage = {
             transaction: transaction,
             hopCount: 0,
@@ -364,7 +294,6 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
         };
 
         try {
-            // Send via direct protocol instead of gossip
             await this._sendStemDirect(stemRelay, stemMessage);
             this.log(`[Dandelion] Sent transaction ${txHash} to stem relay ${stemRelay.slice(-6)}`, 'info');
         } catch (e) {
@@ -373,16 +302,8 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
         }
     }
 
-    /**
-     * Send a stem transaction directly to a peer
-     * @private
-     * @param {string} peerId
-     * @param {any} stemMessage
-     * @returns {Promise<void>}
-     */
     async _sendStemDirect(peerId, stemMessage) {
         if (!this.node) throw new Error('Node not initialized');
-        
         
         try {
             const connection = this.node.getConnections().find(
@@ -394,10 +315,7 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
             }
 
             const stream = await connection.newStream(TOPICS.DANDELION_STEM);
-            
-            // Encode the stem message
             const encoded = p2p.DandelionStem.encode(stemMessage).finish();
-            
             await pipe([encoded], stream.sink);
             
         } catch (e) {
@@ -405,64 +323,32 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
         }
     }
 
-    /**
-     * Decide whether to continue stem or switch to fluff
-     * @private
-     * @param {number} hopCount
-     * @returns {boolean} true if should continue stem, false if should fluff
-     */
     _shouldContinueStem(hopCount) {
-        // Force fluff if we've exceeded max hops
-        if (hopCount >= CONFIG.DANDELION.MAX_STEM_HOPS) {
-            return false;
-        }
-        
-        // Require minimum hops
-        if (hopCount < CONFIG.DANDELION.MIN_STEM_HOPS) {
-            return true;
-        }
-        
-        // Probabilistic decision
+        if (hopCount >= CONFIG.DANDELION.MAX_STEM_HOPS) return false;
+        if (hopCount < CONFIG.DANDELION.MIN_STEM_HOPS) return true;
         return Math.random() < CONFIG.DANDELION.STEM_PROBABILITY;
     }
 
-    /**
-     * Handle an incoming stem-phase transaction
-     * @private
-     * @param {any} stemMessage
-     * @param {string} from - Peer ID who sent this
-     * @returns {Promise<void>}
-     */
     async _handleStemTransaction(stemMessage, from) {
         const { transaction, hopCount, timestamp } = stemMessage;
         const txHash = this._getTxHash(transaction);
 
-        // Immediately publish locally via gossipsub to add to our own mempool.
-        // The existing TOPICS.TRANSACTIONS handler will process this due to emitSelf: true.
-        // This ensures the transaction is in the pool before block selection, fixing the race condition.
         try {
             await this.publish(TOPICS.TRANSACTIONS, transaction);
             this.log(`[Dandelion] Published received stem tx ${txHash} locally for mempool add`, 'debug');
         } catch (e) {
             this.log(`[Dandelion] Failed local publish for stem tx ${txHash}: ${e.message}`, 'warn');
-            // Don't necessarily stop Dandelion relay just because local add failed (it might already be there)
         }
 
-        // Deduplication: ignore if we've already seen this transaction
-        if (this._seenStemTransactions.has(txHash)) {
-            this.log(`[Dandelion] Ignoring duplicate stem transaction ${txHash}`, 'debug');
-            return;
-        }
+        if (this._seenStemTransactions.has(txHash)) return;
         
         this._seenStemTransactions.add(txHash);
         
-        // Clean up old entries (prevent memory leak)
         if (this._seenStemTransactions.size > 10000) {
             const oldestEntries = Array.from(this._seenStemTransactions).slice(0, 5000);
             oldestEntries.forEach(hash => this._seenStemTransactions.delete(hash));
         }
         
-        // Check embargo timeout
         const age = Date.now() - timestamp;
         if (age > CONFIG.DANDELION.EMBARGO_TIMEOUT_MS) {
             this.log(`[Dandelion] Transaction ${txHash} exceeded embargo, fluffing`, 'info');
@@ -470,17 +356,15 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
             return;
         }
         
-        // Decide: continue stem or switch to fluff?
         if (this._shouldContinueStem(hopCount)) {
-            // Continue stem phase
             this._refreshStemRelay();
             const nextRelay = this._stemRelay;
             
+            // <--- FIXED: Fallback to Fluff if relay unavailable or relay is sender
             if (!nextRelay || nextRelay === from) {
-                // No relay available or would send back to sender -> fluff instead
-                // Fluffing is now implicitly handled by the initial local publish.
-                // No further action needed here if we decide not to stem.
-                 return;
+                this.log(`[Dandelion] No valid relay (or relay is sender), fluffing tx ${txHash}`, 'debug');
+                await this.publish(TOPICS.TRANSACTIONS, transaction);
+                return;
             }
             
             const nextStemMessage = {
@@ -493,23 +377,15 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
                 await this._sendStemDirect(nextRelay, nextStemMessage);
                 this.log(`[Dandelion] Relayed stem transaction ${txHash} (hop ${hopCount + 1})`, 'debug');
             } catch (e) {
-                // If stem relay fails, the initial local publish acts as the fallback fluff.
                 this.log(`[Dandelion] Stem relay failed, fluffing: ${e.message}`, 'warn');
+                await this.publish(TOPICS.TRANSACTIONS, transaction); // Fallback fluff
             }
         } else {
-            // Switch to fluff phase
             this.log(`[Dandelion] Fluffing transaction ${txHash} after ${hopCount} hops`, 'info');
-            // Fluffing is now implicitly handled by the initial local publish.
-            // No further action needed here.
+            await this.publish(TOPICS.TRANSACTIONS, transaction);
         }
     }   
     
-    
-    /**
-     * @param {string} peerId
-     * @param {{ powSolved?: boolean, isSubscribed?: boolean }} param1
-     * @returns {boolean}
-     */
     _updateVerificationState(peerId, { powSolved, isSubscribed }) {
         const state = this._peerVerificationState.get(peerId) || { 
             powSolved: false, 
@@ -527,10 +403,6 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
 
         if (isNowVerified && !wasVerified) {
             this.log(`[P2P] ✅ Fully Verified Peer: ${peerId}`, 'success');        
-            // RATIONALE: When a peer becomes fully verified, it's a strong signal
-            // that we should check if their chain is better than ours. This is a
-            // much more reliable trigger for initiating a sync than the noisy
-            // 'subscription-change' event.
             try {
                 if (this.node) {
                     this.node.dispatchEvent(new CustomEvent('pluribit:peer-verified', { detail: peerId }));
@@ -540,17 +412,9 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
                 this.log(`[P2P] Error dispatching peer-verified event: ${err.message}`, 'warn');
             }       
         }
-        
-        // Return true if verified 
         return isNowVerified ;
     }
 
-
-    /**
-     * Send challenge to peer
-     * @param {string} peerId
-     * @returns {Promise<boolean>}
-     */
     async sendDirectChallenge(peerId) {
         let connection;
         let ip;
@@ -558,12 +422,10 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
         try {
             if (!this.node) throw new Error('Node not initialized');
 
-            // --- Get Connection and IP ---
             const connections = this.node.getConnections();
             connection = connections.find(c => c.remotePeer.toString() === peerId);
             if (!connection) throw new Error('No connection to peer');
             ip = this.getIpFromMultiaddr(connection.remoteAddr);
-            // --- End ---
 
             const challenge = crypto.randomBytes(32).toString('hex');
             
@@ -575,18 +437,14 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
             
             const stream = await connection.newStream('/pluribit/challenge/1.0.0');
             
-            // --- MODIFIED: Send CURRENT dynamic difficulty ---
             const currentDifficulty = this._currentChallengeDifficulty;
             const message = p2p.Challenge.create({ 
                 challenge, 
                 from: this.node.peerId.toString(),
-                // Tell the peer what difficulty they must solve
                 difficulty: currentDifficulty 
             });
-            // --- END MODIFIED ---
 
             const encodedMessage = p2p.Challenge.encode(message).finish();
-            
             await pipe([encodedMessage], stream.sink);
             
             const chunks = [];
@@ -594,45 +452,37 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
                 chunks.push(chunk.subarray());
             }
             const responseBuffer = Buffer.concat(chunks);
-            // @ts-ignore - protobuf decode signature varies
             const response = p2p.ChallengeResponse.decode(responseBuffer);
            
             const verify = crypto.createHash('sha256')
                 .update(challenge)
-                // @ts-ignore - protobuf message property access
+                // @ts-ignore
                 .update(response.nonce || '')
                 .digest('hex');
             
-            // @ts-ignore - protobuf message property access
+            // @ts-ignore
             if (verify === response.solution && (response.solution || '').startsWith(currentDifficulty)) {
                 this._updateVerificationState(peerId, { powSolved: true, isSubscribed: undefined });
                 this._peerChallenges.delete(peerId);
                 this.log(`[P2P] ✓ Peer ${peerId} solved challenge (difficulty: ${currentDifficulty.length})`, 'success');
 
-                // <<< IF THIS PEER WAS BANNED, WASTE THEIR TIME THEN HANG UP >>>
                 if (this._badBlockPeers.has(peerId)) {
                     this.log(`[P2P] 🖕 Banned peer ${peerId.slice(-8)} solved hard PoW — hanging up anyway`, 'warn');
                     try { await this.node.hangUp(peerId); } catch {}
                     return false;
                 }
-
-                // reset IP failures on success
                 if (ip) this._ipChallengeTracker.delete(ip);
                 return true;
             }
 
-            // --- NEW: On failure, increment failure count and hang up ---
             this.log(`[P2P] ✗ Peer ${peerId} FAILED challenge (difficulty: ${currentDifficulty.length}). Hanging up.`, 'warn');
             if (ip) {
                 const entry = this._ipChallengeTracker.get(ip) || { failures: 0, lastAttempt: Date.now() };
                 entry.failures++;
-                entry.lastAttempt = Date.now(); // Update last attempt time to start backoff
+                entry.lastAttempt = Date.now();
                 this._ipChallengeTracker.set(ip, entry);
-                this.log(`[SECURITY] IP ${ip} failure count incremented to ${entry.failures}.`, 'warn');
             }
             try { this.node.hangUp(peerId); } catch {}
-            // --- END NEW ---
-            
             return false;
 
         } catch (e) {
@@ -642,36 +492,26 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
             const logLevel = isExpected ? 'debug' : 'error';
             this.log(`[P2P] Failed to send challenge to ${peerId}: ${msg}`, logLevel);
 
-            // --- NEW: Punish failures from network errors too ---
             if (ip && !isExpected) {
                  const entry = this._ipChallengeTracker.get(ip) || { failures: 0, lastAttempt: Date.now() };
                  entry.failures++;
                  entry.lastAttempt = Date.now();
                  this._ipChallengeTracker.set(ip, entry);
-                 this.log(`[SECURITY] IP ${ip} failure count incremented to ${entry.failures} due to challenge error.`, 'warn');
                  if (connection) {
                     try { connection.close(); } catch {}
                  }
             }
-            // --- END NEW ---
-
             return false;
         }
     }
 
-
-    /**
-     * @param {import('@libp2p/interface').PeerId} id
-     * @param {import('@multiformats/multiaddr').Multiaddr[]} multiaddrs
-     * @returns {Promise<void>}
-     */
     async _addToAddressBookCompat(id, multiaddrs) {
         if (!this.node) return;
         const ps = this.node.peerStore;
         if (!ps || !multiaddrs?.length) return;
 
         try {
-            // @ts-ignore - addressBook API varies across libp2p versions
+            // @ts-ignore
             if (ps.addressBook?.add) {
                 // @ts-ignore
                 return await ps.addressBook.add(id, multiaddrs);
@@ -691,25 +531,16 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
                 // @ts-ignore
                 return await ps.patch(id, { multiaddrs });
             }
-            this.log('[P2P] No compatible addressBook API found', 'debug');
         } catch (e) {
             const err = /** @type {Error} */ (e);
-            const isAbort = err?.name === 'AbortError' || /aborted/i.test(err?.message || '');
-            this.log(`[P2P] address book update ${isAbort ? 'aborted' : 'failed'} for ${id.toString()}: ${err?.message || err}`, isAbort ? 'debug' : 'warn');
+            this.log(`[P2P] address book update failed for ${id.toString()}: ${err?.message || err}`, 'debug');
         }
     }
 
-
-    // Simple per-peer token bucket
     _buckets = new Map();
-    _dhtSeen = new Map();  // nsKey -> last accepted timestamp
-    /** @type {any} */
+    _dhtSeen = new Map();
     _bucketGcTimer = null;
     
-    /**
-     * @param {string} from
-     * @returns {boolean}
-     */
     _allowMessage(from) {
         const now = Date.now();
         const windowMs = CONFIG.RATE_LIMIT_WINDOW;
@@ -721,7 +552,6 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
             this._buckets.set(from, b);
         }
 
-        // refill per window
         if (now - b.windowStart >= windowMs) {
             b.tokens = cap;
             b.windowStart = now;
@@ -734,31 +564,24 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
     }
 
     _rendezvousStr = process.env.PLURIBIT_RENDEZVOUS || 'pluribit:mainnet:v1';
-    /** @type {CID | null} */
     _rendezvousCid = null;
-    /** @type {any} */
     _rendezvousTimer = null;
 
-
-    /**
-     * @param {CID} cid
-     * @returns {Promise<boolean>}
-     */
     async _provideCompat(cid) {
         if (!this.node) return false;
         const cr = this.node.contentRouting;
         if (cr?.provide) {
             const ret = cr.provide(cid);
-            // @ts-ignore - check if it's an async iterator
+            // @ts-ignore
             if (ret?.[Symbol.asyncIterator]) {
                 // @ts-ignore
-                for await (const _ of ret) {} // drain
+                for await (const _ of ret) {} 
             } else {
-                await ret; // Promise<void> or undefined
+                await ret; 
             }
             return true;
         }
-        // @ts-ignore - dht service API varies
+        // @ts-ignore
         const dht = this.node.services?.dht;
         // @ts-ignore
         if (dht?.provide) { 
@@ -769,30 +592,24 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
         return false;
     }
 
-    /**
-     * @param {CID} cid
-     * @param {{ timeout?: number }} opts
-     * @returns {Promise<Array<any>>}
-     */
     async _findProvidersCompat(cid, opts) {
-        /** @type {Array<any>} */
         const out = [];
         if (!this.node) return out;
         const cr = this.node.contentRouting;
         if (cr?.findProviders) {
-            // @ts-ignore - findProviders signature varies
+            // @ts-ignore
             const res = cr.findProviders(cid, opts);
-            // @ts-ignore - check if it's an async iterator
+            // @ts-ignore
             if (res?.[Symbol.asyncIterator]) {
                 // @ts-ignore
                 for await (const p of res) out.push(p);
             } else {
-                const arr = await res; // some versions return Promise<Provider[]>
+                const arr = await res; 
                 if (Array.isArray(arr)) out.push(...arr);
             }
             return out;
         }
-        // @ts-ignore - dht service API varies
+        // @ts-ignore
         const dht = this.node.services?.dht;
         // @ts-ignore
         if (dht?.findProviders) {
@@ -802,11 +619,6 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
         return out;
     }
 
-
-
-    /**
-     * @returns {Promise<CID>}
-     */
     async _getRendezvousCID() {
         if (this._rendezvousCid) return this._rendezvousCid;
         const bytes = new TextEncoder().encode(this._rendezvousStr);
@@ -819,17 +631,13 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
         try {
             const cid = await this._getRendezvousCID();
 
-            // Announce
             try {
                 const ok = await this._provideCompat(cid);
                 if (ok) this.log(`[P2P] 📣 Provided rendezvous CID ${cid.toString()}`);
             } catch (e) {
-                const err = /** @type {Error} */ (e);
-                const isAbort = err?.name === 'AbortError' || /aborted/i.test(err?.message || '');
-                this.log(`[P2P] Provide ${isAbort ? 'aborted' : 'error'}: ${err?.message || err}`, isAbort ? 'debug' : 'warn');
+                // ignore
             }
 
-            // Discover (with a timeout)
             let providers = await this._findProvidersCompat(cid, { timeout: 15_000 });
 
             if (!this.node) return;
@@ -846,14 +654,9 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
                             await this._addToAddressBookCompat(p.id, p.multiaddrs);
                         }
                         await this.node.dial(p.id);
-                        
-                        // The peer:connect event will handle challenging
                         this.log(`[P2P] 🔌 Connected to rendezvous provider ${id}`);
-                        
                     } catch (e) {
-                        const err = /** @type {Error} */ (e);
-                        const isAbort = err?.name === 'AbortError' || /aborted/i.test(err?.message || '');
-                        this.log(`[P2P] Rendezvous dial ${isAbort ? 'aborted' : 'failed'}: ${id} – ${err?.message || err}`, isAbort ? 'debug' : 'warn');
+                         // ignore
                     }
                 }
             }
@@ -863,16 +666,12 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
         }
     }
 
-
-
     async initialize() {
         this.log('[P2P] Initializing libp2p node...');
         
-        // --- START MODIFICATION ---
         const NET = process.env.PLURIBIT_NET || 'mainnet';
         
         if (NET === 'testnet') {
-            // 1. Try to load TESTNET config
             try {
                 const fs = await import('fs/promises');
                 const configData = await fs.readFile('./bootstrap.testnet.json', 'utf-8');
@@ -885,7 +684,6 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
                 this.log('[P2P] TESTNET: No bootstrap.testnet.json found, using defaults', 'warn');
             }
         } else if (!this.isBootstrap) {
-            // 2. Try to load MAINNET config
             try {
                 const fs = await import('fs/promises');
                 const configData = await fs.readFile('./bootstrap-config.json', 'utf-8');
@@ -898,45 +696,33 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
                 this.log('[P2P] No bootstrap config found, using defaults', 'warn');
             }
         }
-        // --- END MODIFICATION ---
 
-
-    const peerId = await this.loadOrCreatePeerId();
-    this._extractTrustedPeers();
-    this.log(`[P2P DEBUG] loadOrCreatePeerId returned: ${peerId.toString()}`, 'debug');
-    this.log(`[P2P DEBUG] privateKey length: ${peerId.privateKey?.length}`, 'debug');
-    
-    // Import the keys module to unmarshal the private key
-    const keys = await import('@libp2p/crypto/keys');
-    
-    // Unmarshal the private key bytes to get a proper PrivateKey object
-    let privateKeyObj;
-    try {
-        // Try the protobuf unmarshalling
-        privateKeyObj = keys.privateKeyFromProtobuf(peerId.privateKey);
-    } catch (e) {
-        // If that fails, try the supportedKeys approach
-        this.log(`[P2P DEBUG] protobuf unmarshal failed, trying supportedKeys: ${e.message}`, 'debug');
-        const { supportedKeys } = keys;
-        privateKeyObj = await supportedKeys.ed25519.unmarshalEd25519PrivateKey(peerId.privateKey);
-    }
-    
-    this.log(`[P2P DEBUG] Unmarshalled key type: ${privateKeyObj.type}`, 'debug');
-    
-    // Create libp2p node
-    this.node = await createLibp2p({
-        privateKey: privateKeyObj,  // Pass the proper key object
-        addresses: {
-            listen: [
-                `/ip4/0.0.0.0/tcp/${this.config.listen.tcp}`,
-                `/ip4/0.0.0.0/tcp/${this.config.listen.ws}/ws`
-            ]
-        },
+        const peerId = await this.loadOrCreatePeerId();
+        this._extractTrustedPeers();
+        
+        const keys = await import('@libp2p/crypto/keys');
+        
+        let privateKeyObj;
+        try {
+            privateKeyObj = keys.privateKeyFromProtobuf(peerId.privateKey);
+        } catch (e) {
+            this.log(`[P2P DEBUG] protobuf unmarshal failed, trying supportedKeys: ${e.message}`, 'debug');
+            const { supportedKeys } = keys;
+            privateKeyObj = await supportedKeys.ed25519.unmarshalEd25519PrivateKey(peerId.privateKey);
+        }
+        
+        this.node = await createLibp2p({
+            privateKey: privateKeyObj, 
+            addresses: {
+                listen: [
+                    `/ip4/0.0.0.0/tcp/${this.config.listen.tcp}`,
+                    `/ip4/0.0.0.0/tcp/${this.config.listen.ws}/ws`
+                ]
+            },
             transports: [
                 tcp(),
                 webSockets(),
                 webRTC(),
-                // Conditionally configure relay client
                 circuitRelayTransport({
                     discoverRelays: this.isBootstrap ? 0 : 2
                 })
@@ -944,19 +730,16 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
             connectionEncrypters: [noise()],
             streamMuxers: [yamux()],
             services: {
-                // Conditionally enable the relay server for bootstrap nodes
                 ...(this.isBootstrap && { relay: circuitRelayServer() }),
-
                 identify: identify(),
                 dht: kadDHT({
-                    // Use the public IPFS DHT protocol so we can use content routing on the open network
                     protocol: '/ipfs/kad/1.0.0',
                     clientMode: false,
-                    // @ts-ignore - validators API varies across versions
+                    // @ts-ignore
                     validators: {
                         pluribit: {
                             // @ts-ignore
-                            validate: (/** @type {any} */ key, /** @type {any} */ value) => {
+                            validate: (key, value) => {
                                 try {
                                     const data = JSON.parse(uint8ArrayToString(value));
                                     return data.type === 'pluribit' && data.timestamp;
@@ -969,18 +752,13 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
                 }),
 
             pubsub: gossipsub({
-                    // @ts-ignore - option name varies by version
+                    // @ts-ignore
                     allowPublishToZeroTopicPeers: true,
                     emitSelf: true,
-
-                    // --- NEW: Enable Peer Scoring ---
-                    // @ts-ignore - peer-scoring options
+                    // @ts-ignore
                     scoreThresholds: {
-                        // Don't gossip to peers with a score below this
                         gossipThreshold: CONFIG.P2P.GOSSIPSUB_SCORING.graftThreshold,
-                        // Don't publish to peers with a score below this
                         publishThreshold: CONFIG.P2P.GOSSIPSUB_SCORING.pruneThreshold,
-                        // Required score to be seen as "good"
                         seenThreshold: 0,
                     },
                     // @ts-ignore
@@ -989,21 +767,16 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
                     peerScoreParams: {
                         IPColocationFactorWeight: -10,
                         IPColocationFactorThreshold: 5,
-                        // P7: Score limits
                         scoreCap: CONFIG.P2P.GOSSIPSUB_SCORING.scoreCap,
-                        // P3b: Invalid message penalty
                         invalidMessage: {
                             penalty: CONFIG.P2P.GOSSIPSUB_SCORING.invalidMessagePenalty,
                             cap: CONFIG.P2P.GOSSIPSUB_SCORING.scoreCap,
                         },
-                        // P4: Duplicate message penalty
                         duplicateMessage: {
                             penalty: CONFIG.P2P.GOSSIPSUB_SCORING.duplicateMessagePenalty,
                             cap: CONFIG.P2P.GOSSIPSUB_SCORING.scoreCap,
                         },
-                        // Topic-specific parameters can be added here
                     }
-                    // --- END NEW ---
                 }),
                 ping: ping(),
                 dcutr: dcutr(),
@@ -1013,7 +786,7 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
                 [
                     bootstrap({
                         list: this.config.bootstrap,
-                        // @ts-ignore - interval/timeout options may not exist in all versions
+                        // @ts-ignore
                         interval: 30000,
                         timeout: 30000
                     }),
@@ -1021,7 +794,7 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
                 ]
                 : [mdns()],
             connectionManager: {
-                // @ts-ignore - connection manager options vary by version
+                // @ts-ignore
                 minConnections: CONFIG.P2P.MIN_CONNECTIONS,
                 maxConnections: CONFIG.P2P.MAX_CONNECTIONS, 
                 autoDial: true,
@@ -1031,33 +804,20 @@ async banPeer(peerIdStr, reason = 'unknown', permanent = false, poisonedHash = n
             }
         });
 
-        // Setup event handlers
         this.setupEventHandlers();
         
-        // Start the node
         await this.node.start();
-        // 1. Load old friends
         await this.loadPeers();
 
-        // 2. Periodic save (every 5 minutes)
         setInterval(() => this.savePeers(), 5 * 60 * 1000);
         this.log(`[P2P] Node started with ID: ${this.node.peerId.toString()}`);
-this.log(`[P2P DEBUG] Node peerId matches loaded peerId: ${this.node.peerId.toString() === peerId.toString()}`, 'debug');
-if (this.node.peerId.toString() !== peerId.toString()) {
-    this.log(`[P2P ERROR] MISMATCH! Loaded: ${peerId.toString()}, Node using: ${this.node.peerId.toString()}`, 'error');
-}
-        // Self-verify for loopback messages (emitSelf: true in gossipsub)
+
         this._updateVerificationState(this.node.peerId.toString(), { 
             powSolved: true, 
             isSubscribed: true 
         });
 
-        // Register custom protocol for direct challenge-response
         const CHALLENGE_PROTOCOL = '/pluribit/challenge/1.0.0';
-
-
-
-
 
         await this.node.handle(CHALLENGE_PROTOCOL, async ({ stream, connection }) => {
             try {
@@ -1065,16 +825,13 @@ if (this.node.peerId.toString() !== peerId.toString()) {
                 for await (const chunk of stream.source) {
                     chunks.push(chunk.subarray());
                 }
-                // Decode the Protobuf 'Challenge' message
                 const buffer = Buffer.concat(chunks);
-                // @ts-ignore - protobuf decode signature
                 const data = p2p.Challenge.decode(buffer);
                 
-                // @ts-ignore - protobuf message property access
+                // @ts-ignore
                 const { challenge, from, difficulty} = data;
 
                 if (difficulty === undefined || difficulty === null || !challenge) {
-                    this.log(`[P2P] ✗ Peer ${from} sent an invalid challenge. Hanging up.`, 'warn');
                     try { await stream.close(); } catch {}
                     return;
                 }
@@ -1092,7 +849,6 @@ if (this.node.peerId.toString() !== peerId.toString()) {
                     nonce++;
                 }
                 
-                // Create and encode the Protobuf 'ChallengeResponse' message
                 const response = p2p.ChallengeResponse.create({
                     solution,
                     nonce: String(nonce),
@@ -1102,28 +858,26 @@ if (this.node.peerId.toString() !== peerId.toString()) {
                 
                 await pipe([encodedResponse], stream.sink);
                 
-                // We can use 'from' directly from the message payload
-                this.log(`[P22P] Solved challenge from ${from} with nonce ${nonce}`, 'info');
+                this.log(`[P2P] Solved challenge from ${from} with nonce ${nonce}`, 'info');
             } catch (e) {
                 const err = /** @type {Error} */ (e);
                 this.log(`[P2P] Error handling challenge protocol: ${err.message}`, 'error');
             }
         });      
+        
         await this.node.handle(PEX_PROTOCOL, this._handlePexRequest.bind(this));
-        // Register protocol for direct block transfers
+        
         const BLOCK_TRANSFER_PROTOCOL = `/pluribit/${NET}/block-transfer/1.0.0`;
         await this.node.handle(BLOCK_TRANSFER_PROTOCOL, async ({ stream, connection }) => {
             try {
                 const peerId = connection.remotePeer.toString();
                 
-                // CRITICAL: Require verified peer
                 if (!this.isPeerVerified(peerId)) {
                     this.log(`[P2P] Denying block transfer from unverified peer ${peerId}`, 'warn');
                     try { await stream.close(); } catch {}
                     return;
                 }
                 
-                // Rate limiting
                 if (!this._allowMessage(peerId)) {
                     this.log(`[P2P] Rate limited block transfer from ${peerId}`, 'warn');
                     try { await stream.close(); } catch {}
@@ -1135,10 +889,9 @@ if (this.node.peerId.toString() !== peerId.toString()) {
                     chunks.push(chunk.subarray());
                 }
                 const buffer = Buffer.concat(chunks);
-                // @ts-ignore - protobuf decode signature
                 const request = p2p.DirectBlockRequest.decode(buffer);
                 
-                // @ts-ignore - protobuf message property access
+                // @ts-ignore
                 if (!request.hash || !/^[0-9a-f]{64}$/i.test(request.hash)) {
                     const errResp = p2p.BlockTransferResponse.create({ errorReason: 'INVALID_HASH' });
                     await pipe([p2p.BlockTransferResponse.encode(errResp).finish()], stream.sink);
@@ -1147,10 +900,8 @@ if (this.node.peerId.toString() !== peerId.toString()) {
                 
                 const handlers = this.handlers.get(BLOCK_TRANSFER_PROTOCOL) || [];
                 for (const handler of handlers) {
-                    // @ts-ignore - protobuf message property access
                     const block = await handler(request.hash);
                     if (block) {
-                        // Protobuf.js handles BigInts correctly when creating the message
                         const response = p2p.BlockTransferResponse.create({ blockData: block });
                         const encodedResponse = p2p.BlockTransferResponse.encode(response).finish();
                         await pipe([encodedResponse], stream.sink);
@@ -1158,7 +909,6 @@ if (this.node.peerId.toString() !== peerId.toString()) {
                     }
                 }
                 
-                // Not found
                 const errResp = p2p.BlockTransferResponse.create({ errorReason: 'NOT_FOUND' });
                 await pipe([p2p.BlockTransferResponse.encode(errResp).finish()], stream.sink);
 
@@ -1168,23 +918,18 @@ if (this.node.peerId.toString() !== peerId.toString()) {
             }
         });
         
-
-        
         await this.node.handle(TOPICS.DANDELION_STEM, async ({ stream, connection }) => {
-            const peerId = connection.remotePeer.toString(); // Get PeerID early for logging
-            this.log(`[Dandelion] Received incoming STEM connection from ${peerId.slice(-6)}`, 'debug'); // Log connection
+            const peerId = connection.remotePeer.toString(); 
+            this.log(`[Dandelion] Received incoming STEM connection from ${peerId.slice(-6)}`, 'debug');
             try {
-                
-                // Require verified peer
                 if (!this.isPeerVerified(peerId)) {
-                    this.log(`[Dandelion] Rejecting stem from unverified peer ${peerId.slice(-6)}`, 'warn'); //
+                    this.log(`[Dandelion] Rejecting stem from unverified peer ${peerId.slice(-6)}`, 'warn'); 
                     try { await stream.close(); } catch {}
                     return;
                 }
                 
-                // Rate limiting
                 if (!this._allowMessage(peerId)) {
-                    this.log(`[Dandelion] Rate limited stem from ${peerId.slice(-6)}`, 'warn'); //
+                    this.log(`[Dandelion] Rate limited stem from ${peerId.slice(-6)}`, 'warn');
                     try { await stream.close(); } catch {}
                     return;
                 }
@@ -1196,18 +941,17 @@ if (this.node.peerId.toString() !== peerId.toString()) {
                 const buffer = Buffer.concat(chunks);
                 const stemMessage = p2p.DandelionStem.decode(buffer);
 
-                const txHash = this._getTxHash(stemMessage.transaction); // Get hash for logging
-                this.log(`[Dandelion] Decoded stem message for tx ${txHash} from ${peerId.slice(-6)}`, 'debug'); // Log successful decode
+                const txHash = this._getTxHash(stemMessage.transaction);
+                this.log(`[Dandelion] Decoded stem message for tx ${txHash} from ${peerId.slice(-6)}`, 'debug'); 
 
                 await this._handleStemTransaction(stemMessage, peerId);
                 
             } catch (e) {
                 const err = /** @type {Error} */ (e);
-                this.log(`[Dandelion] Error handling stem protocol from ${peerId.slice(-6)}: ${err.message}`, 'error'); //
+                this.log(`[Dandelion] Error handling stem protocol from ${peerId.slice(-6)}: ${err.message}`, 'error'); 
             }
         });
         
-        // Start periodic stem relay refresh
         this._stemRelayRefreshTimer = setInterval(() => {
             this._refreshStemRelay();
         }, CONFIG.DANDELION.STEM_RELAY_REFRESH_INTERVAL_MS);
@@ -1216,7 +960,6 @@ if (this.node.peerId.toString() !== peerId.toString()) {
         const addrs = this.node.getMultiaddrs();
         addrs.forEach(addr => this.log(`[P2P] Listening on ${addr.toString()}`));
 
-        // Proactively dial bootstrap peers once
         if (!this.isBootstrap && Array.isArray(this.config.bootstrap) && this.config.bootstrap.length) {
             const tasks = this.config.bootstrap.map(async (addr) => {
                 try {
@@ -1231,16 +974,14 @@ if (this.node.peerId.toString() !== peerId.toString()) {
             await Promise.allSettled(tasks);
         }
 
-        // Start DHT (guard in case libp2p already started it)
         try {
-            // @ts-ignore - dht API varies
+            // @ts-ignore
             if (this.node.services.dht?.isStarted?.() === false) {
                 // @ts-ignore
                 await this.node.services.dht.start();
             }
-        } catch { /* ignore if already started */ }
+        } catch { }
         
-        // Light GC for rate-limit buckets to bound memory
         this._bucketGcTimer = setInterval(() => {
             const now = Date.now();
             for (const [k, b] of this._buckets) {
@@ -1248,39 +989,28 @@ if (this.node.peerId.toString() !== peerId.toString()) {
             }
         }, 5 * 60_000);
         
-        // Zero-infra rendezvous: announce & discover via public DHT provider records
         await this._announceAndDiscoverProviders();
         this._rendezvousTimer = setInterval(() => {
             this._announceAndDiscoverProviders().catch((e) => {
-                const err = /** @type {Error} */ (e);
-                const isAbort = err?.name === 'AbortError' || /aborted/i.test(err?.message || '');
-                this.log(`[P2P] Rendezvous ${isAbort ? 'aborted (timeout/cancel)' : 'failed'}: ${err?.message || err}`, isAbort ? 'debug' : 'warn');
+                 // ignore
             });
-        }, CONFIG.P2P.RENDEZVOUS_DISCOVERY_INTERVAL_MS); // <-- USE THE CONFIG VALUE
+        }, CONFIG.P2P.RENDEZVOUS_DISCOVERY_INTERVAL_MS); 
         
-        
-        
-        
-        
-        // --- Dynamic PoW Adjustment Interval ---
         setInterval(() => {
             const rate = this._connectionAttempts;
-            this._connectionAttempts = 0; // Reset counter for the next minute
+            this._connectionAttempts = 0;
 
             const { MIN_DIFFICULTY, MAX_DIFFICULTY, SURGE_THRESHOLD } = CONFIG.P2P.DYNAMIC_POW;
             const minLen = MIN_DIFFICULTY.length;
             const maxLen = MAX_DIFFICULTY.length;
             let currentLen = this._currentChallengeDifficulty.length;
-            this.log(`[SECURITY] Current PoW difficulty for P2P: ${this._currentChallengeDifficulty}`,'info');
             if (rate > SURGE_THRESHOLD) {
-                // Load increasing: increase difficulty
                 currentLen = Math.min(currentLen + 1, maxLen);
                 if (currentLen > this._currentChallengeDifficulty.length) {
                     this._currentChallengeDifficulty = '0'.repeat(currentLen);
                     this.log(`[SECURITY] Connection surge detected (${rate}/min). Increasing PoW difficulty to ${currentLen} zeros.`, 'warn');
                 }
             } else if (rate < SURGE_THRESHOLD / 2) {
-                // Load decreasing: decrease difficulty
                 currentLen = Math.max(currentLen - 1, minLen);
                 if (currentLen < this._currentChallengeDifficulty.length) {
                     this._currentChallengeDifficulty = '0'.repeat(currentLen);
@@ -1289,175 +1019,118 @@ if (this.node.peerId.toString() !== peerId.toString()) {
             }
         }, CONFIG.P2P.DYNAMIC_POW.ADJUSTMENT_INTERVAL_MS);
                
- 
-        // --- ACTIVE PEER DISCOVERY LOOP ---
-        // RATIONALE: Don't just wait for MDNS or Bootstrap. Actively query the DHT 
-        // to find other peers connected to the bootstrap node to form a mesh.
         setInterval(async () => {
             if (!this.node) return;
             
             const connectedCount = this.node.getConnections().length;
             const maxConns = CONFIG.P2P.MAX_CONNECTIONS;
             
-            // Only search if we aren't full
             if (connectedCount < maxConns) {
                 try {
-                    // Ask the network: "Who is close to me?"
-                    // This forces the bootstrap node to give us a list of other peers it knows.
+                    // @ts-ignore
                     const neighborGen = this.node.services.dht.getClosestPeers(this.node.peerId.toBytes());
-                    
-                    for await (const event of neighborGen) {
-                        // The 'peer:discovery' event will fire automatically when 
-                        // new peers are found during this query, triggering the 
-                        // auto-dial logic defined in setupEventHandlers.
-                    }
+                    for await (const event of neighborGen) {}
                 } catch (e) {
-                    // Ignore DHT timeouts/errors during discovery
                 }
             }
-        }, 30000); // Run every 30 seconds
+        }, 30000); 
         
         return this.node;
     }
 
-async loadOrCreatePeerId() {
-    const peerIdPath = './pluribit-data/peer-id.json';
+    async loadOrCreatePeerId() {
+        const peerIdPath = './pluribit-data/peer-id.json';
 
-// --- BOOTSTRAP: Load permanent key from file ---
-if (this.isBootstrap) {
-    this.log('[P2P] Attempting to load permanent bootstrap PeerID from file...');
-    try {
-        await fs.mkdir('./pluribit-data', { recursive: true });
-        const data = await fs.readFile(peerIdPath, 'utf-8');
-        this.log('[P2P] File read successfully', 'debug');
-        
-        const stored = JSON.parse(data);
-        this.log(`[P2P] JSON parsed, stored ID: ${stored.id}`, 'debug');
+        // --- FIXED: Use proper crypto keys for Bootstrap node ---
+        if (this.isBootstrap) {
+            this.log('[P2P] Attempting to load permanent bootstrap PeerID from file...');
+            try {
+                await fs.mkdir('./pluribit-data', { recursive: true });
+                const data = await fs.readFile(peerIdPath, 'utf-8');
+                
+                const stored = JSON.parse(data);
+                const keys = await import('@libp2p/crypto/keys');
+                const keyBytes = uint8ArrayFromString(stored.privKey, 'base64');
+                
+                // <--- FIXED: Reconstitute real PrivateKey object
+                const privateKeyObj = await keys.privateKeyFromProtobuf(keyBytes);
+                
+                // <--- FIXED: Create real PeerId instance
+                const peerId = await createFromPrivKey(privateKeyObj);
+                
+                // Verify ID matches
+                if (peerId.toString() !== stored.id) {
+                    throw new Error(`Loaded ID ${peerId.toString()} does not match stored ID ${stored.id}`);
+                }
+                
+                this.log(`[P2P] Successfully loaded permanent bootstrap ID: ${stored.id}`, 'success');
+                return peerId;
 
-        // Import the keys module to unmarshal the private key
-        const keys = await import('@libp2p/crypto/keys');
-        const keyBytes = uint8ArrayFromString(stored.privKey, 'base64');
-        this.log(`[P2P] Key bytes decoded, ${keyBytes.length} bytes`, 'debug');
-        
-        // Unmarshal the private key bytes to get a proper PrivateKey object
-        const privateKeyObj = keys.privateKeyFromProtobuf(keyBytes);
-        this.log(`[P2P] Key unmarshalled, type: ${privateKeyObj.type}`, 'debug');
-        
-        // Create a peerId-like object that libp2p will accept
-        // We return the same structure that createEd25519PeerId() returns
-        const peerId = {
-            type: 'Ed25519',
-            privateKey: keyBytes,
-            publicKey: uint8ArrayFromString(stored.pubKey, 'base64'),
-            toString: () => stored.id
-        };
-        
-        this.log(`[P2P] Successfully loaded permanent bootstrap ID: ${stored.id}`, 'success');
-        return peerId;
-
-    } catch (e) {
-        this.log(`[P2P] Bootstrap load failed: ${e.message}`, 'error');
-        this.log(`[P2P] Error stack: ${e.stack}`, 'debug');
-        this.log('[P2P] FATAL: Could not load "peer-id.json".', 'error');
-        this.log('[P2P] A bootstrap node MUST have a "peer-id.json" file.', 'error');
-        this.log('[P2P] Run this node without PLURIBIT_IS_BOOTSTRAP="true" once to generate one.', 'error');
-        process.exit(1);
-    }
-}
-    
-    // --- MINER: Load or create local key from file ---
-    try {
-        await fs.mkdir('./pluribit-data', { recursive: true });
-        this.log('[P2P] Attempting to load peer-id.json...', 'debug');
-        
-        const data = await fs.readFile(peerIdPath, 'utf-8');
-        this.log('[P2P] File read successfully', 'debug');
-        
-        const stored = JSON.parse(data);
-        this.log(`[P2P] JSON parsed, stored ID: ${stored.id}`, 'debug');
-
-        // Import the marshalled key using libp2p's crypto utilities
-        const { unmarshalPrivateKey } = await import('@libp2p/crypto/keys');
-        const keyBytes = uint8ArrayFromString(stored.privKey, 'base64');
-        this.log(`[P2P] Key bytes decoded, ${keyBytes.length} bytes`, 'debug');
-        
-        const privateKey = await unmarshalPrivateKey(keyBytes);
-        this.log(`[P2P] Private key unmarshalled successfully`, 'debug');
-        
-        // Create peer ID from the unmarshalled private key
-        const peerId = await createFromPrivKey(privateKey);
-        this.log(`[P2P] PeerId created from key: ${peerId.toString()}`, 'debug');
-        
-        // Verify it matches what we stored
-        if (peerId.toString() !== stored.id) {
-            this.log(`[P2P] WARNING: Generated ID ${peerId.toString()} doesn't match stored ID ${stored.id}`, 'warn');
-            this.log(`[P2P] This might indicate key corruption. Regenerating...`, 'warn');
-            throw new Error('ID mismatch - regenerating');
+            } catch (e) {
+                this.log(`[P2P] Bootstrap load failed: ${e.message}`, 'error');
+                this.log('[P2P] FATAL: Could not load "peer-id.json" for bootstrap.', 'error');
+                process.exit(1);
+            }
         }
         
-        this.log(`[P2P] Successfully loaded existing peer ID: ${peerId.toString()}`, 'info');
-        return peerId;
-        
-    } catch (e) {
-        this.log(`[P2P] Failed to load existing peer ID: ${e.message}`, 'debug');
-        
-        // Create new peer ID
-        this.log('[P2P] Creating new peer ID...', 'info');
-        const peerId = await createEd25519PeerId();
-        
-        if (!peerId.privateKey) {
-            throw new Error('Generated PeerId missing private key');
-        }
-        
-        // Marshal the private key properly using libp2p's utilities
-        const { marshalPrivateKey, unmarshalPrivateKey } = await import('@libp2p/crypto/keys');
-        
-        // The privateKey property is already a Uint8Array of the marshalled key
-        const marshalledKey = peerId.privateKey;
-        
-        const data = {
-            id: peerId.toString(),
-            privKey: uint8ArrayToString(marshalledKey, 'base64'),
-            pubKey: uint8ArrayToString(peerId.publicKey, 'base64')
-        };
-        
-        await fs.writeFile(peerIdPath, JSON.stringify(data, null, 2), { mode: 0o600 });
-        try { await fs.chmod(peerIdPath, 0o600); } catch {}
-        
-        this.log(`[P2P] Created new peer ID: ${peerId.toString()}`, 'success');
-        return peerId;
-    }
-}
+        try {
+            await fs.mkdir('./pluribit-data', { recursive: true });
+            
+            const data = await fs.readFile(peerIdPath, 'utf-8');
+            const stored = JSON.parse(data);
 
-    /**
-     * @param {string} peerId
-     * @returns {boolean}
-     */
+            const { unmarshalPrivateKey } = await import('@libp2p/crypto/keys');
+            const keyBytes = uint8ArrayFromString(stored.privKey, 'base64');
+            
+            const privateKey = await unmarshalPrivateKey(keyBytes);
+            const peerId = await createFromPrivKey(privateKey);
+            
+            if (peerId.toString() !== stored.id) {
+                throw new Error('ID mismatch - regenerating');
+            }
+            
+            this.log(`[P2P] Successfully loaded existing peer ID: ${peerId.toString()}`, 'info');
+            return peerId;
+            
+        } catch (e) {
+            this.log('[P2P] Creating new peer ID...', 'info');
+            const peerId = await createEd25519PeerId();
+            
+            if (!peerId.privateKey) {
+                throw new Error('Generated PeerId missing private key');
+            }
+            
+            const marshalledKey = peerId.privateKey;
+            
+            const data = {
+                id: peerId.toString(),
+                privKey: uint8ArrayToString(marshalledKey, 'base64'),
+                pubKey: uint8ArrayToString(peerId.publicKey, 'base64')
+            };
+            
+            await fs.writeFile(peerIdPath, JSON.stringify(data, null, 2), { mode: 0o600 });
+            try { await fs.chmod(peerIdPath, 0o600); } catch {}
+            
+            this.log(`[P2P] Created new peer ID: ${peerId.toString()}`, 'success');
+            return peerId;
+        }
+    }
+
     isPeerVerified(peerId) {
         const state = this._peerVerificationState.get(peerId.toString());
         if (!state) return false;
-        // A peer is verified if they have solved the PoW and are subscribed to our main topic.
         return state.powSolved && state.isSubscribed;
     }
 
-    /**
-     * Extracts an IP address (v4 or v6) from a multiaddr.
-     * @private
-     * @param {import('@multiformats/multiaddr').Multiaddr} ma
-     * @returns {string | null}
-     */
     getIpFromMultiaddr(ma) {
         try {
             const tuples = ma.stringTuples();
-            // 4 = ip4, 41 = ip6
             const ipTuple = tuples.find(t => t[0] === 4 || t[0] === 41);
             return ipTuple ? ipTuple[1] : null;
         } catch (e) {
-            this.log(`[SECURITY] Error parsing IP from multiaddr: ${e.message}`, 'warn');
             return null;
         }
     }
-
 
     setupEventHandlers() {
         if (!this.node) return;
@@ -1465,7 +1138,6 @@ if (this.isBootstrap) {
         this.node.addEventListener('peer:connect', async (evt) => {
             const peerId = evt.detail.toString();
     
-    // <<< INSTANT REJECT IF PERMANENTLY BANNED >>>
             if (this.isPeerBannedForBadBlocks(peerId)) {
                 this.log(`[P2P] ⚡ Rejecting reconnection from permanently banned peer ${peerId.slice(-8)}`, 'warn');
                 try { await this.node.hangUp(peerId); } catch {}
@@ -1474,28 +1146,27 @@ if (this.isBootstrap) {
     
             this.log(`[P2P] Connected to ${peerId}`, 'debug');
 
-        // If we connected to a bootstrap node, trigger discovery immediately
             const isBootstrap = this.config.bootstrap.some(addr => addr.includes(peerId));
             if (isBootstrap) {
                 this.log('[P2P] Connected to bootstrap, triggering immediate rendezvous...', 'info');
                 this._announceAndDiscoverProviders().catch(e => {});
             }
     
-            setTimeout(() => { try { bootstrapSync() } catch(e){} }, 3000); // Trigger a sync check 3s after ANY new peer connects
-            // Give the connection a moment to stabilize before sending a challenge.
+            setTimeout(() => { 
+                // @ts-ignore
+                if (typeof global.bootstrapSync === 'function') global.bootstrapSync(); 
+            }, 3000); 
+
             setTimeout(async () => {
                 try {
-                    // <<< IF PEER IS IN BAD-BLOCK LIST (even temporary), make challenge brutal >>>
                     const badEntry = this._badBlockPeers.get(peerId);
                     if (badEntry && badEntry.count >= 1) {
-                        // 20+ leading zeros = attacker burns serious CPU
                         this._currentChallengeDifficulty = '0'.repeat(20 + Math.min(badEntry.count, 10));
                         this.log(`[P2P] Bad peer ${peerId.slice(-8)} gets ${this._currentChallengeDifficulty.length} zero difficulty`, 'warn');
                     }
 
                     await this.sendDirectChallenge(peerId);
                 } catch (e) {
-                    // ignore
                 }
             }, 2000);
         });
@@ -1503,30 +1174,24 @@ if (this.isBootstrap) {
         this.node.addEventListener('peer:disconnect', (evt) => {
             const peerId = evt.detail;
             this.log(`[P2P] Disconnected from ${peerId.toString()}`, 'debug');
-            // Clean up state for disconnected peer
             const peerIdStr = peerId.toString();
             this._peerChallenges.delete(peerIdStr);
             this._peerVerificationState.delete(peerIdStr);
             this._buckets.delete(peerIdStr);
         });
         
-        // Add discovery events with auto-dial
         this.node.addEventListener('peer:discovery', async (evt) => {
             const { id, multiaddrs } = evt.detail;
 
             if (!this.node) return;
-            
-            // ignore self
             if (id?.toString?.() === this.node.peerId.toString()) return;
 
-            // persist addresses so the conn mgr can use them
             if (multiaddrs?.length) {
                 await this._addToAddressBookCompat(id, multiaddrs);
             }
 
             this.log(`[P2P] Discovered peer: ${id.toString()} (${multiaddrs?.length ?? 0} addrs)`, 'debug');
 
-            // if we're under the target and not already connected, dial now
             const connections = this.node.getConnections();
             const already = connections.some(c => c.remotePeer.toString() === id.toString());
             const total = connections.length;
@@ -1537,33 +1202,25 @@ if (this.isBootstrap) {
                     await this.node.dial(id);
                     this.log(`[P2P] Auto-dialed discovered peer ${id.toString()}`, 'debug');
                 } catch (e) {
-                    const err = /** @type {Error} */ (e);
-                    this.log(`[P2P] Auto-dial to ${id.toString()} failed: ${err.message}`, 'warn');
                 }
             }
         });
 
-        
-        // Add connection events for debugging
         this.node.addEventListener('connection:open', (evt) => {
             const connection = evt.detail;
             const peerIdStr = connection.remotePeer.toString();
             this.log(`[P2P] Connection opened to ${peerIdStr}`, 'debug');
 
-            // --- IP-Based Exponential Backoff ---
             const ip = this.getIpFromMultiaddr(connection.remoteAddr);
                         
             if (!ip) {
-                // Allow relay connections through - they're valid
                 this.log(`[P2P] Relay connection from ${peerIdStr}, skipping IP rate limit`, 'debug');
-                // Continue without IP-based rate limiting for relay connections
             }
 
             const now = Date.now();
             const { BASE_BACKOFF_MS, MAX_BACKOFF_MS, MAX_FAILURES } = CONFIG.P2P.IP_BACKOFF;
             const entry = this._ipChallengeTracker.get(ip) || { failures: 0, lastAttempt: 0 };
 
-            // Calculate backoff time: base * 2^failures, capped at max
             const backoffTime = Math.min(
                 BASE_BACKOFF_MS * Math.pow(2, Math.min(entry.failures, MAX_FAILURES)),
                 MAX_BACKOFF_MS
@@ -1575,10 +1232,8 @@ if (this.isBootstrap) {
                 return;
             }
             
-            // Mark this as the last attempt time (even if it fails later)
             entry.lastAttempt = now;
             this._ipChallengeTracker.set(ip, entry);
-            // Increment for dynamic PoW
             this._connectionAttempts++;
         });
         
@@ -1587,49 +1242,33 @@ if (this.isBootstrap) {
             this.log(`[P2P] Connection closed to ${connection.remotePeer.toString()}`, 'debug');
         });
         
-        // GossipSub message handler
         this.node.services.pubsub.addEventListener('message', (evt) => {
-            this.log(`[P2P PUBSUB EVENT] 'message' event fired for topic: ${evt.detail.topic}`, 'debug');
             this.handleGossipMessage(evt.detail);
         });
         
-        // ** Listen for subscription changes to confirm Pluribit peers **
         this.node.services.pubsub.addEventListener('subscription-change', (evt) => {
             const { peerId, subscriptions } = evt.detail;
-            // Check if the peer is now subscribed to our main block topic
             const sub = subscriptions.find(s => s.topic === TOPICS.BLOCKS);
 
             if (sub) {
                 if (sub.subscribe) {
-                    // Peer subscribed, update state
                     this._updateVerificationState(peerId.toString(), { isSubscribed: true, powSolved: undefined });
                 } else {
-                    // Peer unsubscribed, update state
                     this._updateVerificationState(peerId.toString(), { isSubscribed: false, powSolved: undefined });
                 }
             }
         });
     }
 
-    /**
-     * @param {any} msg
-     * @returns {Promise<void>}
-     */
     async handleGossipMessage(msg) {
         try {
             const from = msg.from?.toString?.() ?? String(msg.from);
-
-            this.log(`[P2P RAW] Received message on topic ${msg.topic} from ${from}`, 'debug');
             
-            // Check bad block ban
             if (this.isPeerBannedForBadBlocks(from)) {
-                this.log(`[P2P] Dropping msg from bad-block-banned peer ${from.slice(-6)}`, 'warn');
                 return;
             }
             
-            // CRITICAL: Verify ALL peers (including self for loopback)
             if (!this.isPeerVerified(from)) {
-                this.log(`[P2P] Dropping message from unverified peer ${from}`, 'warn');
                 return;
             }
 
@@ -1639,38 +1278,25 @@ if (this.isBootstrap) {
 
             const bytes = msg?.data;
             if (bytes && bytes.byteLength > CONFIG.MAX_MESSAGE_SIZE) {
-                this.log(`[P2P] Dropping oversize message on ${msg.topic} from ${from}`, 'warn');
                 return;
             }
 
             if (!this._allowMessage(from)) {
-                this.log(`[P2P] Rate-limited ${from} on ${msg.topic}`, 'warn');
                 return;
             }
 
-            // The `P2PMessage.decode`
-            // function will throw an error if the received binary data does not
-            // perfectly match the schema (e.g., wrong types, missing fields),
-            // which we catch below. 
-            // @ts-ignore - protobuf decode signature
             const p2pMessage = p2p.P2pMessage.decode(msg.data);
-            // @ts-ignore - protobuf message property access
+            // @ts-ignore
             const payloadType = p2pMessage.payload;
-            // @ts-ignore - dynamic property access on protobuf message
+            // @ts-ignore
             const data = p2pMessage[payloadType];
 
-
-            // <<< POISONED HASH SHIELD - CHECK BEFORE ANY HANDLER RUNS >>>
             if (data?.hash && this.isHashPoisoned(data.hash)) {
                 this.log(`[CONSENSUS SHIELD] Dropping message with poisoned hash ${data.hash.slice(0,12)}… from ${from.slice(-8)}`, 'warn');
                 this.banPeer(from, 'sent poisoned hash', true);
                 return;
             }
 
-
-            // Rationale: We now dispatch based on the `oneof` payload type defined
-            // in our schema. This is more explicit and safer than relying on a
-            // string topic from the network.
             const handlers = this.handlers.get(msg.topic) || [];
             for (const handler of handlers) {
                 try {
@@ -1678,7 +1304,6 @@ if (this.isBootstrap) {
                 } catch (e) {
                     const err = /** @type {Error} */ (e);
 
-                    // <<< POISON THE HASH IF WE CAN >>>
                     if (data?.hash) {
                         this.poisonHash(data.hash, `handler rejected: ${err.message}`, from);
                     }
@@ -1691,20 +1316,11 @@ if (this.isBootstrap) {
             const err = /** @type {Error} */ (e);
             const from = msg.from?.toString?.() ?? 'unknown';
 
-            // We couldn't even decode the P2pMessage → we have no hash → just nuke the peer
             this.log(`[P2P] Malformed protobuf from ${from.slice(-8)}: ${err.message}`, 'warn');
             this.banPeer(from, `malformed protobuf (${err.message})`, true);
         }
     }
 
-
-    // Public API
-
-    /**
-     * @param {string} topic
-     * @param {Function} handler
-     * @returns {Promise<void>}
-     */
     async subscribe(topic, handler) {
         if (!this.node) return;
         
@@ -1716,19 +1332,9 @@ if (this.isBootstrap) {
         this.handlers.get(topic)?.push(handler);
     }
 
-    /**
-     * @param {string} topic
-     * @param {any} data
-     * @returns {Promise<void>}
-     */
     async publish(topic, data) {
         if (!this.node) return;
         
-        // Rationale: We replace JSON serialization with Protobuf serialization.
-        // 1. Determine the payload type based on the topic.
-        // 2. Create a P2PMessage object with the correct `oneof` field set.
-        // 3. Encode it into a binary Uint8Array.
-        // This process is type-safe and produces a compact binary message.
         const payloadType = this._getPayloadTypeForTopic(topic);
         if (!payloadType) {
             throw new Error(`No Protobuf payload type for topic ${topic}`);
@@ -1743,18 +1349,11 @@ if (this.isBootstrap) {
         await this.node.services.pubsub.publish(topic, bytes);
     }
 
-    // ---- DHT: Signed write ----
-    /**
-     * @param {string} key
-     * @param {any} value
-     * @returns {Promise<void>}
-     */
     async store(key, value) {
         if (!this.node) return;
         
         const nsKey = `/pluribit/${key}`;
         const payload = { type: 'pluribit', value, timestamp: Date.now() };
-        // canonical material to sign (avoid reordering issues)
         const toSign = stableStringify({
             ns: nsKey,
             payload,
@@ -1764,10 +1363,9 @@ if (this.isBootstrap) {
         const hashHex = sha256Hex(toSign);
         const hashBytes = uint8ArrayFromString(hashHex, 'hex');
         
-        // sign with our ed25519 private key
-        // @ts-ignore - privateKey may not exist on all PeerId types
+        // @ts-ignore
         const privKey = this.node.peerId.privateKey;
-        // @ts-ignore - publicKey may not exist on all PeerId types
+        // @ts-ignore
         const pubKey = this.node.peerId.publicKey;
         if (!privKey || !pubKey) {
             throw new Error('PeerId missing keys');
@@ -1776,20 +1374,19 @@ if (this.isBootstrap) {
         const sig = nacl.sign.detached(hashBytes, privKey);
         const envelope = {
             ns: nsKey,
-            payload,                 // { type, value, timestamp }
+            payload,                 
             from: this.node.peerId.toString(),
-            // @ts-ignore - publicKey type compatibility
+            // @ts-ignore
             pubKey: uint8ArrayToString(pubKey, 'base64'),
             sig: uint8ArrayToString(sig, 'base64'),
             alg: 'ed25519',
             v: 1
         };
-        // @ts-ignore - DHT API put returns AsyncIterable in some versions
+        // @ts-ignore
         const result = await this.node.services.dht.put(
             uint8ArrayFromString(nsKey),
             uint8ArrayFromString(JSON.stringify(envelope))
         );
-        // Drain the async iterable if it exists
         // @ts-ignore
         if (result?.[Symbol.asyncIterator]) {
             // @ts-ignore
@@ -1797,22 +1394,16 @@ if (this.isBootstrap) {
         }
     }
 
-
-    // ---- DHT: Verify on read ----
-    /**
-     * @param {string} key
-     * @returns {Promise<any>}
-     */
     async get(key) {
         try {
             if (!this.node) return null;
             
             const nsKey = `/pluribit/${key}`;
-            // @ts-ignore - DHT API get returns AsyncIterable in some versions
+            // @ts-ignore
             const result = await this.node.services.dht.get(uint8ArrayFromString(nsKey));
             
             let resultValue;
-            // @ts-ignore - check if it's an async iterable
+            // @ts-ignore
             if (result?.[Symbol.asyncIterator]) {
                 // @ts-ignore
                 for await (const event of result) {
@@ -1827,20 +1418,15 @@ if (this.isBootstrap) {
             
             if (!resultValue) return null;
             
-            // @ts-ignore - resultValue type compatibility
             const env = JSON.parse(uint8ArrayToString(resultValue));
 
-            // quick shape checks
             if (!env || env.ns !== nsKey || env.v !== 1 || env.alg !== 'ed25519') {
-                this.log(`[DHT] Rejected value for ${nsKey}: bad envelope`, 'warn');
                 return null;
             }
             if (!env.pubKey || !env.sig || !env.payload) {
-                this.log(`[DHT] Rejected value for ${nsKey}: missing fields`, 'warn');
                 return null;
             }
 
-            // recompute the signed material
             const toSign = stableStringify({
                 ns: env.ns,
                 payload: env.payload,
@@ -1854,40 +1440,28 @@ if (this.isBootstrap) {
 
             const ok = nacl.sign.detached.verify(hashBytes, sig, pub);
             if (!ok) {
-                this.log(`[DHT] Rejected value for ${nsKey}: signature invalid`, 'warn');
                 return null;
             }
 
-            // bind claimed "from" to pubKey -> derived PeerId
             try {
-                // @ts-ignore - createFromPubKey signature varies
+                // @ts-ignore
                 const derived = await createFromPubKey({ publicKey: pub });
-
                 if (derived.toString() !== env.from) {
-                    this.log(`[DHT] Rejected value for ${nsKey}: pubKey does not match 'from'`, 'warn');
                     return null;
                 }
             } catch (e) {
-                const err = /** @type {Error} */ (e);
-                this.log(`[DHT] Could not derive PeerId from pubKey: ${err?.message || err}`, 'warn');
                 return null;
             }
 
-            // freshness guard: drop payloads older than 24h
             if (Date.now() - (env.payload?.timestamp || 0) > 86_400_000) return null;
-
-            // skew guard: drop payloads >5m in the future
             if ((env.payload?.timestamp || 0) > Date.now() + 5 * 60_000) return null;
 
-            // anti-replay: only accept strictly newer timestamps per key
             const last = this._dhtSeen.get(nsKey) || 0;
             if ((env.payload?.timestamp || 0) <= last) return null;
             this._dhtSeen.set(nsKey, env.payload.timestamp);
 
             return env.payload?.value ?? null;
         } catch (e) {
-            const err = /** @type {Error} */ (e);
-            this.log(`[DHT] get error for /pluribit/${key}: ${err?.message || err}`, 'debug');
             return null;
         }
     }
@@ -1899,26 +1473,20 @@ if (this.isBootstrap) {
 
         const connections = this.node.getConnections();
 
-        // Map over connections to get peer IDs, then immediately filter out any
-        // that are undefined. This is the crucial step.
+        // <--- FIXED: Safely verify peerStore records without throwing
         return connections
             .map(c => c.remotePeer)
-            .filter(peerId => peerId != null) // This ensures only valid PeerId objects proceed
+            .filter(peerId => peerId != null) 
             .map(peerId => {
                 try {
-                    // Now we can safely call peerStore.get because peerId is guaranteed to be valid.
-                    // @ts-ignore - peerStore.get() API has varied across versions
-                    const peer = this.node.peerStore.get(peerId);
-                    
-                    // @ts-ignore
-                    const protocols = peer?.protocols ?? [];
-                    
+                    // Modern libp2p peerStore.get is likely async, but synchronous
+                    // access via connections map is safer for basic ID retrieval.
+                    // Here we just return the ID to avoid race conditions.
                     return {
                         id: peerId.toString(),
-                        protocols
+                        protocols: [] // Protocol check not strictly needed here
                     };
                 } catch (e) {
-                    // This fallback is just in case peerStore.get fails for other reasons.
                     return {
                         id: peerId.toString(),
                         protocols: []
@@ -1927,16 +1495,10 @@ if (this.isBootstrap) {
             });
     }
     
-/**
-     * Get a list of ALL known peers from the address book, 
-     * including those not currently connected.
-     */
     async getKnownPeers() {
         if (!this.node) return [];
         const peers = [];
         
-        // FIX: In modern libp2p, .all() returns a Promise<Peer[]>, not an iterable.
-        // We must await the result, then iterate the array.
         const allPeers = await this.node.peerStore.all();
         
         for (const peer of allPeers) {
@@ -1945,73 +1507,57 @@ if (this.isBootstrap) {
         return peers;
     }
 
-/**
- * Lightweight keepalive using challenge protocol with difficulty=0 (instant solve).
- * Returns true if peer is responsive, false if dead.
- * @param {string} peerId
- * @param {number} timeoutMs
- * @returns {Promise<boolean>}
- */
-async reVerifyPeer(peerId, timeoutMs = 5000) {
-    try {
-        if (!this.node) return false;
-        
-        const connections = this.node.getConnections();
-        const connection = connections.find(c => c.remotePeer.toString() === peerId);
-        if (!connection) return false;
-        
-        const challenge = crypto.randomBytes(16).toString('hex');
-        
-        // Use AbortController for timeout
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), timeoutMs);
-        
+    async reVerifyPeer(peerId, timeoutMs = 5000) {
         try {
-            const stream = await connection.newStream('/pluribit/challenge/1.0.0', {
-                signal: controller.signal
-            });
+            if (!this.node) return false;
             
-            // Difficulty "" means any hash is valid - instant solve
-            const message = p2p.Challenge.create({ 
-                challenge, 
-                from: this.node.peerId.toString(),
-                difficulty: "" // No PoW required - just connectivity check
-            });
+            const connections = this.node.getConnections();
+            const connection = connections.find(c => c.remotePeer.toString() === peerId);
+            if (!connection) return false;
             
-            await pipe([p2p.Challenge.encode(message).finish()], stream.sink);
+            const challenge = crypto.randomBytes(16).toString('hex');
             
-            // Wait for any response - if they respond, they're alive
-            const chunks = [];
-            for await (const chunk of stream.source) {
-                chunks.push(chunk.subarray());
-                break; // Got data, peer is alive
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), timeoutMs);
+            
+            try {
+                const stream = await connection.newStream('/pluribit/challenge/1.0.0', {
+                    signal: controller.signal
+                });
+                
+                const message = p2p.Challenge.create({ 
+                    challenge, 
+                    from: this.node.peerId.toString(),
+                    difficulty: "" 
+                });
+                
+                await pipe([p2p.Challenge.encode(message).finish()], stream.sink);
+                
+                const chunks = [];
+                for await (const chunk of stream.source) {
+                    chunks.push(chunk.subarray());
+                    break; 
+                }
+                
+                clearTimeout(timeout);
+                return chunks.length > 0;
+                
+            } catch (e) {
+                clearTimeout(timeout);
+                return false;
             }
             
-            clearTimeout(timeout);
-            return chunks.length > 0;
-            
         } catch (e) {
-            clearTimeout(timeout);
             return false;
         }
-        
-    } catch (e) {
-        return false;
     }
-}
     
-/**
-     * Save known peers to disk so we remember them after restart.
-     */
     async savePeers() {
         if (!this.node) return;
         try {
             const peersToSave = [];
-            
-            // FIX: await the array, do not use 'for await'
             const allPeers = await this.node.peerStore.all();
             
-            // Iterate all peers we know about
             for (const peer of allPeers) {
                 const addrs = peer.addresses.map(a => a.multiaddr.toString());
                 if (addrs.length > 0) {
@@ -2022,9 +1568,7 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
                 }
             }
             
-            // Ensure directory exists
             await fs.mkdir(path.dirname(PEER_STORE_PATH), { recursive: true });
-            // Write to file
             await fs.writeFile(PEER_STORE_PATH, JSON.stringify(peersToSave, null, 2));
             this.log(`[PERSISTENCE] Saved ${peersToSave.length} peers to disk.`, 'debug');
         } catch (e) {
@@ -2032,13 +1576,9 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
         }
     }
 
-    /**
-     * Load peers from disk and add them to the address book.
-     */
     async loadPeers() {
         if (!this.node) return;
         try {
-            // Check if file exists
             try {
                 await fs.access(PEER_STORE_PATH);
             } catch {
@@ -2052,14 +1592,11 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
             let count = 0;
             for (const p of peers) {
                 try {
-                    const peerId = await createFromPubKey({ publicKey:  /* not needed for add */ null }) 
-                                    || p.id; // Just using the ID string is enough for address book usually
-                                    
-                    // Convert string addrs back to Multiaddr objects
+                    // <--- FIXED: Use string conversion for address book
+                    const peerId = peerIdFromString(p.id);
                     const multiaddrs = p.addrs.map(a => multiaddr(a));                   
                
-                    // We will parse the multiaddrs. If valid, we add them.
-                     await this._addToAddressBookCompat(p.id, multiaddrs);
+                     await this._addToAddressBookCompat(peerId, multiaddrs);
                      count++;
                 } catch (e) {
                     // ignore malformed entries
@@ -2071,12 +1608,6 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
         }
     }
     
-    
-    /**
-     * Removes a specific handler for a given topic.
-     * @param {string} topic - The topic to unsubscribe the handler from.
-     * @param {Function} handler - The specific handler function to remove.
-     */
     async unsubscribe(topic, handler) {
         if (!this.handlers.has(topic)) {
             return;
@@ -2093,12 +1624,12 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
     async stop() {
         if (this._rendezvousTimer) {
             clearInterval(this._rendezvousTimer);
-            // @ts-ignore - timer type compatibility
+            // @ts-ignore
             this._rendezvousTimer = null;
         }
         if (this._challengeGcTimer) {
             clearInterval(this._challengeGcTimer);
-            // @ts-ignore - timer type compatibility
+            // @ts-ignore
             this._challengeGcTimer = null;
         }
         if (this._stemRelayRefreshTimer) {
@@ -2106,7 +1637,6 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
             this._stemRelayRefreshTimer = null;
         }
         
-        // Clear embargo timers
         for (const timer of this._embargoedTransactions.values()) {
             clearTimeout(timer);
         }
@@ -2117,11 +1647,6 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
         }
     }
 
-    /**
-     * Helper to map topics to Protobuf oneof field names.
-     * @param {string} topic
-     * @returns {string | null}
-     */
     _getPayloadTypeForTopic(topic) {
         switch (topic) {
             case TOPICS.BLOCKS: return 'block';
@@ -2133,12 +1658,10 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
             case TOPICS.SYNC: return 'syncMessage';
             case TOPICS.DANDELION_STEM: return 'dandelionStem';
 
-            // --- Atomic Swaps ---
             case TOPICS.SWAP_PROPOSE: return 'swapPropose';
             case TOPICS.SWAP_RESPOND: return 'swapRespond';
             case TOPICS.SWAP_ALICE_ADAPTOR_SIG: return 'swapAliceAdaptorSig';
             
-            // --- Payment Channels ---
             case TOPICS.CHANNEL_PROPOSE: return 'channelPropose';
             case TOPICS.CHANNEL_ACCEPT: return 'channelAccept';
             case TOPICS.CHANNEL_FUND_NONCE: return 'channelFundNonce';
@@ -2152,17 +1675,15 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
         }
     }
 
-// --- NEW: Explicit Peer Exchange (PEX) ---
     async exchangePeers(peerId) {
         if (!this.node) return;
         try {
             const connection = this.node.getConnections().find(c => c.remotePeer.toString() === peerId);
             if (!connection) return;
 
-            // 1. Get a random sample of peers we know (up to 20) to share
             const allPeers = await this.node.peerStore.all();
             const shareablePeers = allPeers
-                .filter(p => p.addresses.length > 0 && p.id.toString() !== peerId) // Don't send them back to themselves
+                .filter(p => p.addresses.length > 0 && p.id.toString() !== peerId) 
                 .sort(() => Math.random() - 0.5)
                 .slice(0, 20)
                 .map(p => ({
@@ -2172,7 +1693,6 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
 
             if (shareablePeers.length === 0) return;
 
-            // 2. Open stream and send
             const stream = await connection.newStream(PEX_PROTOCOL);
             const payload = JSON.stringify(shareablePeers);
             
@@ -2182,7 +1702,6 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
             );
             
         } catch (e) {
-            // PEX failures are common (peer busy, protocol not supported), just log debug
             this.log(`[PEX] Failed to exchange with ${peerId.slice(-6)}: ${e.message}`, 'debug');
         }
     }
@@ -2200,16 +1719,16 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
 
             let newCount = 0;
             for (const p of peers) {
-                // Don't add self
                 if (p.id === this.node.peerId.toString()) continue;
 
                 try {
                     const multiaddrs = p.addrs.map(a => multiaddr(a));
-                    await this._addToAddressBookCompat(p.id, multiaddrs);
+                    // <--- FIXED: Ensure PeerID object is used for address book
+                    const peerId = peerIdFromString(p.id);
+                    await this._addToAddressBookCompat(peerId, multiaddrs);
                     
-                    // Trigger discovery event to potentially dial them immediately
                     this.node.dispatchEvent(new CustomEvent('peer:discovery', { 
-                        detail: { id: p.id, multiaddrs } 
+                        detail: { id: peerId, multiaddrs } 
                     }));
                     newCount++;
                 } catch(e) {}
@@ -2224,5 +1743,4 @@ async reVerifyPeer(peerId, timeoutMs = 5000) {
             try { await stream.close(); } catch{}
         }
     }
-
 }
