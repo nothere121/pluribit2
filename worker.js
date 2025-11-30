@@ -2400,7 +2400,6 @@ function isImmune(peerId) {
 
 // Ask peers for their tip, but only when someone is there to hear us.
 // Retries with a short backoff if nobody is subscribed yet.
-// worker.js
 
 async function bootstrapSync(attempt = 1) {
   if (syncState.syncProgress.status !== 'IDLE') {
@@ -2466,8 +2465,8 @@ if (verifiedPeers.length === 0) {
     // Publish the new wrapped message for a request
     await p2p.publish(TOPICS.SYNC, { tipRequest: {} });
 
-    // --- START: CORRECTED setTimeout LOGIC ---
-setTimeout(() => {
+   // --- START: CORRECTED setTimeout LOGIC ---
+    setTimeout(() => {
         (async () => {
             await p2p.unsubscribe(TOPICS.SYNC, tipHandler);
 
@@ -2479,83 +2478,129 @@ setTimeout(() => {
                     return; 
                 }
 
-                log(`[SYNC] Consensus Phase: Collected ${tipResponses.size} valid tip(s) for evaluation.`, 'info');
-                
-                const bestTip = [...tipResponses.values()].sort((a, b) => (b.totalWork > a.totalWork) ? 1 : -1)[0];
-                
-                
-                const peersForBestTip = [];
-                for (const [peer, tip] of tipResponses.entries()) {
-                    if (tip.hash === bestTip.hash) {
-                        peersForBestTip.push(peer);
+                // 1. Group responses by Hash to form "Chain Candidates"
+                // Peers agreeing on the exact same hash form a consensus group.
+                const candidates = new Map(); // hash -> { totalWork, height, hash, peers: [] }
+
+                for (const [peerId, tip] of tipResponses.entries()) {
+                    if (!candidates.has(tip.hash)) {
+                        candidates.set(tip.hash, {
+                            hash: tip.hash,
+                            height: tip.height,
+                            totalWork: tip.totalWork,
+                            peers: []
+                        });
                     }
+                    candidates.get(tip.hash).peers.push(peerId);
                 }
 
-                const { CONSENSUS_THRESHOLD, MIN_AGREEING_PEERS , PEER_COUNT_FOR_STRICT_CONSENSUS} = CONFIG.SYNC;
-                const agreement = peersForBestTip.length / tipResponses.size;
-                
-                // --- ADAPTIVE CONSENSUS LOGIC ---
-                let consensusFailed = false;
+                // 2. Sort candidates by Work (Highest first)
+                // We want to try the heaviest chain first, but verify it's valid.
+                const sortedCandidates = [...candidates.values()].sort((a, b) => {
+                    return (b.totalWork > a.totalWork) ? 1 : -1;
+                });
 
+                log(`[SYNC] Consensus Phase: Evaluated ${sortedCandidates.length} unique chain candidates.`, 'info');
 
-                if (tipResponses.size >= PEER_COUNT_FOR_STRICT_CONSENSUS) {
-                    // STRICT RULE (Large Network): Require a majority percentage AND min peers.
-                    // This prevents 50/50 splits on a mature network.
-                    if (agreement < CONSENSUS_THRESHOLD || peersForBestTip.length < MIN_AGREEING_PEERS) {
-                        consensusFailed = true;
-                    }
-                } else {
-                    // LENIENT RULE (Small Network): ONLY require the minimum number of agreeing peers.
-                    // This allows a 2-v-2 split (50%) to resolve, but still rejects a 1-v-3 split.
-                    if (peersForBestTip.length < MIN_AGREEING_PEERS) {
-                        consensusFailed = true;
-                    }
-                }
-                // --- END NEW LOGIC ---
+                // 3. Iterate through candidates to find the first *VALID* one
+                let winningCandidate = null;
 
-                if (consensusFailed) {
-                    log(`[SYNC] No consensus on best chain tip. Best candidate (Work=${bestTip.totalWork}) only had ${Math.round(agreement * 100)}% agreement (Peers: ${peersForBestTip.length}/${tipResponses.size}).`, 'warn');
-                    syncState.syncProgress.status = 'IDLE';
-                    return; 
-                }
-
-                const myState = await pluribit.get_blockchain_state();
-                if (bestTip.totalWork > BigInt(myState.total_work)) {
-                    log(`[SYNC] Consensus reached on better chain (Height=${bestTip.height}, Work=${bestTip.totalWork}).`, 'success');
+                for (const candidate of sortedCandidates) {
+                    const { hash, totalWork, height, peers } = candidate;
                     
-                    // SET THE SYNC FLAG IMMEDIATELY to prevent the gossip handler from interfering.
-                    workerState.isSyncing = true;
-                    
-                    if (bestTip.height > myState.current_height) {
-                        // Scenario 1: The better chain is longer. This is a simple fast-forward.
-                        log(`[SYNC] Better chain is longer. Starting forward sync...`, 'info');
-                        await syncForward(bestTip.height, bestTip.hash, peersForBestTip);
-                    } else {
-                        // Scenario 2: The better chain has more work but isn't longer. This is a fork that requires a reorg.
-                        log(`[SYNC] Fork with more work detected. Fetching tip to initiate reorg...`, 'info');
-                        syncState.syncProgress.status = 'DOWNLOADING'; // Use same status to prevent concurrent syncs
+                    // Skip if this chain is not better than ours (optimization)
+                    const myState = await pluribit.get_blockchain_state();
+                    if (totalWork <= BigInt(myState.total_work)) {
+                        log(`[SYNC] Candidate ${hash.substring(0,12)} has less/equal work. Skipping.`, 'debug');
+                        continue;
+                    }
+
+                    log(`[SYNC] Verifying candidate tip ${hash.substring(0,12)} (Work: ${totalWork}) from ${peers.length} peer(s)...`, 'info');
+
+                    // --- PRE-VALIDATION: Fetch the tip block first ---
+                    // Pick the first peer in this group to fetch the actual block data.
+                    const verifierPeer = peers[0]; 
+                    const tipBlock = await fetchBlockDirectly(verifierPeer, hash);
+
+                    if (!tipBlock) {
+                        log(`[SYNC] Failed to fetch tip block from ${verifierPeer.slice(-6)}. Skipping candidate.`, 'warn');
+                        continue;
+                    }
+
+                    // --- RUST SANITY CHECK ---
+                    // Pass to Rust to check protocol version, PoW, timestamps, and formatting.
+                    // 'ingest_block_bytes' performs validation without modifying the DB if it's a side block.
+                    let isValid = false;
+                    try {
+                        const blockBytes = p2p.Block.encode(tipBlock).finish();
                         
-                        // Fetch only the single block that is the tip of the better fork.
-                        const tipBlock = await fetchBlockDirectly(peersForBestTip[0], bestTip.hash);
+                        const result = await pluribit.ingest_block_bytes(blockBytes);
                         
-                        if (tipBlock) {
-                            // Feed this block into the regular ingestion pipeline. The Rust `ingest_block_bytes`
-                            // function will see it's a fork tip and trigger the reorg planner automatically.
-                            await handleRemoteBlockDownloaded({ block: tipBlock });
+                        if (result.type === 'invalid') {
+                            // CASE: Legacy/Malicious Chain
+                            log(`[SYNC] 🛑 Candidate chain rejected by Rust: ${result.reason}`, 'warn');
+                            log(`[SYNC] 🔨 Banning ${peers.length} peers on this invalid chain.`, 'warn');
+                            
+                            // Ban all peers proposing this specific bad hash to prevent retries
+                            for (const badPeer of peers) {
+                                workerState.p2p.recordBadBlock(badPeer, hash);
+                                workerState.p2p.banPeer(badPeer, 'Provided invalid chain tip during consensus', false);
+                            }
+                            isValid = false; // Move to next candidate
                         } else {
-                            throw new Error(`Failed to fetch fork tip ${bestTip.hash} to start reorg.`);
+                            // CASE: Valid Chain
+                            // 'NeedParent', 'StoredOnSide', or 'Accepted' are all PASSES for the tip check.
+                            // It means the block structure and proofs are valid according to *current* rules.
+                            isValid = true;
                         }
+                    } catch (e) {
+                        log(`[SYNC] Tip validation error: ${e.message}`, 'error');
+                        isValid = false;
+                    }
 
-                        // After the reorg is handled (or fails), reset the sync state.
+                    if (isValid) {
+                        winningCandidate = candidate;
+                        break; // Found our winner! Stop looking.
+                    }
+                }
+
+                // 4. Act on the winner (if any was found)
+                if (winningCandidate) {
+                    const { height, hash, peers, totalWork } = winningCandidate;
+                    
+                    log(`[SYNC] ✅ Valid better chain found! (Height=${height}, Work=${totalWork}). Starting sync...`, 'success');
+                    
+                    // SET SYNC FLAG IMMEDIATELY
+                    workerState.isSyncing = true; 
+                    
+                    const myState = await pluribit.get_blockchain_state();
+
+                    if (height > myState.current_height) {
+                        // Scenario 1: Forward Sync (Simple fast-forward)
+                        await syncForward(height, hash, peers);
+                    } else {
+                        // Scenario 2: Fork Reorg (Heavier chain, but not longer, or same length)
+                        // We verified the tip above, so we know it's a valid fork.
+                        log(`[SYNC] Valid fork tip detected. Triggering reorg planner...`, 'info');
+                        syncState.syncProgress.status = 'DOWNLOADING';
+                        
+                        // We already fetched the tipBlock in the loop above, but we fetch again to pass into the handler.
+                        // (Fetching from cache or peer is fast).
+                        const tipBlock = await fetchBlockDirectly(peers[0], hash);
+                        
+                        // Feed this block into ingestion. Rust will see it's a fork tip and trigger 'storedOnSide',
+                        // which triggers the reorg planner automatically in 'handleRemoteBlockDownloaded'.
+                        await handleRemoteBlockDownloaded({ block: tipBlock });
+                        
                         syncState.syncProgress.status = 'IDLE';
                         workerState.isSyncing = false;
                         parentPort.postMessage({ type: 'syncComplete' });
                     }
-
                 } else {
-                    log('[SYNC] Already synced to the best known chain.', 'info');
+                    log('[SYNC] No valid better chains found amongst peers.', 'info');
                     syncState.syncProgress.status = 'IDLE';
                 }
+
             } catch (err) {
                  log(`[SYNC] Error during consensus or sync trigger: ${err.message}`, 'error');
                  syncState.syncProgress.status = 'IDLE'; // Reset on error
