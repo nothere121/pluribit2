@@ -1038,82 +1038,79 @@ export class PluribitP2P {
         return this.node;
     }
 
-    async loadOrCreatePeerId() {
+   async loadOrCreatePeerId() {
         const peerIdPath = './pluribit-data/peer-id.json';
 
-if (this.isBootstrap) {
-    this.log('[P2P] Attempting to load permanent bootstrap PeerID from file...');
-    try {
-        await fs.mkdir('./pluribit-data', { recursive: true });
-        const data = await fs.readFile(peerIdPath, 'utf-8');
-        
-        const stored = JSON.parse(data);
-        const keys = await import('@libp2p/crypto/keys');
-        const keyBytes = uint8ArrayFromString(stored.privKey, 'base64');
+        if (this.isBootstrap) {
+            this.log('[P2P] Attempting to load permanent bootstrap PeerID from file...');
+            try {
+                await fs.mkdir('./pluribit-data', { recursive: true });
+                const data = await fs.readFile(peerIdPath, 'utf-8');
 
-        let privateKeyObj;
-        try {
-            privateKeyObj = await keys.privateKeyFromProtobuf(keyBytes);
-        } catch (e) {
-            this.log(`[P2P] privateKeyFromProtobuf failed, trying legacy unmarshal: ${e.message}`, 'debug');
-            const { supportedKeys } = keys;
-            privateKeyObj = await supportedKeys.ed25519.unmarshalEd25519PrivateKey(keyBytes);
+                const stored = JSON.parse(data);
+
+                // --- FIX: Use unmarshalPrivateKey (same as normal path) ---
+                // This handles both Protobuf and raw Ed25519 keys automatically
+                const { unmarshalPrivateKey } = await import('@libp2p/crypto/keys');
+                const keyBytes = uint8ArrayFromString(stored.privKey, 'base64');
+                
+                const privateKeyObj = await unmarshalPrivateKey(keyBytes);
+                // ----------------------------------------------------------
+
+                const peerId = await createFromPrivKey(privateKeyObj);
+
+                if (peerId.toString() !== stored.id) {
+                    throw new Error(`Loaded PeerID ${peerId} does not match stored ID ${stored.id}`);
+                }
+
+                this.log(`[P2P] Successfully loaded permanent bootstrap ID: ${stored.id}`, 'success');
+                return peerId;
+            } catch (e) {
+                this.log(`[P2P] Bootstrap load failed: ${e.message}`, 'error');
+                this.log('[P2P] FATAL: Could not load "peer-id.json" for bootstrap node.', 'error');
+                this.log('[P2P] Make sure ./pluribit-data/peer-id.json exists and contains valid ed25519 key in base64.', 'error');
+                process.exit(1);
+            }
         }
 
-        const peerId = await createFromPrivKey(privateKeyObj);
-
-        if (peerId.toString() !== stored.id) {
-            throw new Error(`Loaded PeerID ${peerId} does not match stored ID ${stored.id}`);
-        }
-
-        this.log(`[P2P] Successfully loaded permanent bootstrap ID: ${stored.id}`, 'success');
-        return peerId;
-    } catch (e) {
-        this.log(`[P2P] Bootstrap load failed: ${e.message}`, 'error');
-        this.log('[P2P] FATAL: Could not load "peer-id.json" for bootstrap node.', 'error');
-        this.log('[P2P] Make sure ./pluribit-data/peer-id.json exists and contains valid ed25519 key in base64.', 'error');
-        process.exit(1);
-    }
-}
-        
         try {
             await fs.mkdir('./pluribit-data', { recursive: true });
-            
+
             const data = await fs.readFile(peerIdPath, 'utf-8');
             const stored = JSON.parse(data);
 
             const { unmarshalPrivateKey } = await import('@libp2p/crypto/keys');
             const keyBytes = uint8ArrayFromString(stored.privKey, 'base64');
-            
+
             const privateKey = await unmarshalPrivateKey(keyBytes);
             const peerId = await createFromPrivKey(privateKey);
-            
+
             if (peerId.toString() !== stored.id) {
                 throw new Error('ID mismatch - regenerating');
             }
-            
+
             this.log(`[P2P] Successfully loaded existing peer ID: ${peerId.toString()}`, 'info');
             return peerId;
-            
+
         } catch (e) {
             this.log('[P2P] Creating new peer ID...', 'info');
             const peerId = await createEd25519PeerId();
-            
+
             if (!peerId.privateKey) {
                 throw new Error('Generated PeerId missing private key');
             }
-            
+
             const marshalledKey = peerId.privateKey;
-            
+
             const data = {
                 id: peerId.toString(),
                 privKey: uint8ArrayToString(marshalledKey, 'base64'),
                 pubKey: uint8ArrayToString(peerId.publicKey, 'base64')
             };
-            
+
             await fs.writeFile(peerIdPath, JSON.stringify(data, null, 2), { mode: 0o600 });
-            try { await fs.chmod(peerIdPath, 0o600); } catch {}
-            
+            try { await fs.chmod(peerIdPath, 0o600); } catch { }
+
             this.log(`[P2P] Created new peer ID: ${peerId.toString()}`, 'success');
             return peerId;
         }
