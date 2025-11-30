@@ -1041,37 +1041,40 @@ export class PluribitP2P {
     async loadOrCreatePeerId() {
         const peerIdPath = './pluribit-data/peer-id.json';
 
-        // --- FIXED: Use proper crypto keys for Bootstrap node ---
-        if (this.isBootstrap) {
-            this.log('[P2P] Attempting to load permanent bootstrap PeerID from file...');
-            try {
-                await fs.mkdir('./pluribit-data', { recursive: true });
-                const data = await fs.readFile(peerIdPath, 'utf-8');
-                
-                const stored = JSON.parse(data);
-                const keys = await import('@libp2p/crypto/keys');
-                const keyBytes = uint8ArrayFromString(stored.privKey, 'base64');
-                
-                // <--- FIXED: Reconstitute real PrivateKey object
-                const privateKeyObj = await keys.unmarshalPrivateKey(keyBytes);
-                
-                // <--- FIXED: Create real PeerId instance
-                const peerId = await createFromPrivKey(privateKeyObj);
-                
-                // Verify ID matches
-                if (peerId.toString() !== stored.id) {
-                    throw new Error(`Loaded ID ${peerId.toString()} does not match stored ID ${stored.id}`);
-                }
-                
-                this.log(`[P2P] Successfully loaded permanent bootstrap ID: ${stored.id}`, 'success');
-                return peerId;
+if (this.isBootstrap) {
+    this.log('[P2P] Attempting to load permanent bootstrap PeerID from file...');
+    try {
+        await fs.mkdir('./pluribit-data', { recursive: true });
+        const data = await fs.readFile(peerIdPath, 'utf-8');
+        
+        const stored = JSON.parse(data);
+        const keys = await import('@libp2p/crypto/keys');
+        const keyBytes = uint8ArrayFromString(stored.privKey, 'base64');
 
-            } catch (e) {
-                this.log(`[P2P] Bootstrap load failed: ${e.message}`, 'error');
-                this.log('[P2P] FATAL: Could not load "peer-id.json" for bootstrap.', 'error');
-                process.exit(1);
-            }
+        let privateKeyObj;
+        try {
+            privateKeyObj = await keys.privateKeyFromProtobuf(keyBytes);
+        } catch (e) {
+            this.log(`[P2P] privateKeyFromProtobuf failed, trying legacy unmarshal: ${e.message}`, 'debug');
+            const { supportedKeys } = keys;
+            privateKeyObj = await supportedKeys.ed25519.unmarshalEd25519PrivateKey(keyBytes);
         }
+
+        const peerId = await createFromPrivKey(privateKeyObj);
+
+        if (peerId.toString() !== stored.id) {
+            throw new Error(`Loaded PeerID ${peerId} does not match stored ID ${stored.id}`);
+        }
+
+        this.log(`[P2P] Successfully loaded permanent bootstrap ID: ${stored.id}`, 'success');
+        return peerId;
+    } catch (e) {
+        this.log(`[P2P] Bootstrap load failed: ${e.message}`, 'error');
+        this.log('[P2P] FATAL: Could not load "peer-id.json" for bootstrap node.', 'error');
+        this.log('[P2P] Make sure ./pluribit-data/peer-id.json exists and contains valid ed25519 key in base64.', 'error');
+        process.exit(1);
+    }
+}
         
         try {
             await fs.mkdir('./pluribit-data', { recursive: true });
