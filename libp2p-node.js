@@ -1053,7 +1053,7 @@ export class PluribitP2P {
                 const keyBytes = uint8ArrayFromString(stored.privKey, 'base64');
                 
                 // <--- FIXED: Reconstitute real PrivateKey object
-                const privateKeyObj = await keys.privateKeyFromProtobuf(keyBytes);
+                const privateKeyObj = await keys.unmarshalPrivateKey(keyBytes);
                 
                 // <--- FIXED: Create real PeerId instance
                 const peerId = await createFromPrivKey(privateKeyObj);
